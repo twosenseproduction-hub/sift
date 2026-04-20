@@ -2,48 +2,89 @@ import { useState } from "react";
 import { Header, Footnote } from "@/components/brand";
 import { Composer, Result } from "@/components/sift-ui";
 import { AuthDialog } from "@/components/auth-dialog";
+import { ExampleSheet } from "@/components/example-sheet";
 import { Button } from "@/components/ui/button";
 import { useMe } from "@/lib/auth";
+import { useQuery } from "@tanstack/react-query";
 import { Bookmark } from "lucide-react";
-import type { SiftResult } from "@shared/schema";
+import type { SiftResult, SiftListItem } from "@shared/schema";
 
 export default function Home() {
   const [result, setResult] = useState<SiftResult | null>(null);
   const [authOpen, setAuthOpen] = useState(false);
+  const [exampleOpen, setExampleOpen] = useState(false);
   const { data: meData } = useMe();
   const me = meData?.me;
+
+  // For signed-in users, check if they have any prior sifts.
+  // If they do, hide onboarding affordances (See example, hero copy).
+  const { data: sifts } = useQuery<SiftListItem[]>({
+    queryKey: ["/api/sifts"],
+    enabled: !!me,
+  });
+  const isReturning = !!me && (sifts?.length ?? 0) > 0;
 
   return (
     <div className="min-h-screen flex flex-col">
       <Header />
 
       <main className="flex-1">
-        <div className="mx-auto max-w-3xl px-6 md:px-8 pb-16">
+        <div className="mx-auto max-w-2xl px-6 md:px-8 pb-16">
           {!result ? (
             <div className="pt-10 md:pt-16">
-              <div className="text-center mb-10 md:mb-14">
-                <p className="text-[11px] tracking-[0.25em] uppercase text-primary/80 mb-4 font-medium">
-                  Clarity over comfort
-                </p>
-                <h1 className="font-serif text-4xl md:text-6xl leading-[1.05] tracking-tight">
-                  What are you holding
-                  <br />
-                  <em className="text-primary not-italic" style={{ fontStyle: "italic" }}>
-                    right now?
-                  </em>
-                </h1>
-                <p className="mt-5 text-base md:text-lg text-muted-foreground max-w-xl mx-auto leading-relaxed">
-                  Speak it or type it. Sift strips away the noise and returns
-                  the themes, the real want, and one next step you can take.
+              {/* Minimal heading — always present so the page has a subject,
+                  but no long hero copy. */}
+              <div className="mb-6 md:mb-8">
+                <p
+                  className="text-sm text-muted-foreground/80"
+                  data-testid="text-prompt-label"
+                >
+                  What's on your mind?
                 </p>
               </div>
 
               <Composer onResult={setResult} />
+
+              {/* Helper line below composer */}
+              <p
+                className="mt-3 text-xs text-muted-foreground/70"
+                data-testid="text-helper"
+              >
+                Messy is fine.
+              </p>
+
+              {/* See example — only for first-time users */}
+              {!isReturning && (
+                <div className="mt-6">
+                  <button
+                    type="button"
+                    onClick={() => setExampleOpen(true)}
+                    data-testid="link-see-example"
+                    className="text-sm text-muted-foreground hover:text-foreground underline underline-offset-4 decoration-border hover:decoration-foreground transition-colors"
+                  >
+                    See example
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
             <div className="pt-8 md:pt-12">
               {!me && <SaveThreadBanner onOpen={() => setAuthOpen(true)} />}
-              <Result result={result} onReset={() => setResult(null)} />
+              <Result
+                result={result}
+                onReset={() => setResult(null)}
+                showFollowup
+                onCheckInLater={() => {
+                  if (me) {
+                    // Signed in: jump to this sift's page where they can check in.
+                    window.location.hash = `/s/${result.id}`;
+                  } else {
+                    // Anonymous: they need an account to check in later.
+                    setAuthOpen(true);
+                  }
+                }}
+                onSave={!me ? () => setAuthOpen(true) : undefined}
+              />
             </div>
           )}
         </div>
@@ -51,6 +92,7 @@ export default function Home() {
 
       <Footnote />
       <AuthDialog open={authOpen} onOpenChange={setAuthOpen} initialMode="signup" />
+      <ExampleSheet open={exampleOpen} onOpenChange={setExampleOpen} />
     </div>
   );
 }

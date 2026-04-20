@@ -3,14 +3,18 @@ import {
   type InsertSift,
   type User,
   type SiftListItem,
+  type Checkin,
   sifts,
   users,
+  checkins,
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import Database from "better-sqlite3";
-import { eq, and, desc, like, or, isNull } from "drizzle-orm";
+import { eq, and, desc, like, or, isNull, asc } from "drizzle-orm";
 
-const sqlite = new Database("data.db");
+// DB path is configurable so the production host can mount a persistent volume.
+// Fly.io mounts volumes at /data by default — set DB_PATH=/data/sift.db there.
+const sqlite = new Database(process.env.DB_PATH || "data.db");
 sqlite.pragma("journal_mode = WAL");
 
 // --- Ensure tables (prototype, no migrations) ---
@@ -31,6 +35,15 @@ sqlite.exec(`
     passphrase_hash TEXT NOT NULL,
     created_at INTEGER NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS checkins (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sift_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    note TEXT NOT NULL,
+    response TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_checkins_sift ON checkins(sift_id, created_at ASC);
 `);
 
 // Add user_id column to sifts if it doesn't exist (safe migration for prototype)
@@ -58,6 +71,9 @@ export interface IStorage {
   createUser(handle: string, passphraseHash: string): Promise<User>;
   getUserByHandle(handle: string): Promise<User | undefined>;
   getUserById(id: number): Promise<User | undefined>;
+  // Checkins
+  createCheckin(row: Omit<Checkin, "id" | "createdAt">): Promise<Checkin>;
+  listCheckins(siftId: string): Promise<Checkin[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -117,6 +133,23 @@ export class DatabaseStorage implements IStorage {
 
   async getUserById(id: number): Promise<User | undefined> {
     return db.select().from(users).where(eq(users.id, id)).get();
+  }
+
+  async createCheckin(row: Omit<Checkin, "id" | "createdAt">): Promise<Checkin> {
+    return db
+      .insert(checkins)
+      .values({ ...row, createdAt: Date.now() })
+      .returning()
+      .get();
+  }
+
+  async listCheckins(siftId: string): Promise<Checkin[]> {
+    return db
+      .select()
+      .from(checkins)
+      .where(eq(checkins.siftId, siftId))
+      .orderBy(asc(checkins.createdAt))
+      .all();
   }
 }
 

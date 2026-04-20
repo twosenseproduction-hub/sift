@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Mic, MicOff, Send, Copy, Link2, RotateCcw, Check, Sparkles } from "lucide-react";
+import { Mic, MicOff, Send, Copy, Link2, RotateCcw, Check, Sparkles, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
@@ -17,17 +17,56 @@ interface ComposerProps {
   onResult: (r: SiftResult) => void;
 }
 
+const PLACEHOLDER_PROMPTS = [
+  "I have too many ideas and don't know what to focus on.",
+  "I know what I need to do, but I'm not doing it.",
+  "I can't tell what matters most right now.",
+];
+
+const SIFTING_SUBLINES = [
+  "Finding what matters",
+  "Separating signal from noise",
+  "Making sense of this",
+];
+
 export function Composer({ onResult }: ComposerProps) {
   const [input, setInput] = useState("");
   const [recording, setRecording] = useState(false);
   const [loading, setLoading] = useState(false);
   const [interim, setInterim] = useState("");
+  const [placeholderIdx, setPlaceholderIdx] = useState(0);
+  const [focused, setFocused] = useState(false);
   const recRef = useRef<RecognitionHandle | null>(null);
   const voiceSupported = isVoiceSupported();
   const { toast } = useToast();
   const modeRef = useRef<"text" | "voice">("text");
 
+  const [siftingIdx, setSiftingIdx] = useState(0);
+
   useEffect(() => () => recRef.current?.stop(), []);
+
+  // Rotate the "Sifting…" subline every 2.2s while loading.
+  useEffect(() => {
+    if (!loading) {
+      setSiftingIdx(0);
+      return;
+    }
+    const id = setInterval(
+      () => setSiftingIdx((i) => (i + 1) % SIFTING_SUBLINES.length),
+      2200,
+    );
+    return () => clearInterval(id);
+  }, [loading]);
+
+  // Rotate placeholder every 6s, but pause while focused or while user has typed something.
+  useEffect(() => {
+    if (focused || input || recording) return;
+    const id = setInterval(
+      () => setPlaceholderIdx((i) => (i + 1) % PLACEHOLDER_PROMPTS.length),
+      6000,
+    );
+    return () => clearInterval(id);
+  }, [focused, input, recording]);
 
   const startVoice = () => {
     if (!voiceSupported) {
@@ -119,9 +158,11 @@ export function Composer({ onResult }: ComposerProps) {
             setInterim("");
           }}
           onKeyDown={handleKey}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
           disabled={loading}
-          placeholder="Pour it all out. Half-formed is fine. The knot, the noise, the thing you can't name yet…"
-          className="min-h-[220px] md:min-h-[260px] resize-none border-0 bg-transparent px-5 py-5 md:px-7 md:py-6 text-base md:text-[17px] leading-relaxed focus-visible:ring-0 placeholder:text-muted-foreground/70"
+          placeholder={PLACEHOLDER_PROMPTS[placeholderIdx]}
+          className="min-h-[220px] md:min-h-[260px] resize-none border-0 bg-transparent px-5 py-5 md:px-7 md:py-6 text-base md:text-[17px] leading-relaxed focus-visible:ring-0 placeholder:text-muted-foreground/60 placeholder:transition-opacity"
         />
 
         <div className="flex items-center justify-between gap-3 px-3 md:px-4 py-3 border-t border-border/60">
@@ -177,22 +218,35 @@ export function Composer({ onResult }: ComposerProps) {
             ) : (
               <>
                 <Send className="w-4 h-4" />
-                Sift it
+                Sift
               </>
             )}
           </Button>
         </div>
       </div>
-      <p className="text-xs text-muted-foreground mt-3 text-center">
-        <kbd className="font-mono text-[10px] px-1.5 py-0.5 rounded border border-border bg-muted/60">
-          ⌘
-        </kbd>{" "}
-        +{" "}
-        <kbd className="font-mono text-[10px] px-1.5 py-0.5 rounded border border-border bg-muted/60">
-          Enter
-        </kbd>{" "}
-        to sift
-      </p>
+      {loading ? (
+        <div
+          className="mt-4 flex items-center justify-center gap-2 text-sm text-muted-foreground"
+          data-testid="sifting-subline"
+          aria-live="polite"
+        >
+          <span className="pulse-dot h-1.5 w-1.5 rounded-full bg-primary inline-block" />
+          <span key={siftingIdx} className="fade-in-slow">
+            {SIFTING_SUBLINES[siftingIdx]}
+          </span>
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground mt-3 text-center">
+          <kbd className="font-mono text-[10px] px-1.5 py-0.5 rounded border border-border bg-muted/60">
+            ⌘
+          </kbd>{" "}
+          +{" "}
+          <kbd className="font-mono text-[10px] px-1.5 py-0.5 rounded border border-border bg-muted/60">
+            Enter
+          </kbd>{" "}
+          to sift
+        </p>
+      )}
     </div>
   );
 }
@@ -217,9 +271,27 @@ interface ResultProps {
   result: SiftResult;
   onReset?: () => void;
   readOnly?: boolean;
+  /**
+   * When provided, the Result renders the post-response follow-up row:
+   *   "If this helped, save it or check in later."
+   * with a primary "Check in later" action + secondary "Save this" / "Try again" links.
+   * If omitted, the original action row (Share / Copy / Sift again) is rendered instead.
+   */
+  showFollowup?: boolean;
+  /** Called when primary "Check in later" is pressed. Usually navigates to /s/:id. */
+  onCheckInLater?: () => void;
+  /** Called when secondary "Save this" is pressed. Usually opens auth dialog. Omit to hide link. */
+  onSave?: () => void;
 }
 
-export function Result({ result, onReset, readOnly }: ResultProps) {
+export function Result({
+  result,
+  onReset,
+  readOnly,
+  showFollowup,
+  onCheckInLater,
+  onSave,
+}: ResultProps) {
   const { toast } = useToast();
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedText, setCopiedText] = useState(false);
@@ -331,43 +403,109 @@ export function Result({ result, onReset, readOnly }: ResultProps) {
         </section>
 
         {/* Actions */}
-        <div className="pt-2 flex flex-wrap items-center gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={copyLink}
-            data-testid="button-copy-link"
-            className="gap-2"
-          >
-            {copiedLink ? <Check className="w-4 h-4" /> : <Link2 className="w-4 h-4" />}
-            {copiedLink ? "Link copied" : "Share link"}
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={copyText}
-            data-testid="button-copy-text"
-            className="gap-2"
-          >
-            {copiedText ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-            {copiedText ? "Copied" : "Copy as text"}
-          </Button>
-          {!readOnly && onReset && (
+        {showFollowup && !readOnly ? (
+          <div className="pt-2" data-testid="followup-row">
+            <p
+              className="text-sm text-muted-foreground mb-4"
+              data-testid="text-followup-microcopy"
+            >
+              If this helped, save it or check in later.
+            </p>
+            <div className="flex flex-wrap items-center gap-4">
+              {onCheckInLater && (
+                <Button
+                  type="button"
+                  onClick={onCheckInLater}
+                  data-testid="button-checkin-later"
+                  className="gap-2"
+                >
+                  <Clock className="w-4 h-4" />
+                  Check in later
+                </Button>
+              )}
+              {onSave && (
+                <button
+                  type="button"
+                  onClick={onSave}
+                  data-testid="link-save-this"
+                  className="text-sm text-muted-foreground hover:text-foreground underline underline-offset-4 decoration-border hover:decoration-foreground transition-colors"
+                >
+                  Save this
+                </button>
+              )}
+              {onReset && (
+                <button
+                  type="button"
+                  onClick={onReset}
+                  data-testid="link-try-again"
+                  className="text-sm text-muted-foreground hover:text-foreground underline underline-offset-4 decoration-border hover:decoration-foreground transition-colors"
+                >
+                  Try again
+                </button>
+              )}
+            </div>
+            {/* Share link + copy remain available as a smaller utility row */}
+            <div className="mt-6 flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={copyLink}
+                data-testid="button-copy-link"
+                className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {copiedLink ? <Check className="w-3.5 h-3.5" /> : <Link2 className="w-3.5 h-3.5" />}
+                {copiedLink ? "Link copied" : "Share link"}
+              </button>
+              <span className="text-muted-foreground/40 text-xs">·</span>
+              <button
+                type="button"
+                onClick={copyText}
+                data-testid="button-copy-text"
+                className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {copiedText ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                {copiedText ? "Copied" : "Copy as text"}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="pt-2 flex flex-wrap items-center gap-2">
             <Button
               type="button"
-              variant="ghost"
+              variant="outline"
               size="sm"
-              onClick={onReset}
-              data-testid="button-reset"
-              className="gap-2 text-muted-foreground"
+              onClick={copyLink}
+              data-testid="button-copy-link"
+              className="gap-2"
             >
-              <RotateCcw className="w-4 h-4" />
-              Sift something else
+              {copiedLink ? <Check className="w-4 h-4" /> : <Link2 className="w-4 h-4" />}
+              {copiedLink ? "Link copied" : "Share link"}
             </Button>
-          )}
-        </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={copyText}
+              data-testid="button-copy-text"
+              className="gap-2"
+            >
+              {copiedText ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+              {copiedText ? "Copied" : "Copy as text"}
+            </Button>
+            {!readOnly && onReset && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={onReset}
+                data-testid="button-reset"
+                className="gap-2 text-muted-foreground"
+              >
+                <RotateCcw className="w-4 h-4" />
+                Sift something else
+              </Button>
+            )}
+          </div>
+        )}
 
         {/* Original input (collapsed) */}
         {result.input && (
@@ -400,11 +538,26 @@ function Label({ children }: { children: React.ReactNode }) {
 // ---------- Skeleton while thinking ----------
 
 export function Thinking() {
+  const [subIdx, setSubIdx] = useState(0);
+  useEffect(() => {
+    const id = setInterval(
+      () => setSubIdx((i) => (i + 1) % SIFTING_SUBLINES.length),
+      2200,
+    );
+    return () => clearInterval(id);
+  }, []);
   return (
     <div className="fade-up space-y-8" data-testid="thinking">
-      <div className="flex items-center gap-3 text-muted-foreground">
-        <span className="pulse-dot h-2 w-2 rounded-full bg-primary" />
-        <span className="text-sm">Sifting your thoughts…</span>
+      <div className="flex items-baseline gap-3">
+        <span className="pulse-dot h-2 w-2 rounded-full bg-primary shrink-0" />
+        <span className="text-base font-medium text-foreground">Sifting…</span>
+        <span
+          key={subIdx}
+          className="text-sm text-muted-foreground fade-in-slow"
+          data-testid="text-thinking-subline"
+        >
+          {SIFTING_SUBLINES[subIdx]}
+        </span>
       </div>
       <div className="space-y-3">
         <div className="h-7 w-3/4 rounded bg-muted/70 animate-pulse" />

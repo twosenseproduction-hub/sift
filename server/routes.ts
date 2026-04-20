@@ -1,8 +1,6 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import express from "express";
-import session from "express-session";
-import createMemoryStore from "memorystore";
 import crypto from "crypto";
 import Anthropic from "@anthropic-ai/sdk";
 import { storage } from "./storage";
@@ -10,12 +8,22 @@ import {
   analyzeRequestSchema,
   analysisSchema,
   authSchema,
+  checkinRequestSchema,
+  checkinAnalysisSchema,
   type Analysis,
+  type CheckinAnalysis,
+  type CheckinResult,
   type SiftResult,
   type Me,
+  type Checkin,
 } from "@shared/schema";
 
 const client = new Anthropic();
+
+// Model name. Defaults to a real Anthropic public model name so the app works
+// against api.anthropic.com out of the box. When running inside the Perplexity
+// sandbox, set ANTHROPIC_MODEL=claude_sonnet_4_6 (the internal alias).
+const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-5-20250929";
 
 const SYSTEM_PROMPT = `You are Sift — a quiet, precise thinking companion.
 
@@ -37,6 +45,48 @@ Rules:
 - nextStep: Must be an action, not advice. Starts with a verb. Concrete, scoped, achievable. Not "reflect more" or "think about." Something they do.
 - reflection: A quiet observation. Honest. Not flattering. Under 20 words.
 - If the input is very short or unclear, still produce a best-effort pass — do not ask questions back.
+- Output JSON only. No prose before or after.`;
+
+const CHECKIN_SYSTEM_PROMPT = `You are Sift in Check-in Mode.
+
+The user is returning to a past sift to report what happened. You already have:
+- their original input
+- the next step you gave them
+- their current status (did_it, did_not, or in_progress)
+- optional note about what happened
+
+Your role is to:
+1. Interpret what the outcome reveals (not just restate it)
+2. Identify what helped, what blocked, or what changed
+3. Refine their direction based on this new information
+4. Provide one improved, realistic next step
+
+Do NOT:
+- Praise the user ("good job", "proud of you")
+- Shame or guilt the user for not following through
+- Repeat the original advice without adapting it
+- Sound like a coach, therapist, or habit tracker
+
+Treat all outcomes as useful data:
+- If they did it → extract what changed and build forward
+- If they didn't → identify friction and reduce the step
+- If they are still working → clarify what remains unclear
+
+Tone: calm, perceptive, grounded, slightly conversational, not overly polished. No exclamation points. No emojis.
+
+Return STRICT JSON matching this shape exactly:
+{
+  "hearing": string,         // 2–4 sentences identifying the real pattern or shift
+  "matters": [string],       // 2–3 bullets — each a short sentence
+  "noise": [string],         // 1–2 bullets — each a short sentence
+  "nextStep": string         // ONE clear, specific, realistic action — often smaller or more precise than before
+}
+
+Rules:
+- "hearing": 2–4 sentences. Observe the pattern. Don't just summarize.
+- "matters": 2 or 3 bullets. Each is a short, grounded sentence.
+- "noise": 1 or 2 bullets. What to let go of or stop tracking.
+- "nextStep": ONE action. Starts with a verb. Adjusted based on the outcome — not a restatement.
 - Output JSON only. No prose before or after.`;
 
 function newId(): string {
@@ -63,16 +113,29 @@ function verifyPassphrase(passphrase: string, stored: string): boolean {
   return crypto.timingSafeEqual(a, b);
 }
 
-// --- Session augmentation ---
-declare module "express-session" {
-  interface SessionData {
-    userId?: number;
-  }
+// --- Bearer-token auth (the deploy proxy strips Set-Cookie, so we can't use cookies) ---
+// Tokens map to userIds in-memory. Tokens are held in React state client-side
+// and sent as `Authorization: Bearer <token>`. On server restart, tokens are invalidated
+// and the user re-signs in. This is acceptable for a prototype.
+const tokens = new Map<string, { userId: number; createdAt: number }>();
+
+function issueToken(userId: number): string {
+  const token = crypto.randomBytes(32).toString("hex");
+  tokens.set(token, { userId, createdAt: Date.now() });
+  return token;
+}
+
+function readToken(req: Request): number | null {
+  const h = req.headers.authorization;
+  if (!h || !h.startsWith("Bearer ")) return null;
+  const token = h.slice(7).trim();
+  const entry = tokens.get(token);
+  return entry ? entry.userId : null;
 }
 
 async function runAnalysis(input: string): Promise<Analysis> {
   const msg = await client.messages.create({
-    model: "claude_sonnet_4_6",
+    model: MODEL,
     max_tokens: 1024,
     system: SYSTEM_PROMPT,
     messages: [
@@ -101,11 +164,72 @@ async function runAnalysis(input: string): Promise<Analysis> {
   return analysisSchema.parse(parsed);
 }
 
+async function runCheckinAnalysis(
+  originalInput: string,
+  originalNextStep: string,
+  status: string,
+  note: string
+): Promise<CheckinAnalysis> {
+  const statusLabel =
+    status === "did_it"
+      ? "I did it."
+      : status === "did_not"
+      ? "I didn't do it."
+      : "I'm still working on it.";
+
+  const userBlock = `Original sift input:
+${originalInput}
+
+Original next step you gave me:
+${originalNextStep}
+
+Status: ${statusLabel}${note ? `\n\nWhat actually happened:\n${note}` : ""}
+
+Sift what this outcome reveals. Return JSON only.`;
+
+  const msg = await client.messages.create({
+    model: MODEL,
+    max_tokens: 1024,
+    system: CHECKIN_SYSTEM_PROMPT,
+    messages: [{ role: "user", content: userBlock }],
+  });
+
+  const textBlock = msg.content.find((b: any) => b.type === "text") as any;
+  const raw = (textBlock?.text ?? "").trim();
+  const cleaned = raw
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```\s*$/i, "")
+    .trim();
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch (e) {
+    const match = cleaned.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error("Model did not return JSON");
+    parsed = JSON.parse(match[0]);
+  }
+  return checkinAnalysisSchema.parse(parsed);
+}
+
 function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (!req.session.userId) {
+  const userId = readToken(req);
+  if (!userId) {
     return res.status(401).json({ error: "Not signed in" });
   }
+  (req as any).userId = userId;
   next();
+}
+
+function checkinToResult(row: Checkin): CheckinResult {
+  const parsed = JSON.parse(row.response) as CheckinAnalysis;
+  return {
+    id: row.id,
+    createdAt: row.createdAt,
+    status: row.status as CheckinResult["status"],
+    note: row.note,
+    ...parsed,
+  };
 }
 
 export async function registerRoutes(
@@ -113,25 +237,6 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   app.use(express.json({ limit: "1mb" }));
-
-  const MemoryStore = createMemoryStore(session);
-  app.set("trust proxy", 1);
-  app.use(
-    session({
-      secret: process.env.SESSION_SECRET || "sift-prototype-secret-change-me",
-      resave: false,
-      saveUninitialized: false,
-      store: new MemoryStore({ checkPeriod: 1000 * 60 * 60 * 12 }),
-      cookie: {
-        httpOnly: true,
-        // In prod the app may be served inside a cross-origin iframe proxy,
-        // so cookies must be SameSite=None; Secure to be sent with requests.
-        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-        secure: process.env.NODE_ENV === "production",
-        maxAge: 1000 * 60 * 60 * 24 * 30, // 30 days
-      },
-    })
-  );
 
   // --- Auth ---
   app.post("/api/auth/signup", async (req, res) => {
@@ -145,9 +250,9 @@ export async function registerRoutes(
       return res.status(409).json({ error: "That handle is taken." });
     }
     const user = await storage.createUser(handle, hashPassphrase(parsed.data.passphrase));
-    req.session.userId = user.id;
+    const token = issueToken(user.id);
     const me: Me = { id: user.id, handle: user.handle };
-    res.json({ me });
+    res.json({ me, token });
   });
 
   app.post("/api/auth/login", async (req, res) => {
@@ -160,18 +265,21 @@ export async function registerRoutes(
     if (!user || !verifyPassphrase(parsed.data.passphrase, user.passphraseHash)) {
       return res.status(401).json({ error: "Handle or passphrase doesn't match." });
     }
-    req.session.userId = user.id;
+    const token = issueToken(user.id);
     const me: Me = { id: user.id, handle: user.handle };
-    res.json({ me });
+    res.json({ me, token });
   });
 
   app.post("/api/auth/logout", (req, res) => {
-    req.session.destroy(() => res.json({ ok: true }));
+    const h = req.headers.authorization;
+    if (h?.startsWith("Bearer ")) tokens.delete(h.slice(7).trim());
+    res.json({ ok: true });
   });
 
   app.get("/api/auth/me", async (req, res) => {
-    if (!req.session.userId) return res.json({ me: null });
-    const user = await storage.getUserById(req.session.userId);
+    const userId = readToken(req);
+    if (!userId) return res.json({ me: null });
+    const user = await storage.getUserById(userId);
     if (!user) return res.json({ me: null });
     const me: Me = { id: user.id, handle: user.handle };
     res.json({ me });
@@ -185,11 +293,11 @@ export async function registerRoutes(
       return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
     }
     const { input, inputMode } = parsed.data;
+    const userId = readToken(req);
 
     try {
       const analysis = await runAnalysis(input);
       const id = newId();
-      const userId = req.session.userId ?? null;
 
       await storage.createSift({
         id,
@@ -209,6 +317,7 @@ export async function registerRoutes(
         createdAt: Date.now(),
         ...analysis,
         mine: !!userId,
+        checkins: [],
       };
       return res.json(result);
     } catch (err: any) {
@@ -222,7 +331,7 @@ export async function registerRoutes(
 
   // List my sifts (optionally with ?q=search)
   app.get("/api/sifts", requireAuth, async (req, res) => {
-    const userId = req.session.userId!;
+    const userId = (req as any).userId as number;
     const q = typeof req.query.q === "string" ? req.query.q : undefined;
     const list = await storage.listSiftsByUser(userId, q);
     res.json({ sifts: list });
@@ -230,7 +339,7 @@ export async function registerRoutes(
 
   // Delete one of my sifts
   app.delete("/api/sift/:id", requireAuth, async (req, res) => {
-    const userId = req.session.userId!;
+    const userId = (req as any).userId as number;
     const ok = await storage.deleteSift(String(req.params.id), userId);
     if (!ok) return res.status(404).json({ error: "Not found" });
     res.json({ ok: true });
@@ -241,6 +350,9 @@ export async function registerRoutes(
     const row = await storage.getSift(String(req.params.id));
     if (!row) return res.status(404).json({ error: "Not found" });
 
+    const viewerId = readToken(req);
+    const checkinRows = await storage.listCheckins(row.id);
+
     const result: SiftResult = {
       id: row.id,
       input: row.input,
@@ -250,9 +362,46 @@ export async function registerRoutes(
       coreIntent: row.coreIntent,
       nextStep: row.nextStep,
       reflection: row.reflection,
-      mine: req.session.userId != null && row.userId === req.session.userId,
+      mine: viewerId != null && row.userId === viewerId,
+      checkins: checkinRows.map(checkinToResult),
     };
     return res.json(result);
+  });
+
+  // Create a check-in on a sift (owner only)
+  app.post("/api/sift/:id/checkin", requireAuth, async (req, res) => {
+    const userId = (req as any).userId as number;
+    const parsed = checkinRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+    }
+    const siftId = String(req.params.id);
+    const sift = await storage.getSift(siftId);
+    if (!sift) return res.status(404).json({ error: "Not found" });
+    if (sift.userId !== userId) return res.status(403).json({ error: "Not your sift" });
+
+    try {
+      const analysis = await runCheckinAnalysis(
+        sift.input,
+        sift.nextStep,
+        parsed.data.status,
+        parsed.data.note ?? ""
+      );
+      const row = await storage.createCheckin({
+        siftId,
+        status: parsed.data.status,
+        note: parsed.data.note ?? "",
+        response: JSON.stringify(analysis),
+      });
+      const result: CheckinResult = checkinToResult(row);
+      res.json({ checkin: result });
+    } catch (err: any) {
+      console.error("checkin error", err);
+      res.status(500).json({
+        error: "Could not process check-in right now.",
+        detail: err?.message ?? String(err),
+      });
+    }
   });
 
   return httpServer;

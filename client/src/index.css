@@ -328,4 +328,12 @@
     from { opacity: 0; transform: translateY(8px); }
     to { opacity: 1; transform: translateY(0); }
   }
+
+  .fade-in-slow {
+    animation: fade-in-slow 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+  @keyframes fade-in-slow {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
 }

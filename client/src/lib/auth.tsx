@@ -1,9 +1,12 @@
-import { createContext, useContext } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { apiRequest, queryClient } from "./queryClient";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { apiRequest, queryClient, setAuthToken } from "./queryClient";
 import type { Me } from "@shared/schema";
 
-type MeResponse = { me: Me };
+type MeResponse = { me: Me; token?: string };
+
+// Token is held in-memory only. Storage (localStorage/sessionStorage/cookies)
+// is blocked inside the deployed iframe, so we keep the token in module state
+// for the life of the page. A full reload returns the user to signed-out state.
 
 export function useMe() {
   return useQuery<MeResponse>({
@@ -19,7 +22,8 @@ export function useSignup() {
       return (await res.json()) as MeResponse;
     },
     onSuccess: (data) => {
-      queryClient.setQueryData(["/api/auth/me"], data);
+      if (data.token) setAuthToken(data.token);
+      queryClient.setQueryData(["/api/auth/me"], { me: data.me });
       queryClient.invalidateQueries({ queryKey: ["/api/sifts"] });
     },
   });
@@ -32,7 +36,8 @@ export function useLogin() {
       return (await res.json()) as MeResponse;
     },
     onSuccess: (data) => {
-      queryClient.setQueryData(["/api/auth/me"], data);
+      if (data.token) setAuthToken(data.token);
+      queryClient.setQueryData(["/api/auth/me"], { me: data.me });
       queryClient.invalidateQueries({ queryKey: ["/api/sifts"] });
     },
   });
@@ -45,6 +50,7 @@ export function useLogout() {
       return true;
     },
     onSuccess: () => {
+      setAuthToken(null);
       queryClient.setQueryData(["/api/auth/me"], { me: null });
       queryClient.invalidateQueries({ queryKey: ["/api/sifts"] });
     },

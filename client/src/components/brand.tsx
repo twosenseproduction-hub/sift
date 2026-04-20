@@ -13,21 +13,30 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 export function Logo({ size = 28 }: { size?: number }) {
+  // Cyclone mark: four tapering horizontal strokes that sweep into a funnel,
+  // with a single dot at the tip. The geometry is arranged so each row is
+  // narrower than the one above it, and the left edge steps inward — reading
+  // as wind shearing into a single point. Uses currentColor so it inherits
+  // from the header's text/hover state.
   return (
     <svg
       width={size}
       height={size}
       viewBox="0 0 32 32"
-      fill="none"
+      fill="currentColor"
       aria-label="Sift"
       role="img"
     >
-      <path
-        d="M8 8h16M8 13h16M9 18h14M11 23h10M14 28h4"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-      />
+      {/* Row 1 — widest, thinnest */}
+      <rect x="5" y="9" width="22" height="1.8" rx="0.9" />
+      {/* Row 2 — slightly inset, thicker */}
+      <rect x="7" y="13" width="18" height="2.1" rx="1.05" />
+      {/* Row 3 — narrower, thicker still */}
+      <rect x="9.5" y="17" width="13" height="2.1" rx="1.05" />
+      {/* Row 4 — short tail */}
+      <rect x="12" y="21" width="7" height="1.8" rx="0.9" />
+      {/* Tip dot */}
+      <circle cx="14.5" cy="25.5" r="1.05" />
     </svg>
   );
 }

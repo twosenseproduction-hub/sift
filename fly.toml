@@ -1,0 +1,38 @@
+# fly.toml — Sift
+#
+# Deploy with: fly launch --copy-config --no-deploy   (first time, to create the app + volume)
+#           or fly deploy                              (subsequent deploys)
+#
+# If the app name below is taken, pick another (names are globally unique on Fly):
+app = "sift-twosense"
+primary_region = "sjc"   # San Jose — close to the Bay Area. Change if you prefer.
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8080"
+  NODE_ENV = "production"
+  DB_PATH = "/data/sift.db"
+  # ANTHROPIC_MODEL is optional — the default works against api.anthropic.com.
+  # Override only if you want a different Claude variant:
+  # ANTHROPIC_MODEL = "claude-sonnet-4-5-20250929"
+
+# Persistent volume for the SQLite database. Created separately with:
+#   fly volumes create sift_data --region sjc --size 1
+[[mounts]]
+  source = "sift_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"     # Save credits: machine sleeps when idle
+  auto_start_machines = true      # Wakes on first request (adds ~1-2s cold start)
+  min_machines_running = 0
+  processes = ["app"]
+
+[[vm]]
+  # Smallest shared-cpu-1x with 512 MB RAM is enough for SQLite + Express + one LLM call at a time.
+  size = "shared-cpu-1x"
+  memory = "512mb"

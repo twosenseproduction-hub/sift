@@ -27,6 +27,19 @@ export const sifts = sqliteTable("sifts", {
   reflection: text("reflection").notNull(),
 });
 
+// ---- Checkins ----
+// A Check-in = user returning to a past sift to log outcome + get adjusted guidance
+export const checkins = sqliteTable("checkins", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  siftId: text("sift_id").notNull(),
+  createdAt: integer("created_at").notNull(),
+  status: text("status").notNull(), // 'did_it' | 'did_not' | 'in_progress'
+  note: text("note").notNull(), // user's optional context
+  // JSON: { hearing, matters: string[], noise: string[], nextStep }
+  response: text("response").notNull(),
+});
+export type Checkin = typeof checkins.$inferSelect;
+
 export const insertSiftSchema = createInsertSchema(sifts).omit({
   createdAt: true,
 });
@@ -62,6 +75,32 @@ export type SiftResult = Analysis & {
   inputMode: "text" | "voice";
   createdAt: number;
   mine?: boolean; // set on client when viewing own sift
+  checkins?: CheckinResult[];
+};
+
+// ---- Check-in schemas ----
+export const checkinStatusSchema = z.enum(["did_it", "did_not", "in_progress"]);
+export type CheckinStatus = z.infer<typeof checkinStatusSchema>;
+
+export const checkinRequestSchema = z.object({
+  status: checkinStatusSchema,
+  note: z.string().max(4000).optional().default(""),
+});
+export type CheckinRequest = z.infer<typeof checkinRequestSchema>;
+
+export const checkinAnalysisSchema = z.object({
+  hearing: z.string(), // "what I'm hearing" — 2-4 sentences
+  matters: z.array(z.string()).min(1).max(4), // "what matters" — 2-3 bullets
+  noise: z.array(z.string()).min(1).max(3), // "what's noise" — 1-2 bullets
+  nextStep: z.string(), // one refined action
+});
+export type CheckinAnalysis = z.infer<typeof checkinAnalysisSchema>;
+
+export type CheckinResult = CheckinAnalysis & {
+  id: number;
+  createdAt: number;
+  status: CheckinStatus;
+  note: string;
 };
 
 // Auth

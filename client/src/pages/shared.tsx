@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useRoute, Link } from "wouter";
 import { Header, Footnote } from "@/components/brand";
 import { Result, Thinking } from "@/components/sift-ui";
+import { CheckinBlock } from "@/components/checkin";
 import { Button } from "@/components/ui/button";
 import { ArrowRight } from "lucide-react";
 import type { SiftResult } from "@shared/schema";
@@ -43,7 +44,7 @@ export default function Shared() {
             <>
               <div className="mb-10 md:mb-12">
                 <p className="text-[11px] tracking-[0.25em] uppercase text-primary/80 font-medium">
-                  A shared sift
+                  {data.mine ? "From your thread" : "A shared sift"}
                 </p>
                 <p className="text-sm text-muted-foreground mt-2">
                   {new Date(data.createdAt).toLocaleDateString(undefined, {
@@ -53,15 +54,16 @@ export default function Shared() {
                   })}
                 </p>
               </div>
-              <Result result={data} readOnly />
+              <Result result={data} readOnly={!data.mine} />
+              <CheckinBlock sift={data} readOnly={!data.mine} />
               <div className="pt-12 mt-12 border-t border-border/60 text-center">
                 <p className="text-sm text-muted-foreground mb-4">
-                  Have a tangle of your own?
+                  {data.mine ? "Something else you're holding?" : "Have a tangle of your own?"}
                 </p>
                 <Link href="/" data-testid="link-start-own">
                   <a>
                     <Button variant="default" className="gap-2">
-                      Sift something of your own
+                      {data.mine ? "Sift something new" : "Sift something of your own"}
                       <ArrowRight className="w-4 h-4" />
                     </Button>
                   </a>
