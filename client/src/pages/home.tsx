@@ -32,16 +32,34 @@ export default function Home() {
         <div className="mx-auto max-w-2xl px-6 md:px-8 pb-16">
           {!result ? (
             <div className="pt-10 md:pt-16">
-              {/* Minimal heading — always present so the page has a subject,
-                  but no long hero copy. */}
-              <div className="mb-6 md:mb-8">
-                <p
-                  className="text-sm text-muted-foreground/80"
-                  data-testid="text-prompt-label"
-                >
-                  What's on your mind?
-                </p>
-              </div>
+              {/* Hero — first-time users get the full reflective hero.
+                  Returning users get a minimal prompt label only. */}
+              {!isReturning ? (
+                <div className="mb-8 md:mb-10 text-center">
+                  <p
+                    className="text-xs md:text-sm tracking-[0.2em] uppercase text-muted-foreground/80"
+                    data-testid="text-eyebrow"
+                  >
+                    Clarity over comfort
+                  </p>
+                  <h1
+                    className="mt-4 font-serif text-4xl md:text-5xl leading-[1.1] text-foreground"
+                    data-testid="text-hero"
+                  >
+                    What are you holding{" "}
+                    <em className="italic text-primary">right now?</em>
+                  </h1>
+                </div>
+              ) : (
+                <div className="mb-6 md:mb-8">
+                  <p
+                    className="text-sm text-muted-foreground/80"
+                    data-testid="text-prompt-label"
+                  >
+                    What's on your mind?
+                  </p>
+                </div>
+              )}
 
               <Composer onResult={setResult} />
 
