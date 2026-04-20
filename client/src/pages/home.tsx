@@ -1,10 +1,17 @@
 import { useState } from "react";
 import { Header, Footnote } from "@/components/brand";
 import { Composer, Result } from "@/components/sift-ui";
+import { AuthDialog } from "@/components/auth-dialog";
+import { Button } from "@/components/ui/button";
+import { useMe } from "@/lib/auth";
+import { Bookmark } from "lucide-react";
 import type { SiftResult } from "@shared/schema";
 
 export default function Home() {
   const [result, setResult] = useState<SiftResult | null>(null);
+  const [authOpen, setAuthOpen] = useState(false);
+  const { data: meData } = useMe();
+  const me = meData?.me;
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -35,6 +42,7 @@ export default function Home() {
             </div>
           ) : (
             <div className="pt-8 md:pt-12">
+              {!me && <SaveThreadBanner onOpen={() => setAuthOpen(true)} />}
               <Result result={result} onReset={() => setResult(null)} />
             </div>
           )}
@@ -42,6 +50,33 @@ export default function Home() {
       </main>
 
       <Footnote />
+      <AuthDialog open={authOpen} onOpenChange={setAuthOpen} initialMode="signup" />
+    </div>
+  );
+}
+
+function SaveThreadBanner({ onOpen }: { onOpen: () => void }) {
+  return (
+    <div
+      className="mb-8 flex items-center justify-between gap-4 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3"
+      data-testid="banner-save-thread"
+    >
+      <div className="flex items-start gap-3 text-sm">
+        <Bookmark className="w-4 h-4 mt-0.5 text-primary shrink-0" />
+        <span className="text-foreground/80">
+          <span className="font-medium text-foreground">Save this to a thread.</span>{" "}
+          Sign in to keep your sifts and come back to them later.
+        </span>
+      </div>
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={onOpen}
+        data-testid="button-banner-signup"
+        className="shrink-0"
+      >
+        Start a thread
+      </Button>
     </div>
   );
 }

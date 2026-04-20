@@ -3,7 +3,7 @@ import { Mic, MicOff, Send, Copy, Link2, RotateCcw, Check, Sparkles } from "luci
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
   createRecognizer,
   isVoiceSupported,
@@ -75,6 +75,8 @@ export function Composer({ onResult }: ComposerProps) {
         inputMode: modeRef.current,
       });
       const data = (await res.json()) as SiftResult;
+      // Refresh history list if user is signed in
+      queryClient.invalidateQueries({ queryKey: ["/api/sifts"] });
       onResult(data);
       setInput("");
       setInterim("");

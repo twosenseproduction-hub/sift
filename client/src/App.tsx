@@ -7,12 +7,14 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import Home from "@/pages/home";
 import Shared from "@/pages/shared";
+import HistoryPage from "@/pages/history";
 import { ThemeProvider } from "@/lib/theme";
 
 function AppRouter() {
   return (
     <Switch>
       <Route path="/" component={Home} />
+      <Route path="/history" component={HistoryPage} />
       <Route path="/s/:id" component={Shared} />
       <Route component={NotFound} />
     </Switch>

@@ -1,12 +1,19 @@
-import { type Sift, type InsertSift, sifts } from "@shared/schema";
+import {
+  type Sift,
+  type InsertSift,
+  type User,
+  type SiftListItem,
+  sifts,
+  users,
+} from "@shared/schema";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import Database from "better-sqlite3";
-import { eq, sql } from "drizzle-orm";
+import { eq, and, desc, like, or, isNull } from "drizzle-orm";
 
 const sqlite = new Database("data.db");
 sqlite.pragma("journal_mode = WAL");
 
-// Ensure table exists (no migrations in prototype)
+// --- Ensure tables (prototype, no migrations) ---
 sqlite.exec(`
   CREATE TABLE IF NOT EXISTS sifts (
     id TEXT PRIMARY KEY,
@@ -18,26 +25,98 @@ sqlite.exec(`
     next_step TEXT NOT NULL,
     reflection TEXT NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    handle TEXT NOT NULL UNIQUE,
+    passphrase_hash TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
 `);
+
+// Add user_id column to sifts if it doesn't exist (safe migration for prototype)
+const siftCols = sqlite
+  .prepare(`PRAGMA table_info(sifts);`)
+  .all() as Array<{ name: string }>;
+if (!siftCols.some((c) => c.name === "user_id")) {
+  sqlite.exec(`ALTER TABLE sifts ADD COLUMN user_id INTEGER;`);
+}
+
+sqlite.exec(
+  `CREATE INDEX IF NOT EXISTS idx_sifts_user_created
+     ON sifts(user_id, created_at DESC);`
+);
 
 export const db = drizzle(sqlite);
 
 export interface IStorage {
+  // Sifts
   createSift(sift: InsertSift): Promise<Sift>;
   getSift(id: string): Promise<Sift | undefined>;
+  listSiftsByUser(userId: number, q?: string): Promise<SiftListItem[]>;
+  deleteSift(id: string, userId: number): Promise<boolean>;
+  // Users
+  createUser(handle: string, passphraseHash: string): Promise<User>;
+  getUserByHandle(handle: string): Promise<User | undefined>;
+  getUserById(id: number): Promise<User | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
   async createSift(insertSift: InsertSift): Promise<Sift> {
-    const row = {
-      ...insertSift,
-      createdAt: Date.now(),
-    };
+    const row = { ...insertSift, createdAt: Date.now() };
     return db.insert(sifts).values(row).returning().get();
   }
 
   async getSift(id: string): Promise<Sift | undefined> {
     return db.select().from(sifts).where(eq(sifts.id, id)).get();
+  }
+
+  async listSiftsByUser(userId: number, q?: string): Promise<SiftListItem[]> {
+    const base = db
+      .select({
+        id: sifts.id,
+        createdAt: sifts.createdAt,
+        coreIntent: sifts.coreIntent,
+        nextStep: sifts.nextStep,
+      })
+      .from(sifts);
+
+    const where = q && q.trim()
+      ? and(
+          eq(sifts.userId, userId),
+          or(
+            like(sifts.coreIntent, `%${q}%`),
+            like(sifts.nextStep, `%${q}%`),
+            like(sifts.themes, `%${q}%`),
+            like(sifts.input, `%${q}%`)
+          )
+        )
+      : eq(sifts.userId, userId);
+
+    return base.where(where).orderBy(desc(sifts.createdAt)).all();
+  }
+
+  async deleteSift(id: string, userId: number): Promise<boolean> {
+    const res = db
+      .delete(sifts)
+      .where(and(eq(sifts.id, id), eq(sifts.userId, userId)))
+      .run();
+    return res.changes > 0;
+  }
+
+  async createUser(handle: string, passphraseHash: string): Promise<User> {
+    return db
+      .insert(users)
+      .values({ handle, passphraseHash, createdAt: Date.now() })
+      .returning()
+      .get();
+  }
+
+  async getUserByHandle(handle: string): Promise<User | undefined> {
+    return db.select().from(users).where(eq(users.handle, handle)).get();
+  }
+
+  async getUserById(id: number): Promise<User | undefined> {
+    return db.select().from(users).where(eq(users.id, id)).get();
   }
 }
 
