@@ -4,16 +4,26 @@ import { Composer, Result } from "@/components/sift-ui";
 import { AuthDialog } from "@/components/auth-dialog";
 import { ExampleSheet } from "@/components/example-sheet";
 import { TodayFromSiftCard } from "@/components/today-from-sift-card";
+import { TodayPromptSheet } from "@/components/today-prompt-sheet";
 import { Button } from "@/components/ui/button";
 import { useMe } from "@/lib/auth";
 import { useQuery } from "@tanstack/react-query";
 import { Bookmark } from "lucide-react";
 import type { SiftResult, SiftListItem } from "@shared/schema";
 
+// Hardcoded seed for "Free write from this". Keeps the app voice:
+// reflective, calm, introspective. No prompt gymnastics.
+const FREE_WRITE_SEED = "What feels hardest about starting right now is...";
+
 export default function Home() {
   const [result, setResult] = useState<SiftResult | null>(null);
   const [authOpen, setAuthOpen] = useState(false);
   const [exampleOpen, setExampleOpen] = useState(false);
+  const [todayOpen, setTodayOpen] = useState(false);
+  // Prefill token — bumping this value re-seeds the composer. Using a token
+  // instead of the text itself lets repeated "Free write" taps work even when
+  // the user has edited or cleared the textarea in between.
+  const [composerPrefillToken, setComposerPrefillToken] = useState(0);
   const { data: meData } = useMe();
   const me = meData?.me;
 
@@ -77,9 +87,15 @@ export default function Home() {
               )}
 
               {/* Returning signed-in users: a quiet daily nudge above the composer. */}
-              {isReturning && <TodayFromSiftCard />}
+              {isReturning && (
+                <TodayFromSiftCard onOpen={() => setTodayOpen(true)} />
+              )}
 
-              <Composer onResult={setResult} />
+              <Composer
+                onResult={setResult}
+                initialText={FREE_WRITE_SEED}
+                prefillToken={composerPrefillToken}
+              />
 
               {/* Helper line below composer */}
               <p
@@ -129,6 +145,17 @@ export default function Home() {
       <Footnote />
       <AuthDialog open={authOpen} onOpenChange={setAuthOpen} initialMode="signup" />
       <ExampleSheet open={exampleOpen} onOpenChange={setExampleOpen} />
+      <TodayPromptSheet
+        open={todayOpen}
+        onOpenChange={setTodayOpen}
+        onFreeWrite={() => {
+          // Close the sheet and re-seed the composer. Bumping the token
+          // triggers the composer's prefill effect, which sets the text
+          // and focuses the textarea.
+          setTodayOpen(false);
+          setComposerPrefillToken((n) => n + 1);
+        }}
+      />
     </div>
   );
 }

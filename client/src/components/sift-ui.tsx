@@ -15,6 +15,14 @@ import type { SiftResult } from "@shared/schema";
 
 interface ComposerProps {
   onResult: (r: SiftResult) => void;
+  /**
+   * Optional seed text. When `prefillToken` changes to a new value, the
+   * composer's textarea is re-seeded with `initialText`. Lets callers
+   * prefill the composer imperatively (e.g. "Free write from today's
+   * prompt") even with the same text multiple times.
+   */
+  initialText?: string;
+  prefillToken?: number;
 }
 
 const PLACEHOLDER_PROMPTS = [
@@ -29,13 +37,14 @@ const SIFTING_SUBLINES = [
   "Making sense of this",
 ];
 
-export function Composer({ onResult }: ComposerProps) {
+export function Composer({ onResult, initialText, prefillToken }: ComposerProps) {
   const [input, setInput] = useState("");
   const [recording, setRecording] = useState(false);
   const [loading, setLoading] = useState(false);
   const [interim, setInterim] = useState("");
   const [placeholderIdx, setPlaceholderIdx] = useState(0);
   const [focused, setFocused] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const recRef = useRef<RecognitionHandle | null>(null);
   const voiceSupported = isVoiceSupported();
   const { toast } = useToast();
@@ -44,6 +53,42 @@ export function Composer({ onResult }: ComposerProps) {
   const [siftingIdx, setSiftingIdx] = useState(0);
 
   useEffect(() => () => recRef.current?.stop(), []);
+
+  // Re-seed the composer whenever `prefillToken` changes. Using a token
+  // (instead of keying on the text) lets callers prefill with the same seed
+  // multiple times even if the user has edited or cleared the textarea.
+  // Skip the initial mount — only re-seed on subsequent token changes.
+  const isFirstPrefillRef = useRef(true);
+  useEffect(() => {
+    if (isFirstPrefillRef.current) {
+      isFirstPrefillRef.current = false;
+      return;
+    }
+    if (prefillToken === undefined || !initialText) return;
+    setInput(initialText);
+    modeRef.current = "text";
+    // Focus + place caret at the end so the user can keep typing.
+    // Defer so the state update lands before we touch the DOM.
+    requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (!el) return;
+      // Scroll into view on small screens so the keyboard doesn't hide the
+      // seeded text. "center" is friendlier than "start" on desktop too.
+      try {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+      } catch {
+        // older browsers — ignore.
+      }
+      el.focus();
+      const len = initialText.length;
+      try {
+        el.setSelectionRange(len, len);
+      } catch {
+        // ignore — some browsers may throw on readonly inputs.
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefillToken]);
 
   // Rotate the "Sifting…" subline every 2.2s while loading.
   useEffect(() => {
@@ -150,6 +195,7 @@ export function Composer({ onResult }: ComposerProps) {
         ].join(" ")}
       >
         <Textarea
+          ref={textareaRef}
           data-testid="input-thoughts"
           value={displayText}
           onChange={(e) => {
