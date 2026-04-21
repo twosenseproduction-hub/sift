@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useLogin, useSignup } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 
@@ -16,6 +17,9 @@ export function AuthDialog({ open, onOpenChange, initialMode = "signup" }: Props
   const [mode, setMode] = useState<"signin" | "signup">(initialMode);
   const [handle, setHandle] = useState("");
   const [passphrase, setPassphrase] = useState("");
+  const [contact, setContact] = useState("");
+  const [consentUpdates, setConsentUpdates] = useState(false);
+  const [consentReflections, setConsentReflections] = useState(false);
   const login = useLogin();
   const signup = useSignup();
   const { toast } = useToast();
@@ -24,13 +28,24 @@ export function AuthDialog({ open, onOpenChange, initialMode = "signup" }: Props
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const payload = { handle: handle.trim(), passphrase };
-    const mut = mode === "signin" ? login : signup;
     try {
-      await mut.mutateAsync(payload);
+      if (mode === "signin") {
+        await login.mutateAsync({ handle: handle.trim(), passphrase });
+      } else {
+        await signup.mutateAsync({
+          handle: handle.trim(),
+          passphrase,
+          contact: contact.trim(),
+          consentUpdates,
+          consentReflections,
+        });
+      }
       onOpenChange(false);
       setPassphrase("");
       setHandle("");
+      setContact("");
+      setConsentUpdates(false);
+      setConsentReflections(false);
     } catch (err: any) {
       const msg = err?.message?.replace(/^\d+:\s*/, "") ?? "Something went wrong.";
       let parsed = msg;
@@ -51,7 +66,7 @@ export function AuthDialog({ open, onOpenChange, initialMode = "signup" }: Props
           </DialogTitle>
           <DialogDescription className="text-muted-foreground">
             {mode === "signup"
-              ? "Pick a handle and a passphrase. No email, no verification. Just a quiet place for your sifts."
+              ? "Pick a handle and a passphrase. A quiet place for your sifts."
               : "Enter your handle and passphrase."}
           </DialogDescription>
         </DialogHeader>
@@ -96,6 +111,57 @@ export function AuthDialog({ open, onOpenChange, initialMode = "signup" }: Props
               </p>
             )}
           </div>
+
+          {mode === "signup" && (
+            <>
+              <div className="space-y-1.5">
+                <Label htmlFor="contact" className="text-xs uppercase tracking-widest text-muted-foreground">Email or phone</Label>
+                <Input
+                  id="contact"
+                  data-testid="input-contact"
+                  value={contact}
+                  onChange={(e) => setContact(e.target.value)}
+                  autoComplete="email"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  placeholder="you@example.com or +15551234567"
+                  required
+                  disabled={loading}
+                />
+                <p className="text-xs text-muted-foreground pt-1">
+                  Used only if you opt in below. Never shared.
+                </p>
+              </div>
+
+              <div className="space-y-3 pt-1">
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <Checkbox
+                    checked={consentUpdates}
+                    onCheckedChange={(v) => setConsentUpdates(v === true)}
+                    disabled={loading}
+                    data-testid="checkbox-consent-updates"
+                    className="mt-0.5"
+                  />
+                  <span className="text-sm leading-snug text-foreground/90">
+                    Send me occasional product updates.
+                  </span>
+                </label>
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <Checkbox
+                    checked={consentReflections}
+                    onCheckedChange={(v) => setConsentReflections(v === true)}
+                    disabled={loading}
+                    data-testid="checkbox-consent-reflections"
+                    className="mt-0.5"
+                  />
+                  <span className="text-sm leading-snug text-foreground/90">
+                    Send me gentle reflections now and then.
+                  </span>
+                </label>
+              </div>
+            </>
+          )}
 
           <div className="pt-2 flex items-center justify-between gap-3">
             <button

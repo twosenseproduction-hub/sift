@@ -3,10 +3,19 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
 // ---- Users ----
+// Email and phone are captured quietly at signup for future reminders /
+// reflections / product updates. At least one is required; both are stored
+// verbatim (no verification flow in the prototype). Consent is two separate
+// opt-ins — both default false — so we can respect whichever channel the user
+// actually opted into.
 export const users = sqliteTable("users", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   handle: text("handle").notNull().unique(),
   passphraseHash: text("passphrase_hash").notNull(),
+  email: text("email"),
+  phone: text("phone"),
+  consentUpdates: integer("consent_updates").notNull().default(0), // 0|1
+  consentReflections: integer("consent_reflections").notNull().default(0), // 0|1
   createdAt: integer("created_at").notNull(),
 });
 
@@ -113,21 +122,101 @@ export type CheckinResult = CheckinAnalysis & {
 };
 
 // Auth
-export const authSchema = z.object({
-  handle: z
-    .string()
-    .trim()
-    .min(2, "Handle must be at least 2 characters")
-    .max(24, "Handle must be 24 characters or fewer")
-    .regex(/^[a-z0-9_.-]+$/i, "Letters, numbers, dot, dash, underscore only"),
-  passphrase: z
-    .string()
-    .min(6, "Passphrase must be at least 6 characters")
-    .max(200, "Passphrase too long"),
-});
-export type AuthRequest = z.infer<typeof authSchema>;
+// Email or phone validation — either is acceptable.
+// Email: permissive RFC-ish check (we don't verify deliverability).
+// Phone: digits + optional leading "+", 7–15 digits (E.164-ish). Spaces,
+// parens, and dashes are stripped before validation.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const PHONE_RE = /^\+?[0-9]{7,15}$/;
 
-export type Me = { id: number; handle: string } | null;
+function normalizePhone(s: string): string {
+  return s.replace(/[\s().\-]/g, "");
+}
+
+/** "email" | "phone" | null */
+export function classifyContact(raw: string): "email" | "phone" | null {
+  const v = raw.trim();
+  if (!v) return null;
+  if (EMAIL_RE.test(v)) return "email";
+  const normalized = normalizePhone(v);
+  if (PHONE_RE.test(normalized)) return "phone";
+  return null;
+}
+
+export const handleSchema = z
+  .string()
+  .trim()
+  .min(2, "Handle must be at least 2 characters")
+  .max(24, "Handle must be 24 characters or fewer")
+  .regex(/^[a-z0-9_.-]+$/i, "Letters, numbers, dot, dash, underscore only");
+
+export const passphraseSchema = z
+  .string()
+  .min(6, "Passphrase must be at least 6 characters")
+  .max(200, "Passphrase too long");
+
+// Login keeps the minimal shape — handle + passphrase only.
+export const loginSchema = z.object({
+  handle: handleSchema,
+  passphrase: passphraseSchema,
+});
+export type LoginRequest = z.infer<typeof loginSchema>;
+
+// Signup requires a contact (email or phone) and two consent booleans.
+export const signupSchema = z
+  .object({
+    handle: handleSchema,
+    passphrase: passphraseSchema,
+    contact: z
+      .string()
+      .trim()
+      .min(1, "Enter your email or phone so we can reach you later"),
+    consentUpdates: z.boolean().optional().default(false),
+    consentReflections: z.boolean().optional().default(false),
+  })
+  .superRefine((data, ctx) => {
+    if (classifyContact(data.contact) === null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Enter a valid email or phone number",
+        path: ["contact"],
+      });
+    }
+  });
+export type SignupRequest = z.infer<typeof signupSchema>;
+
+// Existing users (created before this field existed) get a one-time skippable
+// prompt. Same validation as signup but without handle/passphrase.
+export const contactUpdateSchema = z
+  .object({
+    contact: z.string().trim().min(1, "Enter your email or phone"),
+    consentUpdates: z.boolean().optional().default(false),
+    consentReflections: z.boolean().optional().default(false),
+  })
+  .superRefine((data, ctx) => {
+    if (classifyContact(data.contact) === null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Enter a valid email or phone number",
+        path: ["contact"],
+      });
+    }
+  });
+export type ContactUpdateRequest = z.infer<typeof contactUpdateSchema>;
+
+// Legacy alias — some callers may still import authSchema. Points at login.
+export const authSchema = loginSchema;
+export type AuthRequest = LoginRequest;
+
+// Me payload. `contactMissing` tells the client whether to show the one-time
+// prompt to existing users who signed up before we captured contact info.
+export type Me =
+  | {
+      id: number;
+      handle: string;
+      contactMissing: boolean;
+    }
+  | null;
 
 // History list item (compact)
 export type SiftListItem = {

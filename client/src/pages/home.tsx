@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Header, Footnote } from "@/components/brand";
 import { Composer, Result } from "@/components/sift-ui";
 import { AuthDialog } from "@/components/auth-dialog";
+import { ContactPromptDialog } from "@/components/contact-prompt-dialog";
 import { ExampleSheet } from "@/components/example-sheet";
 import { TodayFromSiftCard } from "@/components/today-from-sift-card";
 import {
@@ -47,8 +48,32 @@ export default function Home() {
   const [composerPrefillToken, setComposerPrefillToken] = useState(0);
   // Separate token for the continuation composer used in the expanding flow.
   const [expandPrefillToken, setExpandPrefillToken] = useState(0);
+  const [contactPromptOpen, setContactPromptOpen] = useState(false);
   const { data: meData } = useMe();
   const me = meData?.me;
+
+  // One-time prompt for existing users who signed up before we collected
+  // a contact. Dismissal is persisted so we only ask once.
+  useEffect(() => {
+    if (!me) return;
+    if (!me.contactMissing) return;
+    let dismissed = false;
+    try {
+      dismissed = typeof window !== "undefined"
+        && window.localStorage?.getItem("sift.contactPromptDismissed") === "1";
+    } catch {
+      dismissed = false;
+    }
+    if (dismissed) return;
+    const t = setTimeout(() => setContactPromptOpen(true), 600);
+    return () => clearTimeout(t);
+  }, [me?.id, me?.contactMissing]);
+
+  const dismissContactPrompt = () => {
+    try {
+      window.localStorage?.setItem("sift.contactPromptDismissed", "1");
+    } catch {}
+  };
 
   // For signed-in users, check if they have any prior sifts.
   // If they do, hide onboarding affordances (See example, hero copy).
@@ -215,6 +240,11 @@ export default function Home() {
 
       <Footnote />
       <AuthDialog open={authOpen} onOpenChange={setAuthOpen} initialMode="signup" />
+      <ContactPromptDialog
+        open={contactPromptOpen}
+        onOpenChange={setContactPromptOpen}
+        onDismiss={dismissContactPrompt}
+      />
       <ExampleSheet open={exampleOpen} onOpenChange={setExampleOpen} />
       <TodayPromptSheet
         open={todayOpen}

@@ -7,7 +7,10 @@ import { storage, rawDb } from "./storage";
 import {
   analyzeRequestSchema,
   analysisSchema,
-  authSchema,
+  loginSchema,
+  signupSchema,
+  contactUpdateSchema,
+  classifyContact,
   checkinRequestSchema,
   checkinAnalysisSchema,
   type Analysis,
@@ -15,6 +18,7 @@ import {
   type CheckinResult,
   type SiftResult,
   type Me,
+  type User,
   type Checkin,
 } from "@shared/schema";
 
@@ -250,35 +254,72 @@ export async function registerRoutes(
   app.use(express.json({ limit: "1mb" }));
 
   // --- Auth ---
+
+  // Normalize a raw contact string into either an email (lowercased) or a
+  // phone (digits + optional leading +, non-digits stripped).
+  function normalizeContact(
+    raw: string,
+  ): { email: string | null; phone: string | null } {
+    const kind = classifyContact(raw);
+    if (kind === "email") {
+      return { email: raw.trim().toLowerCase(), phone: null };
+    }
+    if (kind === "phone") {
+      return { email: null, phone: raw.replace(/[\s().\-]/g, "") };
+    }
+    return { email: null, phone: null };
+  }
+
+  // Serialize a User row into the public `Me` shape.
+  function toMe(user: User): Me {
+    return {
+      id: user.id,
+      handle: user.handle,
+      contactMissing: !user.email && !user.phone,
+    };
+  }
+
   app.post("/api/auth/signup", async (req, res) => {
-    const parsed = authSchema.safeParse(req.body);
+    const parsed = signupSchema.safeParse(req.body);
     if (!parsed.success) {
-      return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+      return res
+        .status(400)
+        .json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
     }
     const handle = parsed.data.handle.toLowerCase();
     const existing = await storage.getUserByHandle(handle);
     if (existing) {
       return res.status(409).json({ error: "That handle is taken." });
     }
-    const user = await storage.createUser(handle, hashPassphrase(parsed.data.passphrase));
+    const { email, phone } = normalizeContact(parsed.data.contact);
+    const user = await storage.createUser({
+      handle,
+      passphraseHash: hashPassphrase(parsed.data.passphrase),
+      email,
+      phone,
+      consentUpdates: parsed.data.consentUpdates,
+      consentReflections: parsed.data.consentReflections,
+    });
     const token = issueToken(user.id);
-    const me: Me = { id: user.id, handle: user.handle };
-    res.json({ me, token });
+    res.json({ me: toMe(user), token });
   });
 
   app.post("/api/auth/login", async (req, res) => {
-    const parsed = authSchema.safeParse(req.body);
+    const parsed = loginSchema.safeParse(req.body);
     if (!parsed.success) {
-      return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+      return res
+        .status(400)
+        .json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
     }
     const handle = parsed.data.handle.toLowerCase();
     const user = await storage.getUserByHandle(handle);
     if (!user || !verifyPassphrase(parsed.data.passphrase, user.passphraseHash)) {
-      return res.status(401).json({ error: "Handle or passphrase doesn't match." });
+      return res
+        .status(401)
+        .json({ error: "Handle or passphrase doesn't match." });
     }
     const token = issueToken(user.id);
-    const me: Me = { id: user.id, handle: user.handle };
-    res.json({ me, token });
+    res.json({ me: toMe(user), token });
   });
 
   app.post("/api/auth/logout", (req, res) => {
@@ -292,8 +333,32 @@ export async function registerRoutes(
     if (!userId) return res.json({ me: null });
     const user = await storage.getUserById(userId);
     if (!user) return res.json({ me: null });
-    const me: Me = { id: user.id, handle: user.handle };
-    res.json({ me });
+    res.json({ me: toMe(user) });
+  });
+
+  // Existing users (created before contact capture) can add their email/phone
+  // and consent preferences via this endpoint. Also used if a signed-in user
+  // wants to update their contact later.
+  app.patch("/api/auth/contact", requireAuth, async (req, res) => {
+    const parsed = contactUpdateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res
+        .status(400)
+        .json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+    }
+    const userId = (req as any).userId as number;
+    const { email, phone } = normalizeContact(parsed.data.contact);
+    // Only set whichever channel the user supplied; leave the other one alone.
+    const updated = await storage.updateUserContact(userId, {
+      ...(email !== null ? { email } : {}),
+      ...(phone !== null ? { phone } : {}),
+      consentUpdates: parsed.data.consentUpdates,
+      consentReflections: parsed.data.consentReflections,
+    });
+    if (!updated) {
+      return res.status(404).json({ error: "Account not found" });
+    }
+    res.json({ me: toMe(updated) });
   });
 
   // --- Sifts ---

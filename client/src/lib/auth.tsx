@@ -17,7 +17,13 @@ export function useMe() {
 
 export function useSignup() {
   return useMutation({
-    mutationFn: async (input: { handle: string; passphrase: string }) => {
+    mutationFn: async (input: {
+      handle: string;
+      passphrase: string;
+      contact: string;
+      consentUpdates?: boolean;
+      consentReflections?: boolean;
+    }) => {
       const res = await apiRequest("POST", "/api/auth/signup", input);
       return (await res.json()) as MeResponse;
     },
@@ -25,6 +31,22 @@ export function useSignup() {
       if (data.token) setAuthToken(data.token);
       queryClient.setQueryData(["/api/auth/me"], { me: data.me });
       queryClient.invalidateQueries({ queryKey: ["/api/sifts"] });
+    },
+  });
+}
+
+export function useUpdateContact() {
+  return useMutation({
+    mutationFn: async (input: {
+      contact: string;
+      consentUpdates?: boolean;
+      consentReflections?: boolean;
+    }) => {
+      const res = await apiRequest("PATCH", "/api/auth/contact", input);
+      return (await res.json()) as MeResponse;
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(["/api/auth/me"], { me: data.me });
     },
   });
 }
