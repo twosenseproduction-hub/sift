@@ -44,6 +44,11 @@ sqlite.exec(`
     response TEXT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_checkins_sift ON checkins(sift_id, created_at ASC);
+  CREATE TABLE IF NOT EXISTS sessions (
+    token TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+  );
 `);
 
 // Add user_id column to sifts if it doesn't exist (safe migration for prototype)
@@ -60,6 +65,10 @@ sqlite.exec(
 );
 
 export const db = drizzle(sqlite);
+
+// Expose the raw sqlite handle for non-ORM use cases (session lookups on the
+// hot auth path, where a prepared statement is cheaper than Drizzle overhead).
+export const rawDb = sqlite;
 
 export interface IStorage {
   // Sifts

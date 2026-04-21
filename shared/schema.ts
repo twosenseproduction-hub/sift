@@ -12,6 +12,15 @@ export const users = sqliteTable("users", {
 
 export type User = typeof users.$inferSelect;
 
+// ---- Sessions ----
+// Bearer tokens persisted to SQLite so sessions survive server restarts/redeploys.
+export const sessions = sqliteTable("sessions", {
+  token: text("token").primaryKey(),
+  userId: integer("user_id").notNull(),
+  createdAt: integer("created_at").notNull(),
+});
+export type Session = typeof sessions.$inferSelect;
+
 // ---- Sifts ----
 // A Sift = one "run" of messy thoughts → themes + next step
 export const sifts = sqliteTable("sifts", {

@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import express from "express";
 import crypto from "crypto";
 import Anthropic from "@anthropic-ai/sdk";
-import { storage } from "./storage";
+import { storage, rawDb } from "./storage";
 import {
   analyzeRequestSchema,
   analysisSchema,
@@ -114,14 +114,21 @@ function verifyPassphrase(passphrase: string, stored: string): boolean {
 }
 
 // --- Bearer-token auth (the deploy proxy strips Set-Cookie, so we can't use cookies) ---
-// Tokens map to userIds in-memory. Tokens are held in React state client-side
-// and sent as `Authorization: Bearer <token>`. On server restart, tokens are invalidated
-// and the user re-signs in. This is acceptable for a prototype.
-const tokens = new Map<string, { userId: number; createdAt: number }>();
+// Tokens map to userIds in SQLite so sessions survive server restarts/redeploys.
+// Client keeps the token in localStorage and sends it as `Authorization: Bearer <token>`.
+const insertSessionStmt = rawDb.prepare(
+  `INSERT INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)`,
+);
+const readSessionStmt = rawDb.prepare(
+  `SELECT user_id AS userId FROM sessions WHERE token = ?`,
+);
+const deleteSessionStmt = rawDb.prepare(
+  `DELETE FROM sessions WHERE token = ?`,
+);
 
 function issueToken(userId: number): string {
   const token = crypto.randomBytes(32).toString("hex");
-  tokens.set(token, { userId, createdAt: Date.now() });
+  insertSessionStmt.run(token, userId, Date.now());
   return token;
 }
 
@@ -129,8 +136,12 @@ function readToken(req: Request): number | null {
   const h = req.headers.authorization;
   if (!h || !h.startsWith("Bearer ")) return null;
   const token = h.slice(7).trim();
-  const entry = tokens.get(token);
-  return entry ? entry.userId : null;
+  const row = readSessionStmt.get(token) as { userId: number } | undefined;
+  return row ? row.userId : null;
+}
+
+function revokeToken(token: string): void {
+  deleteSessionStmt.run(token);
 }
 
 async function runAnalysis(input: string): Promise<Analysis> {
@@ -272,7 +283,7 @@ export async function registerRoutes(
 
   app.post("/api/auth/logout", (req, res) => {
     const h = req.headers.authorization;
-    if (h?.startsWith("Bearer ")) tokens.delete(h.slice(7).trim());
+    if (h?.startsWith("Bearer ")) revokeToken(h.slice(7).trim());
     res.json({ ok: true });
   });
 
