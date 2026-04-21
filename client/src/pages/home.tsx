@@ -4,7 +4,12 @@ import { Composer, Result } from "@/components/sift-ui";
 import { AuthDialog } from "@/components/auth-dialog";
 import { ExampleSheet } from "@/components/example-sheet";
 import { TodayFromSiftCard } from "@/components/today-from-sift-card";
-import { TodayPromptSheet } from "@/components/today-prompt-sheet";
+import {
+  TodayPromptSheet,
+  TODAY_PROMPT_TITLE,
+  TODAY_PROMPT_LINE,
+} from "@/components/today-prompt-sheet";
+import { SharePromptDialog } from "@/components/share-prompt-dialog";
 import { Button } from "@/components/ui/button";
 import { useMe } from "@/lib/auth";
 import { useQuery } from "@tanstack/react-query";
@@ -20,6 +25,7 @@ export default function Home() {
   const [authOpen, setAuthOpen] = useState(false);
   const [exampleOpen, setExampleOpen] = useState(false);
   const [todayOpen, setTodayOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   // Prefill token — bumping this value re-seeds the composer. Using a token
   // instead of the text itself lets repeated "Free write" taps work even when
   // the user has edited or cleared the textarea in between.
@@ -148,6 +154,13 @@ export default function Home() {
       <TodayPromptSheet
         open={todayOpen}
         onOpenChange={setTodayOpen}
+        onShare={() => {
+          // Close the bottom sheet first, then open the share dialog on the
+          // next tick. Sequencing the two overlays avoids a focus-trap race
+          // between Radix Sheet and Dialog.
+          setTodayOpen(false);
+          setTimeout(() => setShareOpen(true), 120);
+        }}
         onFreeWrite={() => {
           // Close the sheet and re-seed the composer. Bumping the token
           // triggers the composer's prefill effect, which sets the text
@@ -155,6 +168,12 @@ export default function Home() {
           setTodayOpen(false);
           setComposerPrefillToken((n) => n + 1);
         }}
+      />
+      <SharePromptDialog
+        open={shareOpen}
+        onOpenChange={setShareOpen}
+        title={TODAY_PROMPT_TITLE}
+        line={TODAY_PROMPT_LINE}
       />
     </div>
   );

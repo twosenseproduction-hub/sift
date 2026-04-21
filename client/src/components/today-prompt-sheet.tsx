@@ -5,12 +5,16 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
-import { useToast } from "@/hooks/use-toast";
 import { Share2, PenLine } from "lucide-react";
 
 interface TodayPromptSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /**
+   * Called when the user taps "Share this". The caller should close the sheet
+   * and open the standalone share card experience.
+   */
+  onShare: () => void;
   /**
    * Called when the user taps "Free write from this". The caller should close
    * the sheet, prefill the composer with the seed text, and focus/scroll to it.
@@ -25,52 +29,16 @@ const TODAY_LINE = "You do not need a full plan. You need one visible start.";
  * TodayPromptSheet
  *
  * A small bottom sheet that surfaces today's prompt with three quiet options:
- * share it, free-write from it, or dismiss. Keeps the main page calm — all
- * the action happens inside the sheet so the composer stays undisturbed.
+ * share it (opens a dedicated share card dialog), free-write from it, or
+ * dismiss. Delegates both share and free-write to the parent so the parent
+ * can coordinate transitions between surfaces.
  */
 export function TodayPromptSheet({
   open,
   onOpenChange,
+  onShare,
   onFreeWrite,
 }: TodayPromptSheetProps) {
-  const { toast } = useToast();
-
-  const handleShare = async () => {
-    const shareUrl =
-      typeof window !== "undefined" ? window.location.href : "";
-    const shareText = `${TODAY_TITLE} — ${TODAY_LINE}`;
-
-    // Prefer native share sheet where available.
-    if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
-      try {
-        await navigator.share({
-          title: TODAY_TITLE,
-          text: shareText,
-          url: shareUrl,
-        });
-        return;
-      } catch (err: any) {
-        // User cancelled — do nothing. Any other error falls through to clipboard.
-        if (err?.name === "AbortError") return;
-      }
-    }
-
-    // Fallback: copy to clipboard.
-    const clipboardText = shareUrl ? `${shareText}\n${shareUrl}` : shareText;
-    try {
-      if (navigator?.clipboard?.writeText) {
-        await navigator.clipboard.writeText(clipboardText);
-        toast({ title: "Copied to clipboard" });
-        return;
-      }
-    } catch {
-      // fall through
-    }
-
-    // Final placeholder: surface the text so the user can copy manually.
-    toast({ title: "Share this", description: clipboardText });
-  };
-
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
@@ -102,7 +70,7 @@ export function TodayPromptSheet({
         <div className="mt-8 flex flex-col gap-3">
           <Button
             type="button"
-            onClick={handleShare}
+            onClick={onShare}
             data-testid="button-today-share"
             variant="outline"
             className="w-full justify-start gap-3 h-11"
@@ -136,3 +104,7 @@ export function TodayPromptSheet({
     </Sheet>
   );
 }
+
+// Exported so the share card surface uses identical copy.
+export const TODAY_PROMPT_TITLE = TODAY_TITLE;
+export const TODAY_PROMPT_LINE = TODAY_LINE;
