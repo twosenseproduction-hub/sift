@@ -361,6 +361,117 @@ export async function registerRoutes(
     res.json({ me: toMe(updated) });
   });
 
+  // --- Admin ---
+
+  // Allowlist of handles who can view stats. Configure via the ADMIN_HANDLES
+  // env var as a comma-separated list (e.g. "twosense,ale"). If unset,
+  // defaults to "twosense,ale" — the handles we know belong to the operator —
+  // so access works on Fly before the secret is wired.
+  const adminHandles = new Set(
+    (process.env.ADMIN_HANDLES ?? "twosense,ale")
+      .split(",")
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean),
+  );
+
+  async function requireAdmin(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
+    const userId = readToken(req);
+    if (!userId) return res.status(401).json({ error: "Not signed in" });
+    const user = await storage.getUserById(userId);
+    if (!user || !adminHandles.has(user.handle.toLowerCase())) {
+      return res.status(403).json({ error: "Not authorized" });
+    }
+    (req as any).userId = userId;
+    next();
+  }
+
+  // Cheap lightweight check so the client can decide whether to render the
+  // admin link / page at all without leaking the allowlist itself.
+  app.get("/api/admin/access", async (req, res) => {
+    const userId = readToken(req);
+    if (!userId) return res.json({ allowed: false });
+    const user = await storage.getUserById(userId);
+    res.json({ allowed: !!user && adminHandles.has(user.handle.toLowerCase()) });
+  });
+
+  app.get("/api/admin/stats", requireAdmin, async (_req, res) => {
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    // Build a 7-day window ending today (UTC midnight boundaries). We use
+    // epoch ms throughout because that's what all three tables store.
+    const now = new Date();
+    const todayUtc = Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate(),
+    );
+    // Seven buckets, day[0] = six days ago, day[6] = today.
+    const buckets: { start: number; end: number; label: string }[] = [];
+    for (let i = 6; i >= 0; i--) {
+      const start = todayUtc - i * DAY_MS;
+      const end = start + DAY_MS;
+      const d = new Date(start);
+      const label = `${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(
+        d.getUTCDate(),
+      ).padStart(2, "0")}`;
+      buckets.push({ start, end, label });
+    }
+
+    // Totals (all-time).
+    const totalUsers = (
+      rawDb.prepare(`SELECT COUNT(*) AS n FROM users`).get() as { n: number }
+    ).n;
+    const totalSifts = (
+      rawDb.prepare(`SELECT COUNT(*) AS n FROM sifts`).get() as { n: number }
+    ).n;
+    const totalCheckins = (
+      rawDb.prepare(`SELECT COUNT(*) AS n FROM checkins`).get() as { n: number }
+    ).n;
+    const didItCheckins = (
+      rawDb
+        .prepare(`SELECT COUNT(*) AS n FROM checkins WHERE status = 'did_it'`)
+        .get() as { n: number }
+    ).n;
+    const checkinCompletionRate = totalCheckins === 0
+      ? 0
+      : didItCheckins / totalCheckins;
+
+    // Per-day series. One prepared statement per table, three totals per day.
+    const countInRange = (table: "users" | "sifts" | "checkins") =>
+      rawDb.prepare(
+        `SELECT COUNT(*) AS n FROM ${table} WHERE created_at >= ? AND created_at < ?`,
+      );
+    const didItInRange = rawDb.prepare(
+      `SELECT COUNT(*) AS n FROM checkins WHERE status = 'did_it' AND created_at >= ? AND created_at < ?`,
+    );
+    const usersStmt = countInRange("users");
+    const siftsStmt = countInRange("sifts");
+    const checkinsStmt = countInRange("checkins");
+
+    const series = buckets.map((b) => {
+      const signups = (usersStmt.get(b.start, b.end) as { n: number }).n;
+      const sifts = (siftsStmt.get(b.start, b.end) as { n: number }).n;
+      const checkins = (checkinsStmt.get(b.start, b.end) as { n: number }).n;
+      const didIt = (didItInRange.get(b.start, b.end) as { n: number }).n;
+      const rate = checkins === 0 ? null : didIt / checkins;
+      return { label: b.label, signups, sifts, checkins, didIt, rate };
+    });
+
+    res.json({
+      totals: {
+        users: totalUsers,
+        sifts: totalSifts,
+        checkins: totalCheckins,
+        didItCheckins,
+        checkinCompletionRate,
+      },
+      series,
+    });
+  });
+
   // --- Sifts ---
 
   app.post("/api/sift", async (req, res) => {

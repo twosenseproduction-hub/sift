@@ -8,6 +8,7 @@ import NotFound from "@/pages/not-found";
 import Home from "@/pages/home";
 import Shared from "@/pages/shared";
 import HistoryPage from "@/pages/history";
+import AdminPage from "@/pages/admin";
 import { ThemeProvider } from "@/lib/theme";
 
 function AppRouter() {
@@ -15,6 +16,7 @@ function AppRouter() {
     <Switch>
       <Route path="/" component={Home} />
       <Route path="/history" component={HistoryPage} />
+      <Route path="/admin" component={AdminPage} />
       <Route path="/s/:id" component={Shared} />
       <Route component={NotFound} />
     </Switch>
