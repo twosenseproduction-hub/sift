@@ -20,7 +20,22 @@ import type { SiftResult, SiftListItem } from "@shared/schema";
 // reflective, calm, introspective. No prompt gymnastics.
 const FREE_WRITE_SEED = "What feels hardest about starting right now is...";
 
+// Seed for the continuation composer when a user chooses "Expand on this now".
+// Short, inviting, and in the app voice — picks up the thread rather than
+// restarting it.
+const EXPAND_SEED = "Staying with this, what I want to say next is...";
+
+// Explicit flow states for the home page. One variable, no scattered booleans.
+//   idle      — composer
+//   sifting   — request in flight (Composer owns its own loading UI, so this
+//               state is informational; we still track it for clarity)
+//   result    — show result + decision row (expand / come back later)
+//   expanding — result stays visible above a continuation composer
+//   saved     — user chose "come back to this later" (navigation handles it)
+type Flow = "idle" | "sifting" | "result" | "expanding" | "saved";
+
 export default function Home() {
+  const [flow, setFlow] = useState<Flow>("idle");
   const [result, setResult] = useState<SiftResult | null>(null);
   const [authOpen, setAuthOpen] = useState(false);
   const [exampleOpen, setExampleOpen] = useState(false);
@@ -30,6 +45,8 @@ export default function Home() {
   // instead of the text itself lets repeated "Free write" taps work even when
   // the user has edited or cleared the textarea in between.
   const [composerPrefillToken, setComposerPrefillToken] = useState(0);
+  // Separate token for the continuation composer used in the expanding flow.
+  const [expandPrefillToken, setExpandPrefillToken] = useState(0);
   const { data: meData } = useMe();
   const me = meData?.me;
 
@@ -48,7 +65,7 @@ export default function Home() {
 
       <main className="flex-1">
         <div className="mx-auto max-w-3xl px-6 md:px-8 pb-16">
-          {!result ? (
+          {flow === "idle" || flow === "sifting" ? (
             <div className="pt-10 md:pt-16">
               {/* Hero — first-time users get the full reflective hero.
                   Returning users get a minimal prompt label only. */}
@@ -98,7 +115,10 @@ export default function Home() {
               )}
 
               <Composer
-                onResult={setResult}
+                onResult={(r) => {
+                  setResult(r);
+                  setFlow("result");
+                }}
                 initialText={FREE_WRITE_SEED}
                 prefillToken={composerPrefillToken}
               />
@@ -125,14 +145,59 @@ export default function Home() {
                 </div>
               )}
             </div>
-          ) : (
+          ) : flow === "expanding" && result ? (
+            <div className="pt-8 md:pt-12">
+              {/* Keep the current sift visible — continuing the thread, not
+                  starting over. Action row is hidden (readOnly) so the only
+                  action below is the continuation composer. */}
+              <Result result={result} readOnly />
+              <div className="mt-10 md:mt-12 border-t border-border/60 pt-8 md:pt-10">
+                <p
+                  className="text-[11px] tracking-[0.25em] uppercase text-primary/80 mb-3 font-medium"
+                  data-testid="text-expand-eyebrow"
+                >
+                  Keep going
+                </p>
+                <Composer
+                  onResult={(r) => {
+                    // Continuation becomes the new focal sift. Old result is
+                    // still saved server-side; this keeps the UI simple.
+                    setResult(r);
+                    setFlow("result");
+                  }}
+                  initialText={EXPAND_SEED}
+                  prefillToken={expandPrefillToken}
+                />
+                <div className="mt-4">
+                  <button
+                    type="button"
+                    onClick={() => setFlow("result")}
+                    data-testid="link-back-to-result"
+                    className="text-sm text-muted-foreground hover:text-foreground underline underline-offset-4 decoration-border hover:decoration-foreground transition-colors"
+                  >
+                    Back to result
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : result ? (
             <div className="pt-8 md:pt-12">
               {!me && <SaveThreadBanner onOpen={() => setAuthOpen(true)} />}
               <Result
                 result={result}
-                onReset={() => setResult(null)}
+                onReset={() => {
+                  setResult(null);
+                  setFlow("idle");
+                }}
                 showFollowup
+                onExpand={() => {
+                  // Bump the continuation composer's prefill token so it
+                  // re-seeds every time the user enters the expanding flow.
+                  setExpandPrefillToken((n) => n + 1);
+                  setFlow("expanding");
+                }}
                 onCheckInLater={() => {
+                  setFlow("saved");
                   if (me) {
                     // Signed in: jump to this sift's page where they can check in.
                     window.location.hash = `/s/${result.id}`;
@@ -144,7 +209,7 @@ export default function Home() {
                 onSave={!me ? () => setAuthOpen(true) : undefined}
               />
             </div>
-          )}
+          ) : null}
         </div>
       </main>
 

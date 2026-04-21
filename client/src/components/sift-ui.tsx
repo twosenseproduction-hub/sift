@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Mic, MicOff, Send, Copy, Link2, RotateCcw, Check, Sparkles, Clock } from "lucide-react";
+import { Mic, MicOff, Send, Copy, Link2, RotateCcw, Check, Sparkles, Clock, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
@@ -38,7 +38,13 @@ const SIFTING_SUBLINES = [
 ];
 
 export function Composer({ onResult, initialText, prefillToken }: ComposerProps) {
-  const [input, setInput] = useState("");
+  // If the caller mounts this composer already holding a non-zero prefillToken
+  // (e.g. the continuation composer in the expanding flow, which bumps the
+  // token before mount), seed the input on mount. The main composer mounts
+  // with token=0 and stays empty so placeholder rotation still works.
+  const [input, setInput] = useState(() =>
+    prefillToken && initialText ? initialText : "",
+  );
   const [recording, setRecording] = useState(false);
   const [loading, setLoading] = useState(false);
   const [interim, setInterim] = useState("");
@@ -318,15 +324,16 @@ interface ResultProps {
   onReset?: () => void;
   readOnly?: boolean;
   /**
-   * When provided, the Result renders the post-response follow-up row:
-   *   "If this helped, save it or check in later."
-   * with a primary "Check in later" action + secondary "Save this" / "Try again" links.
+   * When provided, the Result renders the post-response decision row:
+   *   "Expand on this now"  |  "Come back to this later"
    * If omitted, the original action row (Share / Copy / Sift again) is rendered instead.
    */
   showFollowup?: boolean;
-  /** Called when primary "Check in later" is pressed. Usually navigates to /s/:id. */
+  /** Primary "Expand on this now" action. Switches the page into the expanding flow. */
+  onExpand?: () => void;
+  /** Primary "Come back to this later" action. Navigates to /s/:id or opens auth. */
   onCheckInLater?: () => void;
-  /** Called when secondary "Save this" is pressed. Usually opens auth dialog. Omit to hide link. */
+  /** Secondary "Save this" link. Usually opens auth dialog. Omit to hide. */
   onSave?: () => void;
 }
 
@@ -335,6 +342,7 @@ export function Result({
   onReset,
   readOnly,
   showFollowup,
+  onExpand,
   onCheckInLater,
   onSave,
 }: ResultProps) {
@@ -455,20 +463,34 @@ export function Result({
               className="text-sm text-muted-foreground mb-4"
               data-testid="text-followup-microcopy"
             >
-              If this helped, save it or check in later.
+              Where do you want to take this?
             </p>
-            <div className="flex flex-wrap items-center gap-4">
+            <div className="flex flex-wrap items-center gap-3">
+              {onExpand && (
+                <Button
+                  type="button"
+                  onClick={onExpand}
+                  data-testid="button-expand-now"
+                  className="gap-2"
+                >
+                  <ArrowRight className="w-4 h-4" />
+                  Expand on this now
+                </Button>
+              )}
               {onCheckInLater && (
                 <Button
                   type="button"
+                  variant="outline"
                   onClick={onCheckInLater}
                   data-testid="button-checkin-later"
                   className="gap-2"
                 >
                   <Clock className="w-4 h-4" />
-                  Check in later
+                  Come back to this later
                 </Button>
               )}
+            </div>
+            <div className="mt-4 flex flex-wrap items-center gap-4">
               {onSave && (
                 <button
                   type="button"
