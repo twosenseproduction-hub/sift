@@ -26,6 +26,22 @@ interface AdminStats {
   series: AdminSeriesPoint[];
 }
 
+interface AdminUserRow {
+  id: number;
+  handle: string;
+  email: string | null;
+  phone: string | null;
+  consentUpdates: boolean;
+  consentReflections: boolean;
+  createdAt: number;
+  siftCount: number;
+  lastSiftAt: number | null;
+}
+
+interface AdminUsersPayload {
+  users: AdminUserRow[];
+}
+
 // --- Small inline SVG sparkline. No chart library; stays on-brand. ---
 // values: 7 points, one per day. Renders a thin polyline inside a fixed viewBox.
 // null values (e.g. days with no data for a rate) are skipped in the path so
@@ -182,6 +198,18 @@ export default function AdminPage() {
     refetchOnWindowFocus: false,
   });
 
+  // Only fire the users query once stats succeeded — if stats 403’d, users
+  // will too, and rendering the same error once is cleaner than twice.
+  const { data: usersData, isLoading: usersLoading } = useQuery<AdminUsersPayload>({
+    queryKey: ["/api/admin/users"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/admin/users");
+      return res.json();
+    },
+    enabled: !!me && !!stats,
+    refetchOnWindowFocus: false,
+  });
+
   const rateSeries = useMemo<Array<number | null>>(
     () => stats?.series.map((p) => p.rate) ?? [],
     [stats],
@@ -295,11 +323,159 @@ export default function AdminPage() {
               <p className="text-xs text-muted-foreground mt-10">
                 Last seven days, UTC. Refresh to update.
               </p>
+
+              <UsersTable users={usersData?.users} loading={usersLoading} />
             </div>
           ) : null}
         </div>
       </main>
       <Footnote />
     </div>
+  );
+}
+
+// --- Users table ---
+// Newest signups first. Small, readable, no feature creep: handle, contact,
+// consent, sift count, signup date. Missing contact shows an em dash.
+function UsersTable({
+  users,
+  loading,
+}: {
+  users: AdminUserRow[] | undefined;
+  loading: boolean;
+}) {
+  const fmtDate = (ms: number) => {
+    const d = new Date(ms);
+    return `${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(
+      d.getUTCDate(),
+    ).padStart(2, "0")}`;
+  };
+
+  return (
+    <section className="mt-16" data-testid="admin-users-section">
+      <div className="mb-6">
+        <p className="text-xs uppercase tracking-widest text-muted-foreground">
+          Testers
+        </p>
+        <h2 className="font-serif text-2xl md:text-3xl mt-2">
+          Who signed up
+        </h2>
+        <p className="text-sm text-muted-foreground mt-2">
+          Newest first. Up to 500.
+        </p>
+      </div>
+
+      {loading ? (
+        <div className="space-y-2" data-testid="status-users-loading">
+          {[0, 1, 2, 3].map((i) => (
+            <div
+              key={i}
+              className="h-10 rounded-sm bg-foreground/[0.03] animate-pulse"
+            />
+          ))}
+        </div>
+      ) : !users || users.length === 0 ? (
+        <p
+          className="text-sm text-muted-foreground"
+          data-testid="status-users-empty"
+        >
+          No signups yet.
+        </p>
+      ) : (
+        <div
+          className="overflow-x-auto -mx-6 md:mx-0"
+          data-testid="admin-users-table"
+        >
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-foreground/15 text-xs uppercase tracking-widest text-muted-foreground">
+                <th className="text-left font-normal py-3 px-6 md:px-0">Handle</th>
+                <th className="text-left font-normal py-3 pr-6">Email</th>
+                <th className="text-left font-normal py-3 pr-6">Phone</th>
+                <th className="text-left font-normal py-3 pr-6">Opt-ins</th>
+                <th className="text-right font-normal py-3 pr-6">Sifts</th>
+                <th className="text-right font-normal py-3 pr-6 md:pr-0">Joined</th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.map((u) => (
+                <tr
+                  key={u.id}
+                  className="border-b border-foreground/5 last:border-b-0 align-top"
+                  data-testid={`row-user-${u.id}`}
+                >
+                  <td className="py-3 px-6 md:px-0">
+                    <span
+                      className="font-medium"
+                      data-testid={`text-user-handle-${u.id}`}
+                    >
+                      @{u.handle}
+                    </span>
+                  </td>
+                  <td className="py-3 pr-6 text-muted-foreground break-all">
+                    {u.email ? (
+                      <span data-testid={`text-user-email-${u.id}`}>{u.email}</span>
+                    ) : (
+                      <span className="text-foreground/30">—</span>
+                    )}
+                  </td>
+                  <td className="py-3 pr-6 text-muted-foreground whitespace-nowrap">
+                    {u.phone ? (
+                      <span data-testid={`text-user-phone-${u.id}`}>{u.phone}</span>
+                    ) : (
+                      <span className="text-foreground/30">—</span>
+                    )}
+                  </td>
+                  <td className="py-3 pr-6 text-muted-foreground whitespace-nowrap">
+                    <ConsentDots
+                      updates={u.consentUpdates}
+                      reflections={u.consentReflections}
+                    />
+                  </td>
+                  <td
+                    className="py-3 pr-6 text-right tabular-nums"
+                    data-testid={`text-user-sifts-${u.id}`}
+                  >
+                    {u.siftCount}
+                  </td>
+                  <td className="py-3 pr-6 md:pr-0 text-right tabular-nums text-muted-foreground whitespace-nowrap">
+                    {fmtDate(u.createdAt)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+// Two small dots — filled when consent is given, hollow when not. Calmer than
+// the words "yes/no" and keeps the row height tight.
+function ConsentDots({
+  updates,
+  reflections,
+}: {
+  updates: boolean;
+  reflections: boolean;
+}) {
+  const dot = (on: boolean, label: string) => (
+    <span
+      aria-label={`${label}: ${on ? "yes" : "no"}`}
+      title={`${label}: ${on ? "yes" : "no"}`}
+      className={
+        "inline-block w-2 h-2 rounded-full " +
+        (on
+          ? "bg-foreground/80"
+          : "border border-foreground/25 bg-transparent")
+      }
+    />
+  );
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      {dot(updates, "Updates")}
+      {dot(reflections, "Reflections")}
+    </span>
   );
 }

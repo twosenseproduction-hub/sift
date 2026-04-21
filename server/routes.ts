@@ -472,6 +472,58 @@ export async function registerRoutes(
     });
   });
 
+  // Per-user admin list. LEFT JOIN so users with zero sifts still show up.
+  // Orders by created_at DESC — newest first is the useful default when
+  // watching tester engagement. Capped at 500 to keep payloads reasonable;
+  // pagination can come later if the list grows.
+  app.get("/api/admin/users", requireAdmin, async (_req, res) => {
+    const rows = rawDb
+      .prepare(
+        `SELECT u.id, u.handle, u.email, u.phone,
+                u.consent_updates AS consentUpdates,
+                u.consent_reflections AS consentReflections,
+                u.created_at AS createdAt,
+                COALESCE(s.sift_count, 0) AS siftCount,
+                s.last_sift_at AS lastSiftAt
+         FROM users u
+         LEFT JOIN (
+           SELECT user_id,
+                  COUNT(*) AS sift_count,
+                  MAX(created_at) AS last_sift_at
+           FROM sifts
+           WHERE user_id IS NOT NULL
+           GROUP BY user_id
+         ) s ON s.user_id = u.id
+         ORDER BY u.created_at DESC
+         LIMIT 500`,
+      )
+      .all() as Array<{
+        id: number;
+        handle: string;
+        email: string | null;
+        phone: string | null;
+        consentUpdates: number;
+        consentReflections: number;
+        createdAt: number;
+        siftCount: number;
+        lastSiftAt: number | null;
+      }>;
+
+    res.json({
+      users: rows.map((r) => ({
+        id: r.id,
+        handle: r.handle,
+        email: r.email,
+        phone: r.phone,
+        consentUpdates: r.consentUpdates === 1,
+        consentReflections: r.consentReflections === 1,
+        createdAt: r.createdAt,
+        siftCount: r.siftCount,
+        lastSiftAt: r.lastSiftAt,
+      })),
+    });
+  });
+
   // --- Sifts ---
 
   app.post("/api/sift", async (req, res) => {
