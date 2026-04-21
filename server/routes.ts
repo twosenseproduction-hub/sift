@@ -4,6 +4,7 @@ import express from "express";
 import crypto from "crypto";
 import Anthropic from "@anthropic-ai/sdk";
 import { storage, rawDb } from "./storage";
+import { selectDailyPrompt } from "./daily-prompt";
 import {
   analyzeRequestSchema,
   analysisSchema,
@@ -521,6 +522,76 @@ export async function registerRoutes(
         siftCount: r.siftCount,
         lastSiftAt: r.lastSiftAt,
       })),
+    });
+  });
+
+  // --- Daily prompt (reads the 300-prompt library) ---
+  //
+  // GET /api/daily-prompt?mood=calm
+  //   - Authed users: themeCycleDay derived from days since signup.
+  //                   hasPriorSift derived from their sift count (>0).
+  //   - Anon users:   themeCycleDay derived from UTC day-of-year.
+  //                   hasPriorSift always false.
+  //
+  // The selection is deterministic for the same (user, day) pair.
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const countSiftsForUserStmt = rawDb.prepare(
+    `SELECT COUNT(*) AS n FROM sifts WHERE user_id = ?`
+  );
+
+  app.get("/api/daily-prompt", async (req, res) => {
+    const mood =
+      typeof req.query.mood === "string" ? req.query.mood : undefined;
+
+    const userId = readToken(req);
+    let themeCycleDay: number;
+    let hasPriorSift = false;
+    let userKey: string;
+
+    if (userId) {
+      const user = await storage.getUserById(userId);
+      if (!user) {
+        return res.status(401).json({ error: "Session expired" });
+      }
+      themeCycleDay = Math.floor((Date.now() - user.createdAt) / DAY_MS);
+      const { n } = countSiftsForUserStmt.get(userId) as { n: number };
+      hasPriorSift = n > 0;
+      userKey = `u:${userId}`;
+    } else {
+      // UTC day-of-year for anonymous callers keeps rotation moving.
+      const now = new Date();
+      const startOfYear = Date.UTC(now.getUTCFullYear(), 0, 1);
+      themeCycleDay = Math.floor(
+        (now.getTime() - startOfYear) / DAY_MS
+      );
+      hasPriorSift = false;
+      userKey = "anon";
+    }
+
+    const result = selectDailyPrompt({
+      themeCycleDay,
+      hasPriorSift,
+      mood: mood ?? null,
+      userKey,
+    });
+
+    res.json({
+      prompt: {
+        id: result.prompt.id,
+        text: result.prompt.text,
+        type: result.prompt.type,
+        outputLength: result.prompt.outputLength,
+        requiresPriorSift: result.prompt.priorSiftRef,
+        hasChoiceLogic: result.prompt.userChoiceLogic,
+        usageNotes: result.prompt.usageNotes,
+      },
+      theme: {
+        num: result.themeNum,
+        name: result.themeName,
+      },
+      themeCycleDay: result.themeCycleDay,
+      hasPriorSift,
+      appliedFilters: result.appliedFilters,
     });
   });
 
