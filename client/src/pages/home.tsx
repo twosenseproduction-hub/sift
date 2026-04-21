@@ -11,6 +11,8 @@ import {
   TODAY_PROMPT_LINE,
 } from "@/components/today-prompt-sheet";
 import { SharePromptDialog } from "@/components/share-prompt-dialog";
+import { QuickResetCard } from "@/components/quick-reset-card";
+import { QuickResetDialog } from "@/components/quick-reset-dialog";
 import { Button } from "@/components/ui/button";
 import { useMe } from "@/lib/auth";
 import { useQuery } from "@tanstack/react-query";
@@ -49,6 +51,14 @@ export default function Home() {
   // Separate token for the continuation composer used in the expanding flow.
   const [expandPrefillToken, setExpandPrefillToken] = useState(0);
   const [contactPromptOpen, setContactPromptOpen] = useState(false);
+  // Quick reset (Signal / Noise) — kept local to the home screen.
+  // `quickResetSeed` is the soft composer seed produced by the completion
+  // state; it transiently overrides FREE_WRITE_SEED when the user taps the
+  // completion CTA. `quickResetDismissed` hides the card for the rest of the
+  // session once the user finishes or skips it.
+  const [quickResetOpen, setQuickResetOpen] = useState(false);
+  const [quickResetDismissed, setQuickResetDismissed] = useState(false);
+  const [quickResetSeed, setQuickResetSeed] = useState<string | null>(null);
   const { data: meData } = useMe();
   const me = meData?.me;
 
@@ -139,12 +149,21 @@ export default function Home() {
                 <TodayFromSiftCard onOpen={() => setTodayOpen(true)} />
               )}
 
+              {/* Quick reset — a very small optional ritual. Sits above the
+                  composer; once started or skipped, hides for the session. */}
+              {!quickResetDismissed && (
+                <QuickResetCard
+                  onStart={() => setQuickResetOpen(true)}
+                  onSkip={() => setQuickResetDismissed(true)}
+                />
+              )}
+
               <Composer
                 onResult={(r) => {
                   setResult(r);
                   setFlow("result");
                 }}
-                initialText={FREE_WRITE_SEED}
+                initialText={quickResetSeed ?? FREE_WRITE_SEED}
                 prefillToken={composerPrefillToken}
               />
 
@@ -269,6 +288,22 @@ export default function Home() {
         onOpenChange={setShareOpen}
         title={TODAY_PROMPT_TITLE}
         line={TODAY_PROMPT_LINE}
+      />
+      <QuickResetDialog
+        open={quickResetOpen}
+        onOpenChange={(open) => {
+          setQuickResetOpen(open);
+          // When the user closes without completing (Skip / Close / outside-tap),
+          // hide the card for the rest of the session but do not alter the seed.
+          if (!open) setQuickResetDismissed(true);
+        }}
+        onComplete={({ seed }) => {
+          // Set the soft seed and bump the prefill token so the composer
+          // re-seeds from it. No auto-submit.
+          setQuickResetSeed(seed);
+          setQuickResetDismissed(true);
+          setComposerPrefillToken((n) => n + 1);
+        }}
       />
     </div>
   );
