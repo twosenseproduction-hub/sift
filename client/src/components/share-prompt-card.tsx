@@ -147,7 +147,7 @@ export const SharePromptCard = forwardRef<HTMLDivElement, SharePromptCardProps>(
                 footerClass,
               ].join(" ")}
             >
-              siftnow.io
+              Sift
             </span>
           </div>
           <span
