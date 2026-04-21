@@ -108,47 +108,59 @@ function OutputStage({ onTryOwn }: { onTryOwn: () => void }) {
         </p>
       </div>
 
-      <section data-testid="example-hearing">
-        <Label>What I'm hearing</Label>
-        <p className="mt-3 text-base md:text-[17px] leading-relaxed text-foreground/90">
-          You're not actually short on ideas. You're overloaded by trying to
-          make the right long-term move before giving yourself a simple place
-          to start.
+      {/* Mirrors the real Result layout: intent → themes → next step → reflection. */}
+      <section data-testid="example-intent">
+        <Label>What you actually want</Label>
+        <p className="font-serif text-2xl md:text-3xl leading-[1.25] text-foreground mt-3">
+          A low-pressure starting point — not the perfect plan.
         </p>
       </section>
 
-      <section data-testid="example-matters">
-        <Label>What matters</Label>
-        <ul className="mt-3 space-y-2 text-base md:text-[17px] leading-relaxed text-foreground/90">
-          <li className="flex gap-3">
-            <span className="text-primary/60 mt-[0.6em] h-px w-3 shrink-0" />
-            <span>You need a starting point that lowers pressure.</span>
+      <section data-testid="example-themes">
+        <Label>Themes underneath</Label>
+        <ul className="mt-4 divide-y divide-border/70 border-y border-border/70">
+          <li className="py-4 md:py-5 flex gap-4 md:gap-6">
+            <span className="font-mono text-xs text-muted-foreground pt-1 w-6">01</span>
+            <div className="flex-1">
+              <h3 className="font-serif text-lg md:text-xl text-foreground">
+                Fear of picking wrong
+              </h3>
+              <p className="text-sm md:text-[15px] text-muted-foreground mt-1.5 leading-relaxed">
+                You're treating the first move like the final one, so nothing
+                feels safe to try.
+              </p>
+            </div>
           </li>
-          <li className="flex gap-3">
-            <span className="text-primary/60 mt-[0.6em] h-px w-3 shrink-0" />
-            <span>Momentum matters more right now than certainty.</span>
-          </li>
-        </ul>
-      </section>
-
-      <section data-testid="example-noise">
-        <Label>What's noise</Label>
-        <ul className="mt-3 space-y-2 text-base md:text-[17px] leading-relaxed text-muted-foreground">
-          <li className="flex gap-3">
-            <span className="text-muted-foreground/50 mt-[0.6em] h-px w-3 shrink-0" />
-            <span>Trying to pick the perfect path before taking real action.</span>
+          <li className="py-4 md:py-5 flex gap-4 md:gap-6">
+            <span className="font-mono text-xs text-muted-foreground pt-1 w-6">02</span>
+            <div className="flex-1">
+              <h3 className="font-serif text-lg md:text-xl text-foreground">
+                Certainty over momentum
+              </h3>
+              <p className="text-sm md:text-[15px] text-muted-foreground mt-1.5 leading-relaxed">
+                You're waiting to feel sure before you begin. Momentum usually
+                comes after starting, not before.
+              </p>
+            </div>
           </li>
         </ul>
       </section>
 
       <section data-testid="example-next">
-        <Label>Next step</Label>
-        <div className="mt-3 rounded-2xl border border-primary/25 bg-primary/5 p-5">
+        <Label>One next step</Label>
+        <div className="mt-3 rounded-2xl border border-primary/25 bg-primary/5 p-5 md:p-6">
           <p className="font-serif text-xl md:text-2xl leading-snug text-foreground">
             Set a 10-minute timer and write the easiest version of the thing
             you've been avoiding.
           </p>
         </div>
+      </section>
+
+      <section data-testid="example-reflection">
+        <Label>Quiet reflection</Label>
+        <p className="mt-3 text-base md:text-[17px] text-muted-foreground italic leading-relaxed">
+          “You don't need the right path. You need one honest step.”
+        </p>
       </section>
 
       <div className="pt-2">
