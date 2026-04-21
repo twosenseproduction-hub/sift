@@ -3,6 +3,7 @@ import { Header, Footnote } from "@/components/brand";
 import { Composer, Result } from "@/components/sift-ui";
 import { AuthDialog } from "@/components/auth-dialog";
 import { ExampleSheet } from "@/components/example-sheet";
+import { TodayFromSiftCard } from "@/components/today-from-sift-card";
 import { Button } from "@/components/ui/button";
 import { useMe } from "@/lib/auth";
 import { useQuery } from "@tanstack/react-query";
@@ -73,6 +74,9 @@ export default function Home() {
                   </p>
                 </div>
               )}
+
+              {/* Returning signed-in users: a quiet daily nudge above the composer. */}
+              {isReturning && <TodayFromSiftCard />}
 
               <Composer onResult={setResult} />
 
