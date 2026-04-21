@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Mic, MicOff, Send, Copy, Link2, RotateCcw, Check, Sparkles, Clock, ArrowRight } from "lucide-react";
+import { Mic, MicOff, Send, Copy, Link2, RotateCcw, Check, Sparkles, Clock, ArrowRight, Share2 } from "lucide-react";
+import { SharePromptDialog } from "./share-prompt-dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
@@ -347,23 +348,16 @@ export function Result({
   onSave,
 }: ResultProps) {
   const { toast } = useToast();
-  const [copiedLink, setCopiedLink] = useState(false);
   const [copiedText, setCopiedText] = useState(false);
+  // Opens the standalone share card (same pattern as the daily prompt share).
+  // Only the Quiet reflection travels — the full sift stays private unless
+  // the viewer explicitly copies it as text.
+  const [reflectionShareOpen, setReflectionShareOpen] = useState(false);
 
   const shareUrl =
     typeof window !== "undefined"
       ? `${window.location.origin}${window.location.pathname}#/s/${result.id}`
       : "";
-
-  const copyLink = async () => {
-    try {
-      await navigator.clipboard.writeText(shareUrl);
-      setCopiedLink(true);
-      setTimeout(() => setCopiedLink(false), 1800);
-    } catch {
-      toast({ title: "Couldn't copy link", description: shareUrl });
-    }
-  };
 
   const copyText = async () => {
     const body = [
@@ -512,16 +506,17 @@ export function Result({
                 </button>
               )}
             </div>
-            {/* Share link + copy remain available as a smaller utility row */}
+            {/* Share reflection + copy text — "Share" opens a standalone share
+                card (reflection only), matching the daily prompt pattern. */}
             <div className="mt-6 flex flex-wrap items-center gap-3">
               <button
                 type="button"
-                onClick={copyLink}
-                data-testid="button-copy-link"
+                onClick={() => setReflectionShareOpen(true)}
+                data-testid="button-share-reflection"
                 className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
               >
-                {copiedLink ? <Check className="w-3.5 h-3.5" /> : <Link2 className="w-3.5 h-3.5" />}
-                {copiedLink ? "Link copied" : "Share link"}
+                <Share2 className="w-3.5 h-3.5" />
+                Share reflection
               </button>
               <span className="text-muted-foreground/40 text-xs">·</span>
               <button
@@ -541,12 +536,12 @@ export function Result({
               type="button"
               variant="outline"
               size="sm"
-              onClick={copyLink}
-              data-testid="button-copy-link"
+              onClick={() => setReflectionShareOpen(true)}
+              data-testid="button-share-reflection"
               className="gap-2"
             >
-              {copiedLink ? <Check className="w-4 h-4" /> : <Link2 className="w-4 h-4" />}
-              {copiedLink ? "Link copied" : "Share link"}
+              <Share2 className="w-4 h-4" />
+              Share reflection
             </Button>
             <Button
               type="button"
@@ -588,6 +583,16 @@ export function Result({
           </details>
         )}
       </div>
+
+      {/* Standalone reflection share card. Only the reflection travels —
+          mirrors the daily prompt share pattern. */}
+      <SharePromptDialog
+        open={reflectionShareOpen}
+        onOpenChange={setReflectionShareOpen}
+        eyebrow="From Sift"
+        title="Quiet reflection"
+        line={result.reflection}
+      />
     </article>
   );
 }
