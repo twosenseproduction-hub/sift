@@ -65,9 +65,15 @@ export const SharePromptCard = forwardRef<HTMLDivElement, SharePromptCardProps>(
     const lineClass = exportMode
       ? "text-[56px] leading-[1.3]"
       : "text-lg md:text-2xl leading-[1.3]";
+    // Footer tagline uses the same uppercase tracked label style as the eyebrow.
     const footerClass = exportMode
       ? "text-[20px] tracking-[0.25em]"
       : "text-[10px] md:text-[11px] tracking-[0.22em]";
+    // The "Sift" wordmark next to the logo is the brand signature — serif,
+    // title-case, matching the site header. Never uppercase.
+    const wordmarkClass = exportMode
+      ? "text-[40px] leading-none"
+      : "text-lg md:text-xl leading-none";
     const logoSize = exportMode ? 48 : 22;
     const rulerClass = exportMode ? "h-px w-24" : "h-px w-10 md:w-12";
 
@@ -143,9 +149,13 @@ export const SharePromptCard = forwardRef<HTMLDivElement, SharePromptCardProps>(
             <Logo size={logoSize} />
             <span
               className={[
-                "font-medium uppercase text-[#7A7974] whitespace-nowrap",
-                footerClass,
+                "text-[#28251D] tracking-tight whitespace-nowrap",
+                wordmarkClass,
               ].join(" ")}
+              style={{
+                fontFamily:
+                  "'Instrument Serif', 'Source Serif 4', Georgia, 'Times New Roman', serif",
+              }}
             >
               Sift
             </span>
