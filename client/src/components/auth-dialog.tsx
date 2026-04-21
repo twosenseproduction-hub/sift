@@ -68,7 +68,7 @@ export function AuthDialog({ open, onOpenChange, initialMode = "signup" }: Props
               autoCapitalize="none"
               autoCorrect="off"
               spellCheck={false}
-              placeholder="ale"
+              placeholder={mode === "signup" ? "Choose a handle" : "Your handle"}
               required
               minLength={2}
               maxLength={24}

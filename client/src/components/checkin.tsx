@@ -27,17 +27,6 @@ const STATUS_NOTE: Record<CheckinStatus, string> = {
   in_progress: "Where are you right now with it?",
 };
 
-// Trim the next-step sentence into a short, quotable fragment.
-// Keeps it readable in the three status buttons without exploding layout.
-function shortenStep(step: string, max = 52): string {
-  const first = step.split(/(?<=[.!?])\s+/)[0] || step;
-  const clean = first.replace(/[.!?]+$/, "").trim();
-  if (clean.length <= max) return clean;
-  const cut = clean.slice(0, max);
-  const lastSpace = cut.lastIndexOf(" ");
-  return (lastSpace > 20 ? cut.slice(0, lastSpace) : cut) + "…";
-}
-
 export function CheckinBlock({ sift, readOnly }: Props) {
   const [status, setStatus] = useState<CheckinStatus | null>(null);
   const [note, setNote] = useState("");
@@ -117,7 +106,7 @@ export function CheckinBlock({ sift, readOnly }: Props) {
         {checkins.length === 0 ? (
           <>
             <p className="text-[11px] tracking-[0.22em] uppercase font-medium text-muted-foreground/80 mb-2">
-              The step you named
+              The step Sift suggested
             </p>
             <p className="font-serif text-lg md:text-xl text-foreground leading-snug">
               <span className="text-muted-foreground">“</span>
@@ -146,10 +135,9 @@ export function CheckinBlock({ sift, readOnly }: Props) {
 
         <div className="mt-5 flex flex-wrap gap-2" data-testid="checkin-status">
           {(["did_it", "did_not", "in_progress"] as CheckinStatus[]).map((s) => {
-            const short = shortenStep(sift.nextStep);
             const caption =
               s === "did_it"
-                ? `Did “${short}”`
+                ? "Did it"
                 : s === "did_not"
                 ? "Didn't get to it"
                 : "Still working on it";
