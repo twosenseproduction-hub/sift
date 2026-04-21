@@ -19,11 +19,12 @@ export default function Home() {
 
   // For signed-in users, check if they have any prior sifts.
   // If they do, hide onboarding affordances (See example, hero copy).
-  const { data: sifts } = useQuery<SiftListItem[]>({
+  // Server returns { sifts: [...] } — matches the shape used in history.tsx.
+  const { data: siftsData } = useQuery<{ sifts: SiftListItem[] }>({
     queryKey: ["/api/sifts"],
     enabled: !!me,
   });
-  const isReturning = !!me && (sifts?.length ?? 0) > 0;
+  const isReturning = !!me && (siftsData?.sifts.length ?? 0) > 0;
 
   return (
     <div className="min-h-screen flex flex-col">
