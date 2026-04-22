@@ -528,13 +528,22 @@ export async function registerRoutes(
   // --- Daily prompt (reads the 300-prompt library) ---
   //
   // GET /api/daily-prompt?mood=calm
-  //   - Authed users: themeCycleDay derived from days since signup.
-  //                   hasPriorSift derived from their sift count (>0).
-  //   - Anon users:   themeCycleDay derived from UTC day-of-year.
-  //                   hasPriorSift always false.
+  //   Cycle day is a shared UTC calendar day counted from a fixed epoch
+  //   (Jan 1 2026 UTC). It ticks over at midnight UTC, same for everyone.
   //
-  // The selection is deterministic for the same (user, day) pair.
+  //   - Authed users: userKey = u:<id>. hasPriorSift = sift count > 0.
+  //   - Anon users:   userKey = "anon". hasPriorSift always false.
+  //
+  //   Selection is deterministic for the same (userKey, cycleDay) pair, so
+  //   the same user sees the same prompt all day and a new one at UTC
+  //   midnight.
   const DAY_MS = 24 * 60 * 60 * 1000;
+  // Shared epoch so theme rotation is stable across users, devices, and
+  // sessions. Cycle day ticks over at UTC midnight, not at the user's
+  // signup time. Jan 1 2026 UTC = day 0.
+  const CYCLE_EPOCH_MS = Date.UTC(2026, 0, 1);
+  const currentCycleDay = () =>
+    Math.floor((Date.now() - CYCLE_EPOCH_MS) / DAY_MS);
   const countSiftsForUserStmt = rawDb.prepare(
     `SELECT COUNT(*) AS n FROM sifts WHERE user_id = ?`
   );
@@ -544,7 +553,11 @@ export async function registerRoutes(
       typeof req.query.mood === "string" ? req.query.mood : undefined;
 
     const userId = readToken(req);
-    let themeCycleDay: number;
+    // Cycle day is calendar-UTC and shared by everyone. It ticks over at
+    // UTC midnight. Authed users still get a deterministic-but-distinct
+    // prompt via their userKey tiebreak, so two users on the same day
+    // don't necessarily see the same prompt.
+    const themeCycleDay = currentCycleDay();
     let hasPriorSift = false;
     let userKey: string;
 
@@ -553,17 +566,10 @@ export async function registerRoutes(
       if (!user) {
         return res.status(401).json({ error: "Session expired" });
       }
-      themeCycleDay = Math.floor((Date.now() - user.createdAt) / DAY_MS);
       const { n } = countSiftsForUserStmt.get(userId) as { n: number };
       hasPriorSift = n > 0;
       userKey = `u:${userId}`;
     } else {
-      // UTC day-of-year for anonymous callers keeps rotation moving.
-      const now = new Date();
-      const startOfYear = Date.UTC(now.getUTCFullYear(), 0, 1);
-      themeCycleDay = Math.floor(
-        (now.getTime() - startOfYear) / DAY_MS
-      );
       hasPriorSift = false;
       userKey = "anon";
     }
