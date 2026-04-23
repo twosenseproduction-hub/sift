@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { HelpCircle } from "lucide-react";
 
 // Token pool — a mix of charged/pressure-flavored and grounded words so the
 // sort can lean either way. Sampled N per open (enough signal, still small).
@@ -187,6 +188,9 @@ export function QuickResetDialog({ open, onOpenChange, onComplete }: Props) {
   const loudRef = useRef<HTMLDivElement | null>(null);
   const realRef = useRef<HTMLDivElement | null>(null);
 
+  // Small inline explanation, toggled by the "?" affordance in the header.
+  const [showHelp, setShowHelp] = useState(false);
+
   // Re-sample on each open; reset placement.
   useEffect(() => {
     if (open) {
@@ -195,6 +199,7 @@ export function QuickResetDialog({ open, onOpenChange, onComplete }: Props) {
       setDraggingIdx(null);
       setHoverBucket(null);
       setJustDroppedBucket(null);
+      setShowHelp(false);
     }
   }, [open]);
 
@@ -316,9 +321,44 @@ export function QuickResetDialog({ open, onOpenChange, onComplete }: Props) {
           >
             Signal / Noise
           </DialogTitle>
-          <DialogDescription className="text-sm text-muted-foreground">
-            Drag each word into where it belongs.
+          <DialogDescription className="text-sm text-muted-foreground flex items-center gap-2">
+            <span>Drag each word into where it belongs.</span>
+            <button
+              type="button"
+              onClick={() => setShowHelp((v) => !v)}
+              aria-expanded={showHelp}
+              aria-controls="quick-reset-help"
+              data-testid="button-reset-help"
+              className={cn(
+                "inline-flex items-center justify-center rounded-full p-1 -m-1",
+                "text-muted-foreground/70 hover:text-foreground transition-colors",
+                showHelp && "text-foreground",
+              )}
+            >
+              <HelpCircle className="w-4 h-4" aria-hidden="true" />
+              <span className="sr-only">
+                {showHelp ? "Hide explanation" : "How this works"}
+              </span>
+            </button>
           </DialogDescription>
+          {showHelp && (
+            <div
+              id="quick-reset-help"
+              data-testid="section-reset-help"
+              className="mt-3 rounded-lg border border-border/60 bg-muted/30 px-3.5 py-3 text-sm leading-relaxed text-muted-foreground"
+            >
+              <p>
+                Look at each word. If it lands as something real for you right
+                now, drag it to <span className="text-foreground">Matters</span>.
+                If it is just pulling at you without really being yours today,
+                drag it to <span className="text-foreground">Noise</span>.
+              </p>
+              <p className="mt-2">
+                When you are done, the sort becomes a quiet starting point for
+                today&rsquo;s sift.
+              </p>
+            </div>
+          )}
         </DialogHeader>
 
         {!done ? (
