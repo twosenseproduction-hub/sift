@@ -10,28 +10,53 @@ type Phase = "idle" | "inhale" | "hold" | "exhale" | "done";
 const TOTAL_CYCLES = 3;
 
 // Phase durations, in ms. Slow and even — no drama.
-const INHALE_MS = 4200;
-const HOLD_MS = 1200;
-const EXHALE_MS = 5600;
+const INHALE_MS = 4600;
+const HOLD_MS = 1400;
+const EXHALE_MS = 6000;
 
-// Build a single closed, irregular, hand-drawn-feeling ring as an SVG path.
-// Deterministic per-mount so the ring looks stable but imperfect.
-function buildRingPath(cx: number, cy: number, baseR: number, seed: number): string {
-  const points = 64;
-  // Simple seeded PRNG — good enough for a wobble.
+// Deterministic, seeded PRNG.
+function makeRand(seed: number) {
   let s = seed >>> 0;
-  const rand = () => {
+  return () => {
     s = (s * 1664525 + 1013904223) >>> 0;
     return s / 0xffffffff;
   };
+}
+
+// Build a closed, irregular, hand-drawn ring at a given base radius and a
+// phase offset `t` (radians). Passing a changing `t` makes the ring breathe
+// organically — the wobble drifts instead of freezing.
+function buildRingPath(
+  cx: number,
+  cy: number,
+  baseR: number,
+  t: number,
+  seed: number,
+): string {
+  const points = 72;
+  const rand = makeRand(seed);
+  // Pre-compute stable per-vertex offsets so the shape has identity, then
+  // modulate with low-frequency sines driven by `t` so it drifts.
   const pts: Array<[number, number]> = [];
+  const staticPhase: number[] = [];
+  const staticAmp: number[] = [];
+  for (let i = 0; i < points; i++) {
+    staticPhase.push(rand() * Math.PI * 2);
+    staticAmp.push(0.7 + rand() * 0.6); // 0.7..1.3
+  }
   for (let i = 0; i < points; i++) {
     const a = (i / points) * Math.PI * 2;
-    // Two overlapping low-frequency wobbles, plus a tiny high-frequency jitter.
-    const w1 = Math.sin(a * 3 + rand() * 0.6) * (baseR * 0.035);
-    const w2 = Math.cos(a * 5 + rand() * 0.9) * (baseR * 0.022);
-    const j = (rand() - 0.5) * (baseR * 0.012);
-    const r = baseR + w1 + w2 + j;
+    // Three drifting low-frequency harmonics + one tiny high-frequency jitter.
+    const w1 =
+      Math.sin(a * 3 + t * 0.8 + staticPhase[i]) *
+      (baseR * 0.042) *
+      staticAmp[i];
+    const w2 =
+      Math.cos(a * 5 + t * 1.1 + staticPhase[i] * 0.7) * (baseR * 0.026);
+    const w3 = Math.sin(a * 2 + t * 0.5) * (baseR * 0.018);
+    const j =
+      Math.sin(a * 11 + t * 1.8 + staticPhase[i] * 1.3) * (baseR * 0.008);
+    const r = baseR + w1 + w2 + w3 + j;
     pts.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r]);
   }
   // Smooth closed path through points using midpoint-quadratic curves.
@@ -64,13 +89,13 @@ function usePrefersReducedMotion(): boolean {
 /**
  * BreathingDot
  *
- * A quiet, optional grounding module. Lives below the composer as a secondary
- * offering — not part of the required flow. Tap the center dot to begin; the
- * hand-drawn ring expands on the inhale and settles on the exhale. Three
- * cycles, then a subtle rest state with a soft invitation back to writing.
+ * Quiet, optional grounding module. At rest it sits as a small invitation
+ * beneath the composer. When started, it takes over the whole screen with a
+ * living hand-drawn ring around a center dot. Three cycles, then a calm
+ * resting state with a soft path back to writing.
  *
- * Respects prefers-reduced-motion: the ring stays still and the session runs
- * as quiet phase text only.
+ * Respects prefers-reduced-motion: the ring stops fluctuating and the scale
+ * transition is removed.
  */
 export function BreathingDot({ onContinue }: Props) {
   const [phase, setPhase] = useState<Phase>("idle");
@@ -78,7 +103,39 @@ export function BreathingDot({ onContinue }: Props) {
   const reduced = usePrefersReducedMotion();
   const timers = useRef<Array<ReturnType<typeof setTimeout>>>([]);
 
-  const ringPath = useMemo(() => buildRingPath(100, 100, 64, 0x51f7c0d3), []);
+  // Continuous organic-time clock. Advances whenever the overlay is open,
+  // driving the per-frame wobble of the ring path.
+  const [tick, setTick] = useState(0);
+  const rafRef = useRef<number | null>(null);
+
+  const active = phase === "inhale" || phase === "hold" || phase === "exhale";
+  const overlayOpen = active || phase === "done";
+
+  useEffect(() => {
+    if (!overlayOpen || reduced) return;
+    let mounted = true;
+    const start = performance.now();
+    const loop = (now: number) => {
+      if (!mounted) return;
+      setTick((now - start) / 1000);
+      rafRef.current = requestAnimationFrame(loop);
+    };
+    rafRef.current = requestAnimationFrame(loop);
+    return () => {
+      mounted = false;
+      if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
+    };
+  }, [overlayOpen, reduced]);
+
+  // Lock page scroll while the overlay is open.
+  useEffect(() => {
+    if (!overlayOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [overlayOpen]);
 
   const clearTimers = () => {
     timers.current.forEach((t) => clearTimeout(t));
@@ -111,7 +168,7 @@ export function BreathingDot({ onContinue }: Props) {
   };
 
   const start = () => {
-    if (phase === "inhale" || phase === "hold" || phase === "exhale") return;
+    if (active) return;
     clearTimers();
     runCycle(0);
   };
@@ -122,19 +179,27 @@ export function BreathingDot({ onContinue }: Props) {
     setCycle(0);
   };
 
-  const active = phase === "inhale" || phase === "hold" || phase === "exhale";
+  // Escape key exits the overlay at any time.
+  useEffect(() => {
+    if (!overlayOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") stop();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [overlayOpen]);
 
-  // Ring scale per phase. Kept gentle; no bounce.
+  // The ring scale per phase. Expanded further than before at inhale peak.
   const scale =
     reduced || phase === "idle"
       ? 1
       : phase === "inhale"
-        ? 1.18
+        ? 1.55
         : phase === "hold"
-          ? 1.18
+          ? 1.55
           : phase === "exhale"
             ? 1
-            : 1; // done
+            : 1;
 
   const phaseMs =
     phase === "inhale"
@@ -152,81 +217,136 @@ export function BreathingDot({ onContinue }: Props) {
           ? "Exhale"
           : "";
 
-  return (
+  // Organic time drives the ring path. Frozen when reduced-motion is on.
+  const ringPath = useMemo(
+    () => buildRingPath(200, 200, 110, reduced ? 0 : tick, 0x51f7c0d3),
+    [tick, reduced],
+  );
+
+  // Resting module (below composer) — same tone as other quiet modules.
+  const resting = (
     <section
       aria-labelledby="breathing-title"
       className="mt-10 md:mt-12 pt-6 md:pt-8 border-t border-border/40"
       data-testid="card-breathing"
     >
-      <div className="flex flex-col items-center text-center">
-        <p
-          id="breathing-title"
-          className="text-[10px] tracking-[0.2em] uppercase text-muted-foreground/80 font-medium"
-          data-testid="text-breathing-eyebrow"
+      <div className="flex items-baseline justify-between gap-4 flex-wrap">
+        <div className="min-w-0">
+          <p
+            id="breathing-title"
+            className="text-[10px] tracking-[0.2em] uppercase text-muted-foreground/80 font-medium"
+            data-testid="text-breathing-eyebrow"
+          >
+            Breath
+          </p>
+          <p
+            className="mt-1.5 text-sm md:text-[15px] leading-snug text-muted-foreground"
+            data-testid="text-breathing-line"
+          >
+            A moment before you write.
+          </p>
+        </div>
+
+        <div className="shrink-0 flex items-center gap-4 text-sm">
+          <button
+            type="button"
+            onClick={start}
+            data-testid="button-breathing-open"
+            className="text-foreground/80 hover:text-foreground underline underline-offset-4 decoration-border hover:decoration-foreground transition-colors"
+          >
+            Try it
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+
+  if (!overlayOpen) return resting;
+
+  return (
+    <>
+      {resting}
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Breathing"
+        data-testid="overlay-breathing"
+        className="fixed inset-0 z-50 bg-background flex flex-col items-center justify-center text-foreground"
+      >
+        {/* Close (always available) */}
+        <button
+          type="button"
+          onClick={stop}
+          aria-label="Close"
+          data-testid="button-breathing-close"
+          className="absolute top-5 right-5 md:top-6 md:right-6 text-xs tracking-[0.2em] uppercase text-muted-foreground hover:text-foreground transition-colors"
         >
-          Breath
-        </p>
-        <p
-          className="mt-1.5 text-sm md:text-[15px] leading-snug text-muted-foreground"
-          data-testid="text-breathing-line"
+          Close
+        </button>
+
+        {/* Phase word — subtle, above the ring */}
+        <div
+          className="h-6 text-xs md:text-sm tracking-[0.25em] uppercase text-muted-foreground"
+          data-testid="text-breathing-phase"
         >
           {phase === "done"
-            ? "Still here. Take your time."
+            ? "Still here"
             : active
               ? phaseText || "\u00A0"
-              : "A moment before you write."}
-        </p>
+              : "\u00A0"}
+        </div>
 
+        {/* The ring + dot */}
         <button
           type="button"
           onClick={active ? stop : start}
           aria-label={active ? "Stop breathing" : "Start breathing"}
           data-testid="button-breathing-dot"
-          className="mt-6 md:mt-7 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30 focus-visible:ring-offset-4 focus-visible:ring-offset-background"
+          className="mt-6 md:mt-8 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-foreground/30 focus-visible:ring-offset-4 focus-visible:ring-offset-background"
         >
           <svg
-            width="160"
-            height="160"
-            viewBox="0 0 200 200"
+            width="min(74vmin, 560px)"
+            height="min(74vmin, 560px)"
+            viewBox="0 0 400 400"
             aria-hidden="true"
             className="block"
+            style={{
+              width: "min(74vmin, 560px)",
+              height: "min(74vmin, 560px)",
+            }}
           >
             <g
               style={{
-                transformOrigin: "100px 100px",
+                transformOrigin: "200px 200px",
                 transform: `scale(${scale})`,
                 transition: reduced
                   ? "none"
-                  : `transform ${phaseMs}ms cubic-bezier(0.4, 0, 0.2, 1)`,
+                  : `transform ${phaseMs}ms cubic-bezier(0.37, 0, 0.24, 1)`,
               }}
             >
               <path
                 d={ringPath}
                 fill="none"
                 stroke="currentColor"
-                strokeWidth="1"
+                strokeWidth="1.1"
                 strokeLinejoin="round"
                 strokeLinecap="round"
                 className="text-foreground/55"
                 vectorEffect="non-scaling-stroke"
               />
             </g>
-            <circle
-              cx="100"
-              cy="100"
-              r="6"
-              className="fill-foreground"
-            />
+            <circle cx="200" cy="200" r="7" className="fill-foreground" />
           </svg>
         </button>
 
-        <div className="mt-5 h-5 text-xs text-muted-foreground/70">
+        {/* Footer: cycle count while active, soft continuation when done */}
+        <div className="mt-8 md:mt-10 h-6 text-xs md:text-sm text-muted-foreground/80">
           {active ? (
             <span data-testid="text-breathing-count">
               {Math.min(cycle + 1, TOTAL_CYCLES)} of {TOTAL_CYCLES}
             </span>
           ) : phase === "done" ? (
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-6">
               <button
                 type="button"
                 onClick={() => {
@@ -235,13 +355,17 @@ export function BreathingDot({ onContinue }: Props) {
                   onContinue?.();
                 }}
                 data-testid="button-breathing-continue"
-                className="text-foreground/80 hover:text-foreground underline underline-offset-4 decoration-border hover:decoration-foreground transition-colors"
+                className="text-foreground/85 hover:text-foreground underline underline-offset-4 decoration-border hover:decoration-foreground transition-colors"
               >
                 Begin writing
               </button>
               <button
                 type="button"
-                onClick={stop}
+                onClick={() => {
+                  setPhase("idle");
+                  setCycle(0);
+                  runCycle(0);
+                }}
                 data-testid="button-breathing-reset"
                 className="text-muted-foreground/70 hover:text-foreground transition-colors"
               >
@@ -253,6 +377,6 @@ export function BreathingDot({ onContinue }: Props) {
           )}
         </div>
       </div>
-    </section>
+    </>
   );
 }
