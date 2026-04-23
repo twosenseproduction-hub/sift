@@ -15,6 +15,7 @@ import { QuickResetCard } from "@/components/quick-reset-card";
 import { QuickResetDialog } from "@/components/quick-reset-dialog";
 import { Button } from "@/components/ui/button";
 import { useMe } from "@/lib/auth";
+import { useDailyPrompt } from "@/lib/useDailyPrompt";
 import { useQuery } from "@tanstack/react-query";
 import { Bookmark } from "lucide-react";
 import type { SiftResult, SiftListItem } from "@shared/schema";
@@ -61,6 +62,12 @@ export default function Home() {
   const [quickResetSeed, setQuickResetSeed] = useState<string | null>(null);
   const { data: meData } = useMe();
   const me = meData?.me;
+
+  // Today's personalized prompt from the library. Drives the card's one-line
+  // blurb, the bottom-sheet line, and the share-dialog copy. Falls back to
+  // the hardcoded default copy until the query resolves (or if it fails).
+  const { data: dailyPrompt } = useDailyPrompt();
+  const dailyPromptText = dailyPrompt?.prompt.text;
 
   // One-time prompt for existing users who signed up before we collected
   // a contact. Dismissal is persisted so we only ask once.
@@ -146,7 +153,10 @@ export default function Home() {
 
               {/* Returning signed-in users: a quiet daily nudge above the composer. */}
               {isReturning && (
-                <TodayFromSiftCard onOpen={() => setTodayOpen(true)} />
+                <TodayFromSiftCard
+                  onOpen={() => setTodayOpen(true)}
+                  line={dailyPromptText}
+                />
               )}
 
               {/* Quick reset — a very small optional ritual. Sits above the
@@ -268,6 +278,7 @@ export default function Home() {
       <TodayPromptSheet
         open={todayOpen}
         onOpenChange={setTodayOpen}
+        line={dailyPromptText}
         onShare={() => {
           // Close the bottom sheet first, then open the share dialog on the
           // next tick. Sequencing the two overlays avoids a focus-trap race
@@ -276,10 +287,14 @@ export default function Home() {
           setTimeout(() => setShareOpen(true), 120);
         }}
         onFreeWrite={() => {
-          // Close the sheet and re-seed the composer. Bumping the token
-          // triggers the composer's prefill effect, which sets the text
-          // and focuses the textarea.
+          // Close the sheet and re-seed the composer with today's prompt
+          // text (falls back to FREE_WRITE_SEED when the daily prompt hasn't
+          // loaded). Bumping the token triggers the composer's prefill
+          // effect, which sets the text and focuses the textarea.
           setTodayOpen(false);
+          if (dailyPromptText && dailyPromptText.trim().length > 0) {
+            setQuickResetSeed(dailyPromptText);
+          }
           setComposerPrefillToken((n) => n + 1);
         }}
       />
@@ -287,7 +302,7 @@ export default function Home() {
         open={shareOpen}
         onOpenChange={setShareOpen}
         title={TODAY_PROMPT_TITLE}
-        line={TODAY_PROMPT_LINE}
+        line={dailyPromptText ?? TODAY_PROMPT_LINE}
       />
       <QuickResetDialog
         open={quickResetOpen}

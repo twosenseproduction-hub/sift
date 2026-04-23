@@ -2,7 +2,16 @@ import { Button } from "@/components/ui/button";
 
 interface TodayFromSiftCardProps {
   onOpen?: () => void;
+  /**
+   * Optional override for the card's one-line blurb. When provided, replaces
+   * the default quiet line with today's personalized prompt. Falls back to
+   * the default if omitted or empty.
+   */
+  line?: string;
 }
+
+const DEFAULT_LINE =
+  "You do not need a full plan. You need one visible start.";
 
 /**
  * TodayFromSiftCard
@@ -12,7 +21,8 @@ interface TodayFromSiftCardProps {
  * Stays smaller than the composer so the header invitation above remains
  * the primary moment on the page.
  */
-export function TodayFromSiftCard({ onOpen }: TodayFromSiftCardProps) {
+export function TodayFromSiftCard({ onOpen, line }: TodayFromSiftCardProps) {
+  const displayLine = line && line.trim().length > 0 ? line : DEFAULT_LINE;
   const handleOpen = () => {
     if (onOpen) {
       onOpen();
@@ -41,7 +51,7 @@ export function TodayFromSiftCard({ onOpen }: TodayFromSiftCardProps) {
             className="mt-2 font-serif text-base md:text-lg leading-snug text-foreground"
             data-testid="text-today-line"
           >
-            You do not need a full plan. You need one visible start.
+            {displayLine}
           </p>
         </div>
 

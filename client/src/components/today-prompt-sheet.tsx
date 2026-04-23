@@ -20,6 +20,17 @@ interface TodayPromptSheetProps {
    * the sheet, prefill the composer with the seed text, and focus/scroll to it.
    */
   onFreeWrite: () => void;
+  /**
+   * Optional override for the sheet's title. Defaults to the stable wrapper
+   * copy when omitted.
+   */
+  title?: string;
+  /**
+   * Optional override for the sheet's reflective line. When provided, replaces
+   * the default quiet line with today's personalized prompt. Falls back to
+   * the default if omitted or empty.
+   */
+  line?: string;
 }
 
 const TODAY_TITLE = "What matters today";
@@ -38,7 +49,11 @@ export function TodayPromptSheet({
   onOpenChange,
   onShare,
   onFreeWrite,
+  title,
+  line,
 }: TodayPromptSheetProps) {
+  const displayTitle = title && title.trim().length > 0 ? title : TODAY_TITLE;
+  const displayLine = line && line.trim().length > 0 ? line : TODAY_LINE;
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
@@ -57,13 +72,13 @@ export function TodayPromptSheet({
             className="font-serif text-xl md:text-2xl leading-snug text-foreground"
             data-testid="text-today-sheet-title"
           >
-            {TODAY_TITLE}
+            {displayTitle}
           </SheetTitle>
           <p
             className="font-serif text-base md:text-lg leading-snug text-muted-foreground"
             data-testid="text-today-sheet-line"
           >
-            {TODAY_LINE}
+            {displayLine}
           </p>
         </SheetHeader>
 
