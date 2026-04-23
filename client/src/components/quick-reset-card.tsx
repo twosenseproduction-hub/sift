@@ -15,7 +15,6 @@ export function QuickResetCard({ onStart, onSkip }: Props) {
   return (
     <section
       aria-labelledby="quick-reset-title"
-      className="mt-12 md:mt-16 pt-6 md:pt-8 border-t border-border/40"
       data-testid="card-quick-reset"
     >
       <div className="flex items-baseline justify-between gap-4 flex-wrap">

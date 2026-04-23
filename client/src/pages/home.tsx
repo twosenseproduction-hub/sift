@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/button";
 import { useMe } from "@/lib/auth";
 import { useDailyPrompt } from "@/lib/useDailyPrompt";
 import { useQuery } from "@tanstack/react-query";
-import { Bookmark } from "lucide-react";
+import { Bookmark, ChevronDown } from "lucide-react";
 import type { SiftResult, SiftListItem } from "@shared/schema";
 
 // Hardcoded seed for "Free write from this". Keeps the app voice:
@@ -70,6 +70,11 @@ export default function Home() {
   const [careOriginalInput, setCareOriginalInput] = useState<string | null>(
     null,
   );
+  // Collapsed support section below the composer. Holds Today from Sift,
+  // Quick Reset, and Breath as a single progressive-disclosure row so the
+  // composer stays the unambiguous hero. Starts closed on every mount — a
+  // calm, not-always-visible shelf for different ways in.
+  const [supportOpen, setSupportOpen] = useState(false);
   const { data: meData } = useMe();
   const me = meData?.me;
 
@@ -174,14 +179,6 @@ export default function Home() {
                 </div>
               )}
 
-              {/* Returning signed-in users: a quiet daily nudge above the composer. */}
-              {isReturning && (
-                <TodayFromSiftCard
-                  onOpen={() => setTodayOpen(true)}
-                  line={dailyPromptText}
-                />
-              )}
-
               <Composer
                 onResult={(r) => {
                   setResult(r);
@@ -217,24 +214,65 @@ export default function Home() {
                 </div>
               )}
 
-              {/* Quick reset — a quiet, optional ritual. Intentionally lives
-                  below the composer and helper line so it never interrupts
-                  the main path. Hides for the session once started/hidden. */}
-              {!quickResetDismissed && (
-                <QuickResetCard
-                  onStart={() => setQuickResetOpen(true)}
-                  onSkip={() => setQuickResetDismissed(true)}
-                />
-              )}
+              {/* Collapsed support section. One quiet row that expands to
+                  reveal Today from Sift, Quick Reset, and Breath. Keeps the
+                  composer as the unambiguous primary path. All three tools
+                  are preserved with their existing behavior — just moved
+                  behind one disclosure. */}
+              <section
+                className="mt-10 md:mt-12 pt-6 md:pt-8 border-t border-border/40"
+                data-testid="section-support"
+              >
+                <button
+                  type="button"
+                  onClick={() => setSupportOpen((v) => !v)}
+                  aria-expanded={supportOpen}
+                  aria-controls="support-panel"
+                  data-testid="button-support-toggle"
+                  className="w-full flex items-center justify-between gap-4 text-left text-sm text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <span>Need a different way in?</span>
+                  <ChevronDown
+                    className={`w-4 h-4 shrink-0 transition-transform duration-300 ${
+                      supportOpen ? "rotate-180" : ""
+                    }`}
+                    aria-hidden="true"
+                  />
+                </button>
 
-              {/* Breathing — secondary, optional grounding module. Lives
-                  beneath the composer and Quick reset. Focuses the composer
-                  when the user chooses to continue into writing. */}
-              <BreathingDot
-                onContinue={() => {
-                  setComposerPrefillToken((n) => n + 1);
-                }}
-              />
+                {supportOpen && (
+                  <div
+                    id="support-panel"
+                    data-testid="panel-support"
+                    className="mt-5 space-y-5 fade-in-slow"
+                  >
+                    {/* 1. Today from Sift — daily nudge, preserves sheet
+                         + share + free-write wiring from the page. */}
+                    <TodayFromSiftCard
+                      onOpen={() => setTodayOpen(true)}
+                      line={dailyPromptText}
+                    />
+
+                    {/* 2. Quick Reset — optional ritual. Hides after use
+                         for the rest of the session, same as before. */}
+                    {!quickResetDismissed && (
+                      <QuickResetCard
+                        onStart={() => setQuickResetOpen(true)}
+                        onSkip={() => setQuickResetDismissed(true)}
+                      />
+                    )}
+
+                    {/* 3. Breath — grounding module. Fullscreen breathing
+                         experience is untouched; onContinue still re-seeds
+                         the composer when the user returns to writing. */}
+                    <BreathingDot
+                      onContinue={() => {
+                        setComposerPrefillToken((n) => n + 1);
+                      }}
+                    />
+                  </div>
+                )}
+              </section>
             </div>
           ) : flow === "expanding" && result ? (
             <div className="pt-8 md:pt-12">

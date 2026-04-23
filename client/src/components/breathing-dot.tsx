@@ -227,7 +227,7 @@ export function BreathingDot({ onContinue }: Props) {
   const resting = (
     <section
       aria-labelledby="breathing-title"
-      className="mt-10 md:mt-12 pt-6 md:pt-8 border-t border-border/40"
+
       data-testid="card-breathing"
     >
       <div className="flex items-baseline justify-between gap-4 flex-wrap">
