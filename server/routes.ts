@@ -4,7 +4,7 @@ import express from "express";
 import crypto from "crypto";
 import Anthropic from "@anthropic-ai/sdk";
 import { storage, rawDb } from "./storage";
-import { selectDailyPrompt } from "./daily-prompt";
+import { selectDailyPrompt, type RecentSiftSignal } from "./daily-prompt";
 import {
   analyzeRequestSchema,
   analysisSchema,
@@ -547,10 +547,29 @@ export async function registerRoutes(
   const countSiftsForUserStmt = rawDb.prepare(
     `SELECT COUNT(*) AS n FROM sifts WHERE user_id = ?`
   );
+  // Recent sifts feeding the pattern-aware prompt selector.
+  // 30 day lookback, newest first, capped at 40 to bound CPU/memory.
+  const recentSiftsStmt = rawDb.prepare(
+    `SELECT created_at, themes, core_intent, next_step
+       FROM sifts
+      WHERE user_id = ? AND created_at >= ?
+      ORDER BY created_at DESC
+      LIMIT 40`
+  );
 
   app.get("/api/daily-prompt", async (req, res) => {
     const mood =
       typeof req.query.mood === "string" ? req.query.mood : undefined;
+
+    // Optional client-supplied local hour for time-of-day bias (0–23).
+    // Anonymous callers can pass ?hour=14 to get a morning/evening-appropriate
+    // prompt; authed callers can do the same. Invalid values are ignored.
+    const rawHour =
+      typeof req.query.hour === "string" ? Number(req.query.hour) : NaN;
+    const localHour =
+      Number.isFinite(rawHour) && rawHour >= 0 && rawHour <= 23
+        ? Math.floor(rawHour)
+        : null;
 
     const userId = readToken(req);
     // Cycle day is calendar-UTC and shared by everyone. It ticks over at
@@ -560,6 +579,7 @@ export async function registerRoutes(
     const themeCycleDay = currentCycleDay();
     let hasPriorSift = false;
     let userKey: string;
+    let recentSifts: RecentSiftSignal[] | undefined;
 
     if (userId) {
       const user = await storage.getUserById(userId);
@@ -569,6 +589,36 @@ export async function registerRoutes(
       const { n } = countSiftsForUserStmt.get(userId) as { n: number };
       hasPriorSift = n > 0;
       userKey = `u:${userId}`;
+
+      // Load the last ~30 days of sifts for pattern signals.
+      if (hasPriorSift) {
+        const since = Date.now() - 30 * DAY_MS;
+        const rows = recentSiftsStmt.all(userId, since) as Array<{
+          created_at: number;
+          themes: string;
+          core_intent: string | null;
+          next_step: string | null;
+        }>;
+        recentSifts = rows.map((r) => {
+          // themes is stored as JSON string of [{title, summary}]. Extract titles.
+          let titles: string[] = [];
+          try {
+            const parsed = JSON.parse(r.themes);
+            if (Array.isArray(parsed)) {
+              titles = parsed
+                .map((t) => (t && typeof t.title === "string" ? t.title : ""))
+                .filter(Boolean);
+            }
+          } catch {
+            // Malformed JSON — ignore titles for this row.
+          }
+          return {
+            createdAt: r.created_at,
+            themeTitles: titles,
+            text: [r.core_intent || "", r.next_step || ""].join(" ").trim(),
+          };
+        });
+      }
     } else {
       hasPriorSift = false;
       userKey = "anon";
@@ -579,6 +629,8 @@ export async function registerRoutes(
       hasPriorSift,
       mood: mood ?? null,
       userKey,
+      recentSifts,
+      localHour,
     });
 
     res.json({
