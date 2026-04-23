@@ -31,7 +31,7 @@ export function QuickResetCard({ onStart, onSkip }: Props) {
             className="mt-1.5 text-sm md:text-[15px] leading-snug text-muted-foreground"
             data-testid="text-quick-reset-line"
           >
-            Sort what feels loud from what feels real.
+            Sort what matters from what is just noise.
           </p>
         </div>
 

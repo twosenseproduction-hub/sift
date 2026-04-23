@@ -115,59 +115,59 @@ function completionCopy(
   const loudHeavy = loudWords.filter((w) => LOUD_WORDS.has(w));
   const realGrounded = realWords.filter((w) => GROUNDED_WORDS.has(w));
 
-  // Strong loud cluster — reflect the pressure words back.
+  // Strong noise cluster — reflect the pressure words back.
   if (loudHeavy.length >= 2) {
     const cluster = joinWords(loudHeavy.slice(0, 3));
     return {
-      title: `A lot of ${cluster} on the loud side today.`,
+      title: `A lot of ${cluster} on the noise side today.`,
       cta: "Sift from that",
       seed: `Some of what feels loud right now is ${cluster}. What sits underneath it is`,
     };
   }
 
-  // Real side is narrow (1–2 items) — reflect the smallness.
+  // Matters side is narrow (1–2 items) — reflect the smallness.
   if (realWords.length > 0 && realWords.length <= 2) {
     const anchor = realWords[0];
     return {
-      title: `The real side is small — just ${joinWords(realWords)}.`,
+      title: `What matters is small — just ${joinWords(realWords)}.`,
       cta: "Start from that",
       seed: `If I stay with ${anchor}, what feels most true right now is`,
     };
   }
 
-  // Real side is grounded — carry the tone forward.
+  // Matters side is grounded — carry the tone forward.
   if (realGrounded.length >= 2) {
     const anchor = realGrounded[0];
     return {
-      title: `There is ${joinWords(realGrounded.slice(0, 3))} on the real side.`,
+      title: `There is ${joinWords(realGrounded.slice(0, 3))} on the matters side.`,
       cta: "Stay with that",
       seed: `Starting from ${anchor}, what I actually want is`,
     };
   }
 
-  // Nothing marked loud — everything feels real.
+  // Nothing marked noise — everything feels like it matters.
   if (loudWords.length === 0 && realWords.length > 0) {
     return {
-      title: "Nothing feels loud — it all reads as real.",
+      title: "Nothing reads as noise — it all feels like it matters.",
       cta: "Begin",
       seed: "What I want to hold onto from all of this is",
     };
   }
 
-  // Nothing marked real — everything feels loud.
+  // Nothing marked matters — everything feels like noise.
   if (realWords.length === 0 && loudWords.length > 0) {
     return {
-      title: "Most of this is louder than it is real.",
+      title: "Most of this is louder than it matters.",
       cta: "Sift what's underneath",
-      seed: "Under all the noise, the one thing that is actually real is",
+      seed: "Under all the noise, the one thing that actually matters is",
     };
   }
 
   // Balanced / default.
   return {
-    title: "A mix. Some real, some just loud.",
+    title: "A mix. Some of it matters, some is just noise.",
     cta: "Begin",
-    seed: "What feels most real right now, past the noise, is",
+    seed: "What actually matters right now, past the noise, is",
   };
 }
 
@@ -364,25 +364,26 @@ export function QuickResetDialog({ open, onOpenChange, onComplete }: Props) {
               )}
             </div>
 
-            {/* Buckets */}
+            {/* Buckets — "Matters" is the grounded side (internal `real`),
+                "Noise" is the charged side (internal `loud`). */}
             <div className="grid grid-cols-2 gap-3">
               <BucketZone
-                ref={loudRef}
-                label="Loud"
-                chips={chipsFor("loud")}
-                onChipTap={unplace}
-                testid="bucket-loud"
-                isHover={hoverBucket === "loud" && draggingIdx !== null}
-                isFlash={justDroppedBucket === "loud"}
-              />
-              <BucketZone
                 ref={realRef}
-                label="Real"
+                label="Matters"
                 chips={chipsFor("real")}
                 onChipTap={unplace}
-                testid="bucket-real"
+                testid="bucket-matters"
                 isHover={hoverBucket === "real" && draggingIdx !== null}
                 isFlash={justDroppedBucket === "real"}
+              />
+              <BucketZone
+                ref={loudRef}
+                label="Noise"
+                chips={chipsFor("loud")}
+                onChipTap={unplace}
+                testid="bucket-noise"
+                isHover={hoverBucket === "loud" && draggingIdx !== null}
+                isFlash={justDroppedBucket === "loud"}
               />
             </div>
 
