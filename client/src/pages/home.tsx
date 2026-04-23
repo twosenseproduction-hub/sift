@@ -159,15 +159,6 @@ export default function Home() {
                 />
               )}
 
-              {/* Quick reset — a very small optional ritual. Sits above the
-                  composer; once started or skipped, hides for the session. */}
-              {!quickResetDismissed && (
-                <QuickResetCard
-                  onStart={() => setQuickResetOpen(true)}
-                  onSkip={() => setQuickResetDismissed(true)}
-                />
-              )}
-
               <Composer
                 onResult={(r) => {
                   setResult(r);
@@ -197,6 +188,16 @@ export default function Home() {
                     See example
                   </button>
                 </div>
+              )}
+
+              {/* Quick reset — a quiet, optional ritual. Intentionally lives
+                  below the composer and helper line so it never interrupts
+                  the main path. Hides for the session once started/hidden. */}
+              {!quickResetDismissed && (
+                <QuickResetCard
+                  onStart={() => setQuickResetOpen(true)}
+                  onSkip={() => setQuickResetDismissed(true)}
+                />
               )}
             </div>
           ) : flow === "expanding" && result ? (
