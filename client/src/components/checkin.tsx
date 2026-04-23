@@ -284,7 +284,7 @@ function FirstCheckinIntro({
         className="mt-2 text-base md:text-[17px] text-foreground/85 leading-relaxed"
         data-testid="text-intro-body"
       >
-        Did you get to the step you saved?
+        Were you able to try this?
       </p>
 
       {!response ? (
@@ -307,14 +307,14 @@ function FirstCheckinIntro({
               className="gap-2"
             >
               <Circle className="w-4 h-4" />
-              Not yet
+              No, not yet
             </Button>
           </div>
           <p
             className="mt-4 text-xs text-muted-foreground"
             data-testid="text-intro-microcopy"
           >
-            This helps Sift give you a better next step.
+            This helps Sift suggest a better next step.
           </p>
         </>
       ) : (
