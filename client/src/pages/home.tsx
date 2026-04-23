@@ -13,6 +13,7 @@ import {
 import { SharePromptDialog } from "@/components/share-prompt-dialog";
 import { QuickResetCard } from "@/components/quick-reset-card";
 import { QuickResetDialog } from "@/components/quick-reset-dialog";
+import { BreathingDot } from "@/components/breathing-dot";
 import { CareScreen } from "@/components/care-screen";
 import { Button } from "@/components/ui/button";
 import { useMe } from "@/lib/auth";
@@ -212,6 +213,15 @@ export default function Home() {
                   onSkip={() => setQuickResetDismissed(true)}
                 />
               )}
+
+              {/* Breathing — secondary, optional grounding module. Lives
+                  beneath the composer and Quick reset. Focuses the composer
+                  when the user chooses to continue into writing. */}
+              <BreathingDot
+                onContinue={() => {
+                  setComposerPrefillToken((n) => n + 1);
+                }}
+              />
             </div>
           ) : flow === "expanding" && result ? (
             <div className="pt-8 md:pt-12">
