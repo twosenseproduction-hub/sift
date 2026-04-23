@@ -5,7 +5,7 @@ import crypto from "crypto";
 import Anthropic from "@anthropic-ai/sdk";
 import { storage, rawDb } from "./storage";
 import { selectDailyPrompt, type RecentSiftSignal } from "./daily-prompt";
-import { screenForCrisis } from "./crisis-screen";
+import { screenForCrisis, screenOutputForCrisis } from "./crisis-screen";
 import {
   analyzeRequestSchema,
   analysisSchema,
@@ -32,11 +32,20 @@ const client = new Anthropic();
 // sandbox, set ANTHROPIC_MODEL=claude_sonnet_4_6 (the internal alias).
 const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-5-20250929";
 
+const SAFETY_CLAUSE = `SAFETY — NON-NEGOTIABLE:
+- Never suggest, validate, romanticize, instruct on, or propose self-harm, suicide, or violence toward anyone. Not as a next step, not as a reflection, not as a theme, not as an observation, not even hypothetically.
+- Do not use the words "suicide", "suicidal", "self-harm", "kill yourself/myself/himself/herself", "hurt yourself/myself", "end your/my life", "overdose", "cut yourself/myself", "better off dead", or any variant of those in your output.
+- If the user's input hints at self-harm, harm to others, or despair, a separate safeguard handles it upstream — you will never be called in that case. If you somehow receive such input, respond with valid JSON containing only neutral, grounding language and a next step that is "Reach out to someone you trust today." Do not name methods, do not validate the ideation.
+- Next steps must always be safe, legal, pro-life, non-violent actions. Actions directed at another person must be non-harmful (a conversation, a boundary, written reflection).
+- No advice to isolate, disappear, quit everything, burn bridges, or "give up on life/living".`;
+
 const SYSTEM_PROMPT = `You are Sift — a quiet, precise thinking companion.
 
 Someone has just poured out a tangle of thoughts. Your job is to sift through the noise and return clarity.
 
 You write like a calm, thoughtful guide — not a coach, not a therapist, not a hype man. No exclamation points. No emojis. No corporate language. No "great question!" No "let's dive in." Speak plainly, warmly, with weight.
+
+${SAFETY_CLAUSE}
 
 Return STRICT JSON matching this shape exactly:
 {
@@ -80,6 +89,8 @@ Treat all outcomes as useful data:
 - If they are still working → clarify what remains unclear
 
 Tone: calm, perceptive, grounded, slightly conversational, not overly polished. No exclamation points. No emojis.
+
+${SAFETY_CLAUSE}
 
 Return STRICT JSON matching this shape exactly:
 {
@@ -675,6 +686,16 @@ export async function registerRoutes(
 
     try {
       const analysis = await runAnalysis(input);
+
+      // Output safeguard — scan every string in the model's response. If it
+      // contains crisis-adjacent language (shouldn't, given the system prompt,
+      // but we do not rely on that), discard the response entirely. Nothing is
+      // persisted; the client surfaces the care screen.
+      if (screenOutputForCrisis(analysis)) {
+        console.warn("[crisis-screen] output tripped on /api/sift — discarding");
+        return res.json({ type: "care" });
+      }
+
       const id = newId();
 
       await storage.createSift({
@@ -788,6 +809,13 @@ export async function registerRoutes(
         parsed.data.status,
         parsed.data.note ?? ""
       );
+
+      // Output safeguard — same discard-and-care policy for check-in outputs.
+      if (screenOutputForCrisis(analysis)) {
+        console.warn("[crisis-screen] output tripped on /api/sift/:id/checkin — discarding");
+        return res.json({ type: "care" });
+      }
+
       const row = await storage.createCheckin({
         siftId,
         status: parsed.data.status,
