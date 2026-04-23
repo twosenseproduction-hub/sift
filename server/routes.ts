@@ -14,6 +14,7 @@ import {
   classifyContact,
   checkinRequestSchema,
   checkinAnalysisSchema,
+  updateSiftStatusSchema,
   type Analysis,
   type CheckinAnalysis,
   type CheckinResult,
@@ -711,6 +712,24 @@ export async function registerRoutes(
     const ok = await storage.deleteSift(String(req.params.id), userId);
     if (!ok) return res.status(404).json({ error: "Not found" });
     res.json({ ok: true });
+  });
+
+  // Update thread status on one of my sifts (open | closed)
+  app.patch("/api/sift/:id/status", requireAuth, async (req, res) => {
+    const userId = (req as any).userId as number;
+    const parsed = updateSiftStatusSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res
+        .status(400)
+        .json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+    }
+    const updated = await storage.updateSiftStatus(
+      String(req.params.id),
+      userId,
+      parsed.data.status,
+    );
+    if (!updated) return res.status(404).json({ error: "Not found" });
+    res.json({ sift: updated });
   });
 
   // Fetch a shared sift (public-by-link)

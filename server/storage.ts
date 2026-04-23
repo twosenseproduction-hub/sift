@@ -3,6 +3,7 @@ import {
   type InsertSift,
   type User,
   type SiftListItem,
+  type SiftStatus,
   type Checkin,
   sifts,
   users,
@@ -58,6 +59,13 @@ const siftCols = sqlite
 if (!siftCols.some((c) => c.name === "user_id")) {
   sqlite.exec(`ALTER TABLE sifts ADD COLUMN user_id INTEGER;`);
 }
+// Safe migration: add status column + backfill existing rows to 'open'.
+if (!siftCols.some((c) => c.name === "status")) {
+  sqlite.exec(
+    `ALTER TABLE sifts ADD COLUMN status TEXT NOT NULL DEFAULT 'open';`
+  );
+  sqlite.exec(`UPDATE sifts SET status = 'open' WHERE status IS NULL;`);
+}
 
 // Safe migration: add contact + consent columns to users if missing. Existing
 // rows get NULL email/phone and 0 for both consent flags (= never opted in).
@@ -98,6 +106,11 @@ export interface IStorage {
   getSift(id: string): Promise<Sift | undefined>;
   listSiftsByUser(userId: number, q?: string): Promise<SiftListItem[]>;
   deleteSift(id: string, userId: number): Promise<boolean>;
+  updateSiftStatus(
+    id: string,
+    userId: number,
+    status: SiftStatus,
+  ): Promise<SiftListItem | undefined>;
   // Users
   createUser(params: CreateUserParams): Promise<User>;
   getUserByHandle(handle: string): Promise<User | undefined>;
@@ -144,6 +157,7 @@ export class DatabaseStorage implements IStorage {
         createdAt: sifts.createdAt,
         coreIntent: sifts.coreIntent,
         nextStep: sifts.nextStep,
+        status: sifts.status,
       })
       .from(sifts);
 
@@ -159,7 +173,12 @@ export class DatabaseStorage implements IStorage {
         )
       : eq(sifts.userId, userId);
 
-    return base.where(where).orderBy(desc(sifts.createdAt)).all();
+    const rows = await base.where(where).orderBy(desc(sifts.createdAt)).all();
+    // Guard: treat any legacy/null status as 'open' at read time.
+    return rows.map((r) => ({
+      ...r,
+      status: (r.status === "closed" ? "closed" : "open") as SiftStatus,
+    }));
   }
 
   async deleteSift(id: string, userId: number): Promise<boolean> {
@@ -168,6 +187,30 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(sifts.id, id), eq(sifts.userId, userId)))
       .run();
     return res.changes > 0;
+  }
+
+  async updateSiftStatus(
+    id: string,
+    userId: number,
+    status: SiftStatus,
+  ): Promise<SiftListItem | undefined> {
+    const row = db
+      .update(sifts)
+      .set({ status })
+      .where(and(eq(sifts.id, id), eq(sifts.userId, userId)))
+      .returning({
+        id: sifts.id,
+        createdAt: sifts.createdAt,
+        coreIntent: sifts.coreIntent,
+        nextStep: sifts.nextStep,
+        status: sifts.status,
+      })
+      .get();
+    if (!row) return undefined;
+    return {
+      ...row,
+      status: (row.status === "closed" ? "closed" : "open") as SiftStatus,
+    };
   }
 
   async createUser(params: CreateUserParams): Promise<User> {

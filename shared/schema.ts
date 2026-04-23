@@ -43,6 +43,9 @@ export const sifts = sqliteTable("sifts", {
   coreIntent: text("core_intent").notNull(),
   nextStep: text("next_step").notNull(),
   reflection: text("reflection").notNull(),
+  // Thread status: 'open' = still active, 'closed' = done for now.
+  // Defaults to 'open' at insert time.
+  status: text("status").notNull().default("open"),
 });
 
 // ---- Checkins ----
@@ -218,10 +221,20 @@ export type Me =
     }
   | null;
 
+// Thread status — quiet open/closed marker on saved sifts.
+export const siftStatusSchema = z.enum(["open", "closed"]);
+export type SiftStatus = z.infer<typeof siftStatusSchema>;
+
+export const updateSiftStatusSchema = z.object({
+  status: siftStatusSchema,
+});
+export type UpdateSiftStatusRequest = z.infer<typeof updateSiftStatusSchema>;
+
 // History list item (compact)
 export type SiftListItem = {
   id: string;
   createdAt: number;
   coreIntent: string;
   nextStep: string;
+  status: SiftStatus;
 };

@@ -9,6 +9,7 @@ import { AuthDialog } from "@/components/auth-dialog";
 import { useMe } from "@/lib/auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,7 +21,9 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import type { SiftListItem } from "@shared/schema";
+import type { SiftListItem, SiftStatus } from "@shared/schema";
+
+type StatusFilter = "all" | "open" | "closed";
 
 export default function HistoryPage() {
   const [, navigate] = useLocation();
@@ -28,6 +31,7 @@ export default function HistoryPage() {
   const me = meData?.me;
   const [q, setQ] = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const { toast } = useToast();
 
   // debounce search
@@ -66,6 +70,24 @@ export default function HistoryPage() {
     },
   });
 
+  const setStatus = useMutation({
+    mutationFn: async (vars: { id: string; status: SiftStatus }) => {
+      await apiRequest("PATCH", `/api/sift/${vars.id}/status`, {
+        status: vars.status,
+      });
+      return vars;
+    },
+    onSuccess: (vars) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/sifts"] });
+      toast({
+        title: vars.status === "closed" ? "Marked closed" : "Reopened",
+      });
+    },
+    onError: () => {
+      toast({ title: "Couldn't update that one", description: "Try again." });
+    },
+  });
+
   // Not signed in → gentle gate
   if (!meLoading && !me) {
     return (
@@ -90,7 +112,11 @@ export default function HistoryPage() {
     );
   }
 
-  const sifts = data?.sifts ?? [];
+  const allSifts = data?.sifts ?? [];
+  const sifts = allSifts.filter((s) => {
+    if (statusFilter === "all") return true;
+    return s.status === statusFilter;
+  });
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -107,7 +133,7 @@ export default function HistoryPage() {
           </div>
 
           {/* Search */}
-          <div className="relative mb-8">
+          <div className="relative mb-4">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
             <Input
               data-testid="input-search"
@@ -116,6 +142,25 @@ export default function HistoryPage() {
               placeholder="Search your sifts…"
               className="pl-10 h-11 bg-card border-card-border"
             />
+          </div>
+
+          {/* Status filter — quiet text row */}
+          <div className="mb-8 flex items-center gap-5 text-sm">
+            {(["all", "open", "closed"] as const).map((f) => (
+              <button
+                key={f}
+                onClick={() => setStatusFilter(f)}
+                data-testid={`filter-${f}`}
+                className={cn(
+                  "transition-colors",
+                  statusFilter === f
+                    ? "text-foreground font-medium"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {f === "all" ? "All" : f === "open" ? "Open" : "Closed"}
+              </button>
+            ))}
           </div>
 
           {isLoading && <ListSkeleton />}
@@ -129,6 +174,10 @@ export default function HistoryPage() {
               {debouncedQ ? (
                 <p className="text-muted-foreground" data-testid="text-empty-search">
                   Nothing matches "{debouncedQ}".
+                </p>
+              ) : statusFilter !== "all" && allSifts.length > 0 ? (
+                <p className="text-muted-foreground" data-testid="text-empty-filter">
+                  Nothing {statusFilter} right now.
                 </p>
               ) : (
                 <>
@@ -161,48 +210,71 @@ export default function HistoryPage() {
                     className="flex-1 text-left min-w-0"
                     data-testid={`link-sift-${s.id}`}
                   >
-                    <div className="flex items-baseline gap-3 mb-1.5">
+                    <div className="flex items-center gap-2.5 mb-1.5">
+                      <StatusDot status={s.status} />
                       <span className="font-mono text-[11px] text-muted-foreground uppercase tracking-wider">
                         {formatDate(s.createdAt)}
                       </span>
                     </div>
-                    <h3 className="font-serif text-lg md:text-xl leading-snug text-foreground mb-1.5">
+                    <h3
+                      className={cn(
+                        "font-serif text-lg md:text-xl leading-snug mb-1.5",
+                        s.status === "closed"
+                          ? "text-muted-foreground"
+                          : "text-foreground",
+                      )}
+                    >
                       {s.coreIntent}
                     </h3>
                     <p className="text-sm text-muted-foreground line-clamp-1">
                       Next: {s.nextStep}
                     </p>
                   </button>
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <button
-                        aria-label="Delete sift"
-                        data-testid={`button-delete-${s.id}`}
-                        className="self-start mt-1 p-2 rounded-md text-muted-foreground/60 hover:text-destructive hover:bg-destructive/5 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle className="font-serif text-xl">
-                          Remove this sift?
-                        </AlertDialogTitle>
-                        <AlertDialogDescription>
-                          It will be gone from your thread. Anyone holding the share link won't be able to open it either.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Keep it</AlertDialogCancel>
-                        <AlertDialogAction
-                          onClick={() => del.mutate(s.id)}
-                          data-testid={`confirm-delete-${s.id}`}
+                  <div className="flex items-start gap-1 self-start mt-1">
+                    <button
+                      onClick={() =>
+                        setStatus.mutate({
+                          id: s.id,
+                          status: s.status === "closed" ? "open" : "closed",
+                        })
+                      }
+                      disabled={setStatus.isPending}
+                      data-testid={`button-toggle-status-${s.id}`}
+                      className="px-2 py-1 rounded-md text-xs text-muted-foreground/70 hover:text-foreground hover:bg-muted/50 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity whitespace-nowrap"
+                    >
+                      {s.status === "closed" ? "Reopen" : "Mark closed"}
+                    </button>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <button
+                          aria-label="Delete sift"
+                          data-testid={`button-delete-${s.id}`}
+                          className="p-2 rounded-md text-muted-foreground/60 hover:text-destructive hover:bg-destructive/5 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
                         >
-                          Delete
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle className="font-serif text-xl">
+                            Remove this sift?
+                          </AlertDialogTitle>
+                          <AlertDialogDescription>
+                            It will be gone from your thread. Anyone holding the share link won't be able to open it either.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Keep it</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={() => del.mutate(s.id)}
+                            data-testid={`confirm-delete-${s.id}`}
+                          >
+                            Delete
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -211,6 +283,20 @@ export default function HistoryPage() {
       </main>
       <Footnote />
     </div>
+  );
+}
+
+function StatusDot({ status }: { status: SiftStatus }) {
+  return (
+    <span
+      aria-label={status === "closed" ? "Closed" : "Open"}
+      title={status === "closed" ? "Closed" : "Open"}
+      data-testid={`status-dot-${status}`}
+      className={cn(
+        "inline-block w-1.5 h-1.5 rounded-full shrink-0",
+        status === "closed" ? "bg-muted-foreground/35" : "bg-primary/70",
+      )}
+    />
   );
 }
 
