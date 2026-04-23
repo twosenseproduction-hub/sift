@@ -12,6 +12,30 @@ import {
 } from "@/lib/voice";
 import type { SiftResult, CareResponse } from "@shared/schema";
 import { isCareResponse } from "@shared/schema";
+import { ClarifyPrompt } from "./clarify-prompt";
+
+// Deterministic thin-input heuristic. Returns true when the submission is
+// likely too sparse for a confident sift. Intentionally conservative — we
+// only gate when the signal is clearly thin so normal submissions are
+// untouched.
+function isThinInput(raw: string): boolean {
+  const text = raw.trim();
+  if (!text) return true;
+  // Collapse whitespace, then count words and unique words.
+  const words = text.split(/\s+/).filter(Boolean);
+  const wordCount = words.length;
+  if (wordCount < 6) return true;
+  // Very short character count even with many filler tokens.
+  if (text.length < 40) return true;
+  // Low lexical diversity — e.g. "idk idk idk i don't know i don't know".
+  const unique = new Set(words.map((w) => w.toLowerCase().replace(/[^a-z']/g, ""))).size;
+  if (wordCount >= 6 && unique / wordCount < 0.5) return true;
+  // No complete sentence AND short. Punctuation-free fragments under ~12
+  // words usually lack enough context to separate signal from noise.
+  const hasSentence = /[.!?]/.test(text);
+  if (!hasSentence && wordCount < 12) return true;
+  return false;
+}
 
 // ---------- Composer ----------
 
@@ -67,6 +91,12 @@ export function Composer({ onResult, onCare, initialText, prefillToken }: Compos
   const modeRef = useRef<"text" | "voice">("text");
 
   const [siftingIdx, setSiftingIdx] = useState(0);
+  // Clarification fallback state. When the initial submission is too thin,
+  // we swap the composer UI for a single-question prompt; the user's answer
+  // is then merged with the original input and submitted through the same
+  // analysis path. `clarifyInput` holds the original text while the prompt
+  // is shown.
+  const [clarifyInput, setClarifyInput] = useState<string | null>(null);
 
   useEffect(() => () => recRef.current?.stop(), []);
 
@@ -164,10 +194,10 @@ export function Composer({ onResult, onCare, initialText, prefillToken }: Compos
     setRecording(false);
   };
 
-  const submit = async () => {
-    const text = input.trim();
-    if (!text) return;
-    if (recording) stopVoice();
+  // Submit raw text straight to the analysis endpoint. Used both by the
+  // initial submission (after the thin-input gate passes) and by the
+  // clarification branch (which merges the original input with the answer).
+  const runSift = async (text: string) => {
     setLoading(true);
     try {
       const res = await apiRequest("POST", "/api/sift", {
@@ -175,18 +205,15 @@ export function Composer({ onResult, onCare, initialText, prefillToken }: Compos
         inputMode: modeRef.current,
       });
       const data = (await res.json()) as SiftResult | CareResponse;
-      // Crisis safeguard short-circuit: server returned a care response.
-      // Do not clear the input — if the user taps "this wasn't what I meant"
-      // the caller restores the composer and we want their text back.
       if (isCareResponse(data)) {
         if (onCare) onCare(text);
         return;
       }
-      // Refresh history list if user is signed in
       queryClient.invalidateQueries({ queryKey: ["/api/sifts"] });
       onResult(data);
       setInput("");
       setInterim("");
+      setClarifyInput(null);
       modeRef.current = "text";
     } catch (err: any) {
       toast({
@@ -198,6 +225,29 @@ export function Composer({ onResult, onCare, initialText, prefillToken }: Compos
     }
   };
 
+  const submit = async () => {
+    const text = input.trim();
+    if (!text) return;
+    if (recording) stopVoice();
+    // Thin-input gate — show the clarification prompt instead of sending.
+    // The original text stays in the composer state so "Edit my thought"
+    // returns the user cleanly to what they typed.
+    if (isThinInput(text)) {
+      setClarifyInput(text);
+      return;
+    }
+    await runSift(text);
+  };
+
+  const submitClarification = async (answer: string) => {
+    const base = clarifyInput ?? input.trim();
+    if (!base) return;
+    // Merge the original thought with the clarification answer. Labeled so
+    // the model sees both passes as one coherent submission.
+    const merged = `${base}\n\nOne more angle: ${answer}`;
+    await runSift(merged);
+  };
+
   const handleKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
       e.preventDefault();
@@ -206,6 +256,17 @@ export function Composer({ onResult, onCare, initialText, prefillToken }: Compos
   };
 
   const displayText = recording && interim ? input + (input ? " " : "") + interim : input;
+
+  if (clarifyInput !== null) {
+    return (
+      <ClarifyPrompt
+        originalInput={clarifyInput}
+        submitting={loading}
+        onAnswer={submitClarification}
+        onCancel={() => setClarifyInput(null)}
+      />
+    );
+  }
 
   return (
     <div className="relative" data-testid="composer">
