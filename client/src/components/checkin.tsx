@@ -9,6 +9,8 @@ import type {
   CheckinStatus,
   SiftResult,
 } from "@shared/schema";
+import { isCareResponse } from "@shared/schema";
+import { CareScreen } from "./care-screen";
 
 interface Props {
   sift: SiftResult;
@@ -31,6 +33,13 @@ export function CheckinBlock({ sift, readOnly }: Props) {
   const [status, setStatus] = useState<CheckinStatus | null>(null);
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  // If the check-in note trips the server crisis screen, the composer is
+  // replaced by the CareScreen until the user dismisses it. Flagged text is
+  // never persisted server-side.
+  const [careOpen, setCareOpen] = useState(false);
+  const [careOriginalNote, setCareOriginalNote] = useState<string | null>(
+    null,
+  );
   // First-time check-in intro: shown only for the sift owner when they
   // haven't checked in yet on this sift, and they haven't dismissed the
   // intro in this session. React state only (no localStorage) — returning
@@ -51,10 +60,18 @@ export function CheckinBlock({ sift, readOnly }: Props) {
     if (!status) return;
     setSubmitting(true);
     try {
-      await apiRequest("POST", `/api/sift/${sift.id}/checkin`, {
+      const res = await apiRequest("POST", `/api/sift/${sift.id}/checkin`, {
         status,
         note: note.trim(),
       });
+      const data = await res.json();
+      // Server crisis screen tripped. Flagged note is not stored; surface a
+      // care screen instead of a check-in card.
+      if (isCareResponse(data)) {
+        setCareOriginalNote(note);
+        setCareOpen(true);
+        return;
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/sift", sift.id] });
       setStatus(null);
       setNote("");
@@ -67,6 +84,32 @@ export function CheckinBlock({ sift, readOnly }: Props) {
       setSubmitting(false);
     }
   };
+
+  // If the crisis screen tripped on this check-in, render it in place of the
+  // entire check-in section. "Go back" clears the composer; "this wasn't what
+  // I meant" restores the note so the user can rephrase.
+  if (careOpen) {
+    return (
+      <section
+        className="pt-12 mt-12 border-t border-border/60"
+        data-testid="section-checkin"
+      >
+        <CareScreen
+          onClose={() => {
+            setCareOpen(false);
+            setCareOriginalNote(null);
+            setStatus(null);
+            setNote("");
+          }}
+          onDismiss={() => {
+            setCareOpen(false);
+            if (careOriginalNote !== null) setNote(careOriginalNote);
+            setCareOriginalNote(null);
+          }}
+        />
+      </section>
+    );
+  }
 
   return (
     <section className="pt-12 mt-12 border-t border-border/60" data-testid="section-checkin">

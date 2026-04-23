@@ -10,12 +10,21 @@ import {
   isVoiceSupported,
   type RecognitionHandle,
 } from "@/lib/voice";
-import type { SiftResult } from "@shared/schema";
+import type { SiftResult, CareResponse } from "@shared/schema";
+import { isCareResponse } from "@shared/schema";
 
 // ---------- Composer ----------
 
 interface ComposerProps {
   onResult: (r: SiftResult) => void;
+  /**
+   * Called when the server screens the submitted input as a crisis signal
+   * (suicide, self-harm, harm-to-others). The flagged text is neither
+   * persisted nor sent to the LLM; the caller should render a CareScreen.
+   * The original input is passed back so the caller can restore it if the
+   * user taps "this wasn't what I meant".
+   */
+  onCare?: (originalInput: string) => void;
   /**
    * Optional seed text. When `prefillToken` changes to a new value, the
    * composer's textarea is re-seeded with `initialText`. Lets callers
@@ -38,7 +47,7 @@ const SIFTING_SUBLINES = [
   "Making sense of this",
 ];
 
-export function Composer({ onResult, initialText, prefillToken }: ComposerProps) {
+export function Composer({ onResult, onCare, initialText, prefillToken }: ComposerProps) {
   // If the caller mounts this composer already holding a non-zero prefillToken
   // (e.g. the continuation composer in the expanding flow, which bumps the
   // token before mount), seed the input on mount. The main composer mounts
@@ -165,7 +174,14 @@ export function Composer({ onResult, initialText, prefillToken }: ComposerProps)
         input: text,
         inputMode: modeRef.current,
       });
-      const data = (await res.json()) as SiftResult;
+      const data = (await res.json()) as SiftResult | CareResponse;
+      // Crisis safeguard short-circuit: server returned a care response.
+      // Do not clear the input — if the user taps "this wasn't what I meant"
+      // the caller restores the composer and we want their text back.
+      if (isCareResponse(data)) {
+        if (onCare) onCare(text);
+        return;
+      }
       // Refresh history list if user is signed in
       queryClient.invalidateQueries({ queryKey: ["/api/sifts"] });
       onResult(data);

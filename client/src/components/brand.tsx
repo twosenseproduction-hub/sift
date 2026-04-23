@@ -4,6 +4,13 @@ import { Moon, Sun, Archive, LogOut, User as UserIcon } from "lucide-react";
 import { useTheme } from "@/lib/theme";
 import { useMe, useLogout } from "@/lib/auth";
 import { AuthDialog } from "./auth-dialog";
+import { CareScreen } from "./care-screen";
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -122,11 +129,39 @@ export function Header() {
 }
 
 export function Footnote() {
+  const [careOpen, setCareOpen] = useState(false);
   return (
-    <div className="mx-auto max-w-3xl px-6 md:px-8 py-10 text-center">
-      <p className="text-xs text-muted-foreground">
-        Sift is a quiet tool. It won't replace your thinking — it helps you find it.
-      </p>
-    </div>
+    <>
+      <div className="mx-auto max-w-3xl px-6 md:px-8 py-10 text-center">
+        <p className="text-xs text-muted-foreground">
+          Sift is a quiet tool. It won't replace your thinking — it helps you find it.
+        </p>
+        <div className="mt-3">
+          <button
+            type="button"
+            onClick={() => setCareOpen(true)}
+            data-testid="link-in-crisis"
+            className="text-xs text-muted-foreground/80 hover:text-foreground underline underline-offset-4 decoration-border/70 hover:decoration-foreground transition-colors"
+          >
+            In crisis?
+          </button>
+        </div>
+      </div>
+      <Dialog open={careOpen} onOpenChange={setCareOpen}>
+        <DialogContent className="max-w-xl p-0 overflow-hidden">
+          <DialogTitle className="sr-only">Crisis resources</DialogTitle>
+          <DialogDescription className="sr-only">
+            Free, confidential lines available anytime if you or someone near
+            you is in crisis.
+          </DialogDescription>
+          <div className="px-6 md:px-8 pb-8">
+            <CareScreen
+              informational
+              onClose={() => setCareOpen(false)}
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

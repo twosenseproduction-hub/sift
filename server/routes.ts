@@ -5,6 +5,7 @@ import crypto from "crypto";
 import Anthropic from "@anthropic-ai/sdk";
 import { storage, rawDb } from "./storage";
 import { selectDailyPrompt, type RecentSiftSignal } from "./daily-prompt";
+import { screenForCrisis } from "./crisis-screen";
 import {
   analyzeRequestSchema,
   analysisSchema,
@@ -662,6 +663,14 @@ export async function registerRoutes(
       return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
     }
     const { input, inputMode } = parsed.data;
+
+    // Crisis safeguard — before persistence, before LLM. If the input describes
+    // suicide, self-harm, or intent to harm others, return a care response and
+    // stop. Nothing is stored; nothing is sent to the model.
+    if (screenForCrisis(input)) {
+      return res.json({ type: "care" });
+    }
+
     const userId = readToken(req);
 
     try {
@@ -766,6 +775,11 @@ export async function registerRoutes(
     const sift = await storage.getSift(siftId);
     if (!sift) return res.status(404).json({ error: "Not found" });
     if (sift.userId !== userId) return res.status(403).json({ error: "Not your sift" });
+
+    // Crisis safeguard — screen the note before persisting or calling the LLM.
+    if (screenForCrisis(parsed.data.note ?? "")) {
+      return res.json({ type: "care" });
+    }
 
     try {
       const analysis = await runCheckinAnalysis(

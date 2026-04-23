@@ -99,6 +99,26 @@ export type SiftResult = Analysis & {
   checkins?: CheckinResult[];
 };
 
+// Crisis safeguard — the server short-circuits when an input appears to
+// describe suicidal ideation, self-harm, or intent to harm others. We do not
+// persist the input, do not send it to the LLM, and do not return a normal
+// SiftResult. The client renders a calm CareScreen instead.
+export type CareResponse = { type: "care" };
+
+export type SiftOrCareResult =
+  | ({ type?: "sift" } & SiftResult)
+  | CareResponse;
+
+export function isCareResponse(
+  r: unknown,
+): r is CareResponse {
+  return (
+    typeof r === "object" &&
+    r !== null &&
+    (r as { type?: unknown }).type === "care"
+  );
+}
+
 // ---- Check-in schemas ----
 export const checkinStatusSchema = z.enum(["did_it", "did_not", "in_progress"]);
 export type CheckinStatus = z.infer<typeof checkinStatusSchema>;

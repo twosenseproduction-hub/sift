@@ -13,6 +13,7 @@ import {
 import { SharePromptDialog } from "@/components/share-prompt-dialog";
 import { QuickResetCard } from "@/components/quick-reset-card";
 import { QuickResetDialog } from "@/components/quick-reset-dialog";
+import { CareScreen } from "@/components/care-screen";
 import { Button } from "@/components/ui/button";
 import { useMe } from "@/lib/auth";
 import { useDailyPrompt } from "@/lib/useDailyPrompt";
@@ -36,7 +37,9 @@ const EXPAND_SEED = "Staying with this, what I want to say next is...";
 //   result    — show result + decision row (expand / come back later)
 //   expanding — result stays visible above a continuation composer
 //   saved     — user chose "come back to this later" (navigation handles it)
-type Flow = "idle" | "sifting" | "result" | "expanding" | "saved";
+//   care      — server crisis screen tripped. Flagged input is not persisted
+//               and not sent to the LLM. Renders a calm resource screen.
+type Flow = "idle" | "sifting" | "result" | "expanding" | "saved" | "care";
 
 export default function Home() {
   const [flow, setFlow] = useState<Flow>("idle");
@@ -60,6 +63,12 @@ export default function Home() {
   const [quickResetOpen, setQuickResetOpen] = useState(false);
   const [quickResetDismissed, setQuickResetDismissed] = useState(false);
   const [quickResetSeed, setQuickResetSeed] = useState<string | null>(null);
+  // When the crisis screen trips, we keep the original input around locally
+  // so "this wasn't what I meant" can restore the composer exactly as typed.
+  // It is never sent to the server or persisted.
+  const [careOriginalInput, setCareOriginalInput] = useState<string | null>(
+    null,
+  );
   const { data: meData } = useMe();
   const me = meData?.me;
 
@@ -164,6 +173,10 @@ export default function Home() {
                   setResult(r);
                   setFlow("result");
                 }}
+                onCare={(originalInput) => {
+                  setCareOriginalInput(originalInput);
+                  setFlow("care");
+                }}
                 initialText={quickResetSeed ?? FREE_WRITE_SEED}
                 prefillToken={composerPrefillToken}
               />
@@ -220,6 +233,10 @@ export default function Home() {
                     setResult(r);
                     setFlow("result");
                   }}
+                  onCare={(originalInput) => {
+                    setCareOriginalInput(originalInput);
+                    setFlow("care");
+                  }}
                   initialText={EXPAND_SEED}
                   prefillToken={expandPrefillToken}
                 />
@@ -235,6 +252,26 @@ export default function Home() {
                 </div>
               </div>
             </div>
+          ) : flow === "care" ? (
+            <CareScreen
+              onClose={() => {
+                // "Go back" — return to the composer idle state. We deliberately
+                // don't restore the flagged text here; this is the "I heard
+                // you, I'll step away" path.
+                setCareOriginalInput(null);
+                setFlow("idle");
+              }}
+              onDismiss={() => {
+                // "this wasn't what I meant" — put the user back in the
+                // composer with their original text, so they can rephrase.
+                if (careOriginalInput) {
+                  setQuickResetSeed(careOriginalInput);
+                  setComposerPrefillToken((n) => n + 1);
+                }
+                setCareOriginalInput(null);
+                setFlow("idle");
+              }}
+            />
           ) : result ? (
             <div className="pt-8 md:pt-12">
               {!me && <SaveThreadBanner onOpen={() => setAuthOpen(true)} />}
