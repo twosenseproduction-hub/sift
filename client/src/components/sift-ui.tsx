@@ -431,6 +431,29 @@ export function Result({
   // the viewer explicitly copies it as text.
   const [reflectionShareOpen, setReflectionShareOpen] = useState(false);
 
+  // Soft interpretation state for "What this may be pointing to".
+  // intentText is the currently displayed intent (user may have corrected it).
+  // fitState tracks the small action row: null = show actions, "fits" = quietly
+  // confirmed, "skipped" = hidden, "editing" = inline correction visible.
+  const [intentText, setIntentText] = useState(result.coreIntent);
+  useEffect(() => {
+    setIntentText(result.coreIntent);
+    setFitState(null);
+    setCorrection("");
+  }, [result.id, result.coreIntent]);
+  const [fitState, setFitState] = useState<
+    null | "fits" | "skipped" | "editing"
+  >(null);
+  const [correction, setCorrection] = useState("");
+
+  const applyCorrection = () => {
+    const v = correction.trim();
+    if (!v) return;
+    setIntentText(v);
+    setFitState("fits");
+    setCorrection("");
+  };
+
   const shareUrl =
     typeof window !== "undefined"
       ? `${window.location.origin}${window.location.pathname}#/s/${result.id}`
@@ -443,8 +466,8 @@ export function Result({
       "Themes:",
       ...result.themes.map((t, i) => `${i + 1}. ${t.title} — ${t.summary}`),
       "",
-      `What I actually want:`,
-      result.coreIntent,
+      `What this may be pointing to:`,
+      intentText,
       "",
       `Next step:`,
       result.nextStep,
@@ -466,15 +489,106 @@ export function Result({
   return (
     <article className="fade-up" data-testid="result">
       <div className="space-y-10 md:space-y-12">
-        {/* Core intent — the headline */}
+        {/* Core intent — softened headline. Presented as a possible read,
+            with a quiet inline correction path if it doesn't fit. */}
         <section data-testid="section-intent">
-          <Label>What you actually want</Label>
+          <Label>What this may be pointing to</Label>
+          <p
+            className="mt-1.5 text-xs md:text-sm text-muted-foreground/80"
+            data-testid="text-intent-helper"
+          >
+            What you might want underneath this.
+          </p>
           <p
             className="font-serif text-2xl md:text-3xl leading-[1.25] text-foreground mt-3"
             data-testid="text-intent"
           >
-            {result.coreIntent}
+            {intentText}
           </p>
+
+          {!readOnly && fitState !== "skipped" && (
+            <div className="mt-4" data-testid="row-intent-fit">
+              {fitState === "editing" ? (
+                <div data-testid="box-intent-correction">
+                  <p
+                    className="text-sm text-muted-foreground"
+                    data-testid="text-intent-correction-prompt"
+                  >
+                    What feels closer to it?
+                  </p>
+                  <Textarea
+                    value={correction}
+                    onChange={(e) => setCorrection(e.target.value)}
+                    onKeyDown={(e) => {
+                      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                        e.preventDefault();
+                        applyCorrection();
+                      }
+                    }}
+                    placeholder="In your own words."
+                    data-testid="input-intent-correction"
+                    className="mt-2 min-h-[72px] resize-none text-base leading-relaxed"
+                  />
+                  <div className="mt-2 flex items-center gap-4 text-sm">
+                    <button
+                      type="button"
+                      onClick={applyCorrection}
+                      disabled={!correction.trim()}
+                      data-testid="button-intent-update"
+                      className="text-foreground/85 hover:text-foreground underline underline-offset-4 decoration-border hover:decoration-foreground transition-colors disabled:opacity-50"
+                    >
+                      Update this
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFitState(null);
+                        setCorrection("");
+                      }}
+                      data-testid="link-intent-cancel"
+                      className="text-muted-foreground/70 hover:text-foreground transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : fitState === "fits" ? (
+                <p
+                  className="text-xs text-muted-foreground/70"
+                  data-testid="text-intent-fits"
+                >
+                  Noted.
+                </p>
+              ) : (
+                <div className="flex items-center gap-5 text-sm">
+                  <button
+                    type="button"
+                    onClick={() => setFitState("fits")}
+                    data-testid="button-intent-fits"
+                    className="text-foreground/80 hover:text-foreground transition-colors"
+                  >
+                    That fits
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFitState("editing")}
+                    data-testid="button-intent-notquite"
+                    className="text-foreground/80 hover:text-foreground underline underline-offset-4 decoration-border hover:decoration-foreground transition-colors"
+                  >
+                    Not quite
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFitState("skipped")}
+                    data-testid="link-intent-skip"
+                    className="text-muted-foreground/70 hover:text-foreground transition-colors"
+                  >
+                    Skip
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </section>
 
         {/* Themes */}
