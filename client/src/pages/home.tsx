@@ -96,6 +96,19 @@ export default function Home() {
     return () => clearTimeout(t);
   }, [me?.id, me?.contactMissing]);
 
+  // Reset home to the idle composer when the logo dispatches sift:home-reset.
+  // Covers the case where the user is already on '/' — the <Link> is a no-op
+  // but we still want to clear any lingering result/expanding/care state.
+  useEffect(() => {
+    const onReset = () => {
+      setResult(null);
+      setFlow("idle");
+      setCareOriginalInput(null);
+    };
+    window.addEventListener("sift:home-reset", onReset);
+    return () => window.removeEventListener("sift:home-reset", onReset);
+  }, []);
+
   const dismissContactPrompt = () => {
     try {
       window.localStorage?.setItem("sift.contactPromptDismissed", "1");

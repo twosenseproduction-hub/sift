@@ -59,7 +59,18 @@ export function Header() {
     <header className="w-full">
       <div className="mx-auto max-w-3xl px-6 md:px-8 py-6 flex items-center justify-between">
         <Link href="/" data-testid="link-home">
-          <a className="flex items-center gap-2.5 group">
+          <a
+            className="flex items-center gap-2.5 group"
+            onClick={() => {
+              // Home owns its own flow/result state. If we're already on the
+              // home route the <Link> is a no-op and that state would persist,
+              // leaving the user on a stale result. Fire a small event so
+              // Home can reset to the idle composer.
+              if (typeof window !== "undefined") {
+                window.dispatchEvent(new CustomEvent("sift:home-reset"));
+              }
+            }}
+          >
             <span className="text-foreground/90 group-hover:text-primary transition-colors">
               <Logo />
             </span>
