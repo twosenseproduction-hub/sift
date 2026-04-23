@@ -432,26 +432,65 @@ export function Result({
   const [reflectionShareOpen, setReflectionShareOpen] = useState(false);
 
   // Soft interpretation state for "What this may be pointing to".
-  // intentText is the currently displayed intent (user may have corrected it).
+  // `view` is the currently displayed analysis (themes, intent, next step,
+  // reflection). It starts as the original result and is replaced in place
+  // when the user submits a correction — themes and the rest of the result
+  // refresh together so they stay coherent with the updated intent.
   // fitState tracks the small action row: null = show actions, "fits" = quietly
   // confirmed, "skipped" = hidden, "editing" = inline correction visible.
-  const [intentText, setIntentText] = useState(result.coreIntent);
-  useEffect(() => {
-    setIntentText(result.coreIntent);
-    setFitState(null);
-    setCorrection("");
-  }, [result.id, result.coreIntent]);
+  const [view, setView] = useState<SiftResult>(result);
   const [fitState, setFitState] = useState<
     null | "fits" | "skipped" | "editing"
   >(null);
   const [correction, setCorrection] = useState("");
-
-  const applyCorrection = () => {
-    const v = correction.trim();
-    if (!v) return;
-    setIntentText(v);
-    setFitState("fits");
+  const [correctionSubmitting, setCorrectionSubmitting] = useState(false);
+  useEffect(() => {
+    setView(result);
+    setFitState(null);
     setCorrection("");
+    setCorrectionSubmitting(false);
+  }, [result.id, result.coreIntent]);
+
+  const applyCorrection = async () => {
+    const v = correction.trim();
+    if (!v || correctionSubmitting) return;
+    // Re-run analysis with the original input plus the user's reframe, so
+    // every section (themes, next step, reflection) realigns with the
+    // updated intent. Falls back to a local intent-only update if the
+    // re-analysis call fails.
+    setCorrectionSubmitting(true);
+    try {
+      const merged = `${view.input}\n\nOne more angle: ${v}\n\nWhat I actually want underneath this is: ${v}`;
+      const res = await apiRequest("POST", "/api/sift", {
+        input: merged,
+        inputMode: view.inputMode,
+      });
+      const data = (await res.json()) as SiftResult | CareResponse;
+      if (isCareResponse(data)) {
+        // Crisis screen tripped on the reframe — keep the existing view and
+        // surface a calm toast rather than navigating away from the result.
+        toast({
+          title: "Let's take a breath",
+          description: "Try rephrasing this gently, or tap the footer link.",
+        });
+        return;
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/sifts"] });
+      setView(data);
+      setFitState("fits");
+      setCorrection("");
+    } catch (err: any) {
+      // Soft fallback — at least reflect the user's words in the intent.
+      setView((v0) => ({ ...v0, coreIntent: v }));
+      setFitState("fits");
+      setCorrection("");
+      toast({
+        title: "Couldn't re-sift",
+        description: err?.message ?? "Updated here for now.",
+      });
+    } finally {
+      setCorrectionSubmitting(false);
+    }
   };
 
   const shareUrl =
@@ -461,19 +500,19 @@ export function Result({
 
   const copyText = async () => {
     const body = [
-      `Sift — ${new Date(result.createdAt).toLocaleString()}`,
+      `Sift — ${new Date(view.createdAt).toLocaleString()}`,
       "",
       "Themes:",
-      ...result.themes.map((t, i) => `${i + 1}. ${t.title} — ${t.summary}`),
+      ...view.themes.map((t, i) => `${i + 1}. ${t.title} — ${t.summary}`),
       "",
       `What this may be pointing to:`,
-      intentText,
+      view.coreIntent,
       "",
       `Next step:`,
-      result.nextStep,
+      view.nextStep,
       "",
       `Reflection:`,
-      result.reflection,
+      view.reflection,
       "",
       shareUrl,
     ].join("\n");
@@ -503,7 +542,7 @@ export function Result({
             className="font-serif text-2xl md:text-3xl leading-[1.25] text-foreground mt-3"
             data-testid="text-intent"
           >
-            {intentText}
+            {view.coreIntent}
           </p>
 
           {!readOnly && fitState !== "skipped" && (
@@ -526,6 +565,7 @@ export function Result({
                       }
                     }}
                     placeholder="In your own words."
+                    disabled={correctionSubmitting}
                     data-testid="input-intent-correction"
                     className="mt-2 min-h-[72px] resize-none text-base leading-relaxed"
                   />
@@ -533,11 +573,11 @@ export function Result({
                     <button
                       type="button"
                       onClick={applyCorrection}
-                      disabled={!correction.trim()}
+                      disabled={!correction.trim() || correctionSubmitting}
                       data-testid="button-intent-update"
                       className="text-foreground/85 hover:text-foreground underline underline-offset-4 decoration-border hover:decoration-foreground transition-colors disabled:opacity-50"
                     >
-                      Update this
+                      {correctionSubmitting ? "Re-sifting\u2026" : "Update this"}
                     </button>
                     <button
                       type="button"
@@ -545,8 +585,9 @@ export function Result({
                         setFitState(null);
                         setCorrection("");
                       }}
+                      disabled={correctionSubmitting}
                       data-testid="link-intent-cancel"
-                      className="text-muted-foreground/70 hover:text-foreground transition-colors"
+                      className="text-muted-foreground/70 hover:text-foreground transition-colors disabled:opacity-50"
                     >
                       Cancel
                     </button>
@@ -595,7 +636,7 @@ export function Result({
         <section data-testid="section-themes">
           <Label>Themes underneath</Label>
           <ul className="mt-4 divide-y divide-border/70 border-y border-border/70">
-            {result.themes.map((t, i) => (
+            {view.themes.map((t, i) => (
               <li
                 key={i}
                 className="py-4 md:py-5 flex gap-4 md:gap-6"
@@ -625,7 +666,7 @@ export function Result({
               className="font-serif text-xl md:text-2xl leading-snug text-foreground"
               data-testid="text-next-step"
             >
-              {result.nextStep}
+              {view.nextStep}
             </p>
           </div>
         </section>
@@ -637,7 +678,7 @@ export function Result({
             className="mt-3 text-base md:text-[17px] text-muted-foreground italic leading-relaxed"
             data-testid="text-reflection"
           >
-            "{result.reflection}"
+            "{view.reflection}"
           </p>
         </section>
 
