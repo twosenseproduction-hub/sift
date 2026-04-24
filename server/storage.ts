@@ -5,13 +5,21 @@ import {
   type SiftListItem,
   type SiftStatus,
   type Checkin,
+  type ThreadTurnRow,
+  type ThreadBookmarkRow,
+  type ThreadTurn,
+  type Bookmark,
+  type BookmarkPayload,
+  type SiftTurnMessage,
   sifts,
   users,
   checkins,
+  threadTurns,
+  threadBookmarks,
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import Database from "better-sqlite3";
-import { eq, and, desc, like, or, isNull, asc } from "drizzle-orm";
+import { eq, and, desc, like, or, isNull, asc, sql } from "drizzle-orm";
 
 // DB path is configurable so the production host can mount a persistent volume.
 // Fly.io mounts volumes at /data by default — set DB_PATH=/data/sift.db there.
@@ -49,6 +57,21 @@ sqlite.exec(`
     token TEXT PRIMARY KEY,
     user_id INTEGER NOT NULL,
     created_at INTEGER NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS thread_turns (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sift_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    role TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    payload TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_thread_turns_sift
+    ON thread_turns(sift_id, created_at ASC);
+  CREATE TABLE IF NOT EXISTS thread_bookmarks (
+    sift_id TEXT PRIMARY KEY,
+    updated_at INTEGER NOT NULL,
+    payload TEXT NOT NULL
   );
 `);
 
@@ -122,6 +145,14 @@ export interface IStorage {
   // Checkins
   createCheckin(row: Omit<Checkin, "id" | "createdAt">): Promise<Checkin>;
   listCheckins(siftId: string): Promise<Checkin[]>;
+  // Thread turns + bookmarks
+  listTurns(siftId: string): Promise<ThreadTurn[]>;
+  appendTurn(
+    input: Omit<ThreadTurnRow, "id" | "createdAt">,
+  ): Promise<ThreadTurn>;
+  countUserTurns(siftId: string): Promise<number>;
+  getBookmark(siftId: string): Promise<Bookmark | undefined>;
+  upsertBookmark(siftId: string, payload: BookmarkPayload): Promise<Bookmark>;
 }
 
 export type CreateUserParams = {
@@ -280,6 +311,121 @@ export class DatabaseStorage implements IStorage {
       .orderBy(asc(checkins.createdAt))
       .all();
   }
+
+  async listTurns(siftId: string): Promise<ThreadTurn[]> {
+    const rows = db
+      .select()
+      .from(threadTurns)
+      .where(eq(threadTurns.siftId, siftId))
+      .orderBy(asc(threadTurns.createdAt))
+      .all();
+    return rows.map(rowToThreadTurn).filter((t): t is ThreadTurn => t !== null);
+  }
+
+  async appendTurn(
+    input: Omit<ThreadTurnRow, "id" | "createdAt">,
+  ): Promise<ThreadTurn> {
+    const row = db
+      .insert(threadTurns)
+      .values({ ...input, createdAt: Date.now() })
+      .returning()
+      .get();
+    const parsed = rowToThreadTurn(row);
+    if (!parsed) {
+      throw new Error("Malformed thread turn payload after insert");
+    }
+    return parsed;
+  }
+
+  async countUserTurns(siftId: string): Promise<number> {
+    const row = db
+      .select({ n: sql<number>`COUNT(*)` })
+      .from(threadTurns)
+      .where(
+        and(eq(threadTurns.siftId, siftId), eq(threadTurns.role, "user")),
+      )
+      .get();
+    return row?.n ?? 0;
+  }
+
+  async getBookmark(siftId: string): Promise<Bookmark | undefined> {
+    const row = db
+      .select()
+      .from(threadBookmarks)
+      .where(eq(threadBookmarks.siftId, siftId))
+      .get();
+    if (!row) return undefined;
+    try {
+      return {
+        updatedAt: row.updatedAt,
+        payload: JSON.parse(row.payload) as BookmarkPayload,
+      };
+    } catch {
+      return undefined;
+    }
+  }
+
+  async upsertBookmark(
+    siftId: string,
+    payload: BookmarkPayload,
+  ): Promise<Bookmark> {
+    const updatedAt = Date.now();
+    const payloadJson = JSON.stringify(payload);
+    // Upsert via raw statement — better-sqlite3 supports ON CONFLICT cleanly.
+    rawDb
+      .prepare(
+        `INSERT INTO thread_bookmarks (sift_id, updated_at, payload)
+         VALUES (?, ?, ?)
+         ON CONFLICT(sift_id) DO UPDATE SET
+           updated_at = excluded.updated_at,
+           payload = excluded.payload`,
+      )
+      .run(siftId, updatedAt, payloadJson);
+    return { updatedAt, payload };
+  }
+}
+
+// --- Row → ThreadTurn adapter ---
+// Keeps the route/client typed against the tagged-union ThreadTurn while
+// letting the DB store everything as one payload column.
+function rowToThreadTurn(row: ThreadTurnRow): ThreadTurn | null {
+  let payload: any;
+  try {
+    payload = JSON.parse(row.payload);
+  } catch {
+    return null;
+  }
+  const base = { id: row.id, createdAt: row.createdAt } as const;
+  if (row.role === "user" && row.kind === "message") {
+    if (typeof payload?.text !== "string") return null;
+    return { ...base, role: "user", kind: "message", text: payload.text };
+  }
+  if (row.role === "sift" && row.kind === "message") {
+    return {
+      ...base,
+      role: "sift",
+      kind: "message",
+      message: payload as SiftTurnMessage,
+    };
+  }
+  if (row.role === "sift" && row.kind === "checkpoint") {
+    return {
+      ...base,
+      role: "sift",
+      kind: "checkpoint",
+      checkpoint: payload as BookmarkPayload,
+    };
+  }
+  if (row.role === "sift" && row.kind === "closure") {
+    if (typeof payload?.reflection !== "string") return null;
+    return {
+      ...base,
+      role: "sift",
+      kind: "closure",
+      reflection: payload.reflection,
+    };
+  }
+  return null;
 }
 
 export const storage = new DatabaseStorage();

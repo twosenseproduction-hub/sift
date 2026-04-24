@@ -15,6 +15,7 @@ import { QuickResetCard } from "@/components/quick-reset-card";
 import { QuickResetDialog } from "@/components/quick-reset-dialog";
 import { BreathingDot } from "@/components/breathing-dot";
 import { CareScreen } from "@/components/care-screen";
+import { DeepeningThread } from "@/components/deepening-thread";
 import { Button } from "@/components/ui/button";
 import { useMe } from "@/lib/auth";
 import { useDailyPrompt } from "@/lib/useDailyPrompt";
@@ -26,17 +27,12 @@ import type { SiftResult, SiftListItem } from "@shared/schema";
 // reflective, calm, introspective. No prompt gymnastics.
 const FREE_WRITE_SEED = "What feels hardest about starting right now is...";
 
-// Seed for the continuation composer when a user chooses "Expand on this now".
-// Short, inviting, and in the app voice — picks up the thread rather than
-// restarting it.
-const EXPAND_SEED = "Staying with this, what I want to say next is...";
-
 // Explicit flow states for the home page. One variable, no scattered booleans.
 //   idle      — composer
 //   sifting   — request in flight (Composer owns its own loading UI, so this
 //               state is informational; we still track it for clarity)
 //   result    — show result + decision row (expand / come back later)
-//   expanding — result stays visible above a continuation composer
+//   expanding — result stays visible above a threaded deepening surface
 //   saved     — user chose "come back to this later" (navigation handles it)
 //   care      — server crisis screen tripped. Flagged input is not persisted
 //               and not sent to the LLM. Renders a calm resource screen.
@@ -53,8 +49,6 @@ export default function Home() {
   // instead of the text itself lets repeated "Free write" taps work even when
   // the user has edited or cleared the textarea in between.
   const [composerPrefillToken, setComposerPrefillToken] = useState(0);
-  // Separate token for the continuation composer used in the expanding flow.
-  const [expandPrefillToken, setExpandPrefillToken] = useState(0);
   const [contactPromptOpen, setContactPromptOpen] = useState(false);
   // Quick reset (Signal / Noise) — kept local to the home screen.
   // `quickResetSeed` is the soft composer seed produced by the completion
@@ -278,7 +272,7 @@ export default function Home() {
             <div className="pt-8 md:pt-12">
               {/* Keep the current sift visible — continuing the thread, not
                   starting over. Action row is hidden (readOnly) so the only
-                  action below is the continuation composer. */}
+                  action below is the threaded deepening surface. */}
               <Result result={result} readOnly />
               <div className="mt-10 md:mt-12 border-t border-border/60 pt-8 md:pt-10">
                 <p
@@ -287,21 +281,42 @@ export default function Home() {
                 >
                   Keep going
                 </p>
-                <Composer
-                  onResult={(r) => {
-                    // Continuation becomes the new focal sift. Old result is
-                    // still saved server-side; this keeps the UI simple.
-                    setResult(r);
-                    setFlow("result");
-                  }}
-                  onCare={(originalInput) => {
-                    setCareOriginalInput(originalInput);
-                    setFlow("care");
-                  }}
-                  initialText={EXPAND_SEED}
-                  prefillToken={expandPrefillToken}
-                />
-                <div className="mt-4">
+                {me ? (
+                  <DeepeningThread
+                    siftId={result.id}
+                    initialTurns={result.turns ?? []}
+                    initialBookmark={result.bookmark}
+                    onCare={() => setFlow("care")}
+                    onClosed={() => {
+                      // Leave the thread visible so the user can read the
+                      // closure reflection — they can navigate away via the
+                      // logo or "Back to result".
+                    }}
+                    onBookmarkUpdate={(bookmark) => {
+                      setResult((prev) =>
+                        prev ? { ...prev, bookmark } : prev,
+                      );
+                    }}
+                  />
+                ) : (
+                  <div
+                    className="rounded-xl border border-primary/20 bg-primary/5 px-5 py-5"
+                    data-testid="panel-deepen-signin"
+                  >
+                    <p className="text-sm text-foreground/80 mb-3">
+                      Deepening saves the thread across visits. Start a thread
+                      to continue with us remembering what unfolded.
+                    </p>
+                    <Button
+                      size="sm"
+                      onClick={() => setAuthOpen(true)}
+                      data-testid="button-signup-to-deepen"
+                    >
+                      Start a thread
+                    </Button>
+                  </div>
+                )}
+                <div className="mt-6">
                   <button
                     type="button"
                     onClick={() => setFlow("result")}
@@ -344,9 +359,9 @@ export default function Home() {
                 }}
                 showFollowup
                 onExpand={() => {
-                  // Bump the continuation composer's prefill token so it
-                  // re-seeds every time the user enters the expanding flow.
-                  setExpandPrefillToken((n) => n + 1);
+                  // Signed-in users enter the threaded deepening flow.
+                  // Anonymous users still get the expanding view, which
+                  // prompts them to start a thread to continue.
                   setFlow("expanding");
                 }}
                 onCheckInLater={() => {

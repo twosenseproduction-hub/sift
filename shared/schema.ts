@@ -97,6 +97,9 @@ export type SiftResult = Analysis & {
   createdAt: number;
   mine?: boolean; // set on client when viewing own sift
   checkins?: CheckinResult[];
+  status?: SiftStatus;
+  turns?: ThreadTurn[];
+  bookmark?: Bookmark;
 };
 
 // Crisis safeguard — the server short-circuits when an input appears to
@@ -258,3 +261,120 @@ export type SiftListItem = {
   nextStep: string;
   status: SiftStatus;
 };
+
+// ---- Thread turns ----
+// A thread turn is one back-and-forth beat inside a sift's deepening flow.
+// role='user' holds what the user wrote; role='sift' holds a compact
+// conversational response (mirror, question, shifted sense of matters/noise,
+// mini synthesis) OR a structured checkpoint card. We keep the payload as
+// JSON so the kind can evolve without another migration.
+export const threadTurns = sqliteTable("thread_turns", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  siftId: text("sift_id").notNull(),
+  createdAt: integer("created_at").notNull(),
+  role: text("role").notNull(), // 'user' | 'sift'
+  kind: text("kind").notNull(), // 'message' | 'checkpoint' | 'closure'
+  // JSON shape depends on kind:
+  //   message (role='user'):   { text: string }
+  //   message (role='sift'):   { mirror?: string, question?: string,
+  //                              matters?: string[], noise?: string[],
+  //                              mini?: string }
+  //   checkpoint (role='sift'):{ pointing, unfolded, matters[], noise[],
+  //                              lastLanded, nextStep } — same shape as Bookmark
+  //   closure (role='sift'):   { reflection: string }
+  payload: text("payload").notNull(),
+});
+export type ThreadTurnRow = typeof threadTurns.$inferSelect;
+
+// ---- Thread bookmarks ----
+// One-per-sift upsertable recap. Stores the latest synthesis checkpoint so
+// re-entry shows a compact card instead of raw history.
+export const threadBookmarks = sqliteTable("thread_bookmarks", {
+  siftId: text("sift_id").primaryKey(),
+  updatedAt: integer("updated_at").notNull(),
+  // JSON of BookmarkPayload
+  payload: text("payload").notNull(),
+});
+export type ThreadBookmarkRow = typeof threadBookmarks.$inferSelect;
+
+// The six required labeled sections, derived from the whole thread.
+// Label copy (preserve verbatim in the UI):
+//   "What this may be pointing to" — pointing
+//   "What has unfolded so far" — unfolded
+//   "What seems to matter most right now" — matters
+//   "What may be noise right now" — noise
+//   "Where you last landed" — lastLanded
+//   "A next step, if there is one" — nextStep
+export const bookmarkPayloadSchema = z.object({
+  pointing: z.string(),
+  unfolded: z.string(),
+  matters: z.array(z.string()).min(1).max(4),
+  noise: z.array(z.string()).min(1).max(3),
+  lastLanded: z.string(),
+  nextStep: z.string(),
+});
+export type BookmarkPayload = z.infer<typeof bookmarkPayloadSchema>;
+
+// Sift turn (server response shape). Narrower than the row — payload is parsed.
+export const siftTurnMessageSchema = z.object({
+  mirror: z.string().optional(),
+  question: z.string().optional(),
+  matters: z.array(z.string()).max(4).optional(),
+  noise: z.array(z.string()).max(3).optional(),
+  mini: z.string().optional(),
+});
+export type SiftTurnMessage = z.infer<typeof siftTurnMessageSchema>;
+
+export type ThreadTurn =
+  | { id: number; createdAt: number; role: "user"; kind: "message"; text: string }
+  | {
+      id: number;
+      createdAt: number;
+      role: "sift";
+      kind: "message";
+      message: SiftTurnMessage;
+    }
+  | {
+      id: number;
+      createdAt: number;
+      role: "sift";
+      kind: "checkpoint";
+      checkpoint: BookmarkPayload;
+    }
+  | {
+      id: number;
+      createdAt: number;
+      role: "sift";
+      kind: "closure";
+      reflection: string;
+    };
+
+export type Bookmark = {
+  updatedAt: number;
+  payload: BookmarkPayload;
+};
+
+// ---- Deepen / close API ----
+export const deepenRequestSchema = z.object({
+  text: z.string().min(1).max(4000),
+});
+export type DeepenRequest = z.infer<typeof deepenRequestSchema>;
+
+// Response can include: the user turn that was just appended, a sift reply,
+// optionally a checkpoint (synthesis) + updated bookmark, and a convergence
+// flag hinting that the thread may be landing.
+export type DeepenResponse =
+  | {
+      type: "care";
+    }
+  | {
+      type: "turns";
+      turns: ThreadTurn[]; // newly appended turns, oldest first
+      bookmark?: Bookmark;
+      converged?: boolean;
+    };
+
+export type CloseResponse =
+  | { type: "care" }
+  | { type: "closed"; reflection: string; turn: ThreadTurn };
+

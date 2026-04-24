@@ -16,6 +16,9 @@ import {
   checkinRequestSchema,
   checkinAnalysisSchema,
   updateSiftStatusSchema,
+  deepenRequestSchema,
+  bookmarkPayloadSchema,
+  siftTurnMessageSchema,
   type Analysis,
   type CheckinAnalysis,
   type CheckinResult,
@@ -23,6 +26,11 @@ import {
   type Me,
   type User,
   type Checkin,
+  type ThreadTurn,
+  type SiftTurnMessage,
+  type BookmarkPayload,
+  type DeepenResponse,
+  type CloseResponse,
 } from "@shared/schema";
 
 const client = new Anthropic();
@@ -62,6 +70,86 @@ Rules:
 - reflection: A quiet observation. Honest. Not flattering. Under 20 words.
 - If the input is very short or unclear, still produce a best-effort pass — do not ask questions back.
 - Output JSON only. No prose before or after.`;
+
+// --- Deepening (threaded) ---
+//
+// DEEPEN fires on every user reply. Sift responds conversationally — never
+// with a full result card. The shape is a small JSON object; the client
+// renders whichever fields are present. Signal / noise phrases MUST be drawn
+// verbatim (or near-verbatim) from the user's own words in this thread.
+const DEEPEN_SYSTEM_PROMPT = `You are Sift in Deepening Mode.
+
+The person already has an original sift (their opening input and your first response). They are continuing the thread. You will receive:
+- The original input they first brought
+- Your original coreIntent, themes, and next step
+- The full back-and-forth so far
+- Their newest reply
+
+Your job is NOT to regenerate the full card. You are having a short, grounded exchange that deepens the thread. Each reply is small. Treat this like a slow conversation, not a report.
+
+Respond with ONE or TWO of the following fields, whichever the moment actually calls for:
+- mirror: one short sentence naming what you just heard (not a summary — a distillation). Under 25 words.
+- question: one sharper follow-up question that goes a layer deeper than where they currently are. Not leading. Not therapeutic. Under 20 words.
+- matters: 1–3 short phrases, each drawn from the user's actual words in this thread, that seem to matter most right now.
+- noise: 1–2 short phrases, each drawn from the user's actual words in this thread, that seem to be noise right now.
+- mini: one short synthesizing sentence, only if the thread just took a real turn. Under 30 words. Omit otherwise.
+
+Rules:
+- Output at most 3 of the 5 fields. Usually 1–2. Keep it small.
+- matters / noise phrases MUST be short (2–6 words) and derived from what the user actually wrote in the thread. Do not invent generic words like "fear", "chaos", "growth". Use their language.
+- Never greet, never praise, never validate generically. No "that makes sense". No "I hear you".
+- No exclamation points. No emojis. No corporate language.
+- If the user seems to be landing or repeating, prefer a short mini or question that names the landing, rather than pushing them further.
+
+${SAFETY_CLAUSE}
+
+Return STRICT JSON. Only the fields you actually chose. Example shapes:
+{"mirror": "…"}
+{"mirror": "…", "question": "…"}
+{"matters": ["…", "…"], "noise": ["…"]}
+{"mini": "…"}
+Output JSON only. No prose before or after.`;
+
+// CHECKPOINT fires periodically (every ~4 user turns) to produce a synthesis
+// across the whole thread. It IS the six-section bookmark payload. Labels and
+// spec copy must match the product labels verbatim on the client.
+const CHECKPOINT_SYSTEM_PROMPT = `You are Sift producing a Checkpoint — a short structured synthesis of a threaded conversation so far.
+
+You will receive the original input, the original coreIntent + next step, and the full thread to date. Produce a calm recap that someone could re-open later and immediately re-orient from.
+
+Return STRICT JSON matching this shape:
+{
+  "pointing": string,      // one sentence — what this thread seems to be pointing to now (may differ from the opening coreIntent)
+  "unfolded": string,      // 1–2 sentences — how the thread has shifted, in plain terms. No bullet points.
+  "matters": [string],     // 2–4 short phrases drawn from the actual thread language. 2–6 words each.
+  "noise": [string],       // 1–3 short phrases drawn from the actual thread language. 2–6 words each.
+  "lastLanded": string,    // one sentence — where the user just left off in their own words/frame.
+  "nextStep": string       // ONE concrete small action they could take this week. Starts with a verb. If nothing is ready, say "No clear step yet — sit with this a little longer."
+}
+
+Rules:
+- matters/noise phrases MUST be drawn from what the user actually wrote in the thread. Do not invent generic words ("fear", "growth", "chaos"). Use their language.
+- Tone: quiet, grounded, precise, warm but not flattering. Non-therapeutic, non-corporate.
+- No exclamation points. No emojis.
+
+${SAFETY_CLAUSE}
+
+Output JSON only. No prose before or after.`;
+
+// CLOSE fires when the user explicitly closes the loop. Produces a quiet,
+// whole-thread reflection. Not a summary. Not advice.
+const CLOSE_SYSTEM_PROMPT = `You are Sift closing a loop.
+
+The user has chosen to close this thread for now. Read the full conversation and return ONE quiet reflection — a single sentence or two — that names what this process seemed to do for them, without flattery, without advice, without prescribing a next step.
+
+Return STRICT JSON matching this shape:
+{
+  "reflection": string  // 1–2 sentences, under 40 words total. Calm. Observational. No "great work". No exclamation points.
+}
+
+${SAFETY_CLAUSE}
+
+Output JSON only.`;
 
 const CHECKIN_SYSTEM_PROMPT = `You are Sift in Check-in Mode.
 
@@ -191,6 +279,198 @@ async function runAnalysis(input: string): Promise<Analysis> {
     parsed = JSON.parse(match[0]);
   }
   return analysisSchema.parse(parsed);
+}
+
+// --- Deepening helpers ---
+
+// Compact JSON extractor used by all three LLM modes below.
+function extractJson(raw: string): any {
+  const cleaned = raw
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```\s*$/i, "")
+    .trim();
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    const m = cleaned.match(/\{[\s\S]*\}/);
+    if (!m) throw new Error("Model did not return JSON");
+    return JSON.parse(m[0]);
+  }
+}
+
+// Render the full thread into a compact user-role transcript for the model.
+function renderThreadForModel(args: {
+  originalInput: string;
+  coreIntent: string;
+  firstNextStep: string;
+  turns: ThreadTurn[];
+  latestUserText?: string;
+}): string {
+  const lines: string[] = [];
+  lines.push(`Original input:\n${args.originalInput}`);
+  lines.push("");
+  lines.push(`Original coreIntent: ${args.coreIntent}`);
+  lines.push(`Original next step: ${args.firstNextStep}`);
+  lines.push("");
+  lines.push("Thread so far (oldest first):");
+  if (args.turns.length === 0) {
+    lines.push("  (no turns yet)");
+  } else {
+    for (const t of args.turns) {
+      if (t.role === "user" && t.kind === "message") {
+        lines.push(`USER: ${t.text}`);
+      } else if (t.role === "sift" && t.kind === "message") {
+        const m = t.message;
+        const parts: string[] = [];
+        if (m.mirror) parts.push(`mirror=${m.mirror}`);
+        if (m.question) parts.push(`question=${m.question}`);
+        if (m.matters?.length) parts.push(`matters=[${m.matters.join(" | ")}]`);
+        if (m.noise?.length) parts.push(`noise=[${m.noise.join(" | ")}]`);
+        if (m.mini) parts.push(`mini=${m.mini}`);
+        lines.push(`SIFT: ${parts.join("; ")}`);
+      } else if (t.role === "sift" && t.kind === "checkpoint") {
+        const c = t.checkpoint;
+        lines.push(
+          `SIFT (checkpoint): pointing=${c.pointing}; matters=[${c.matters.join(
+            " | ",
+          )}]; noise=[${c.noise.join(
+            " | ",
+          )}]; lastLanded=${c.lastLanded}; nextStep=${c.nextStep}`,
+        );
+      } else if (t.role === "sift" && t.kind === "closure") {
+        lines.push(`SIFT (closure): ${t.reflection}`);
+      }
+    }
+  }
+  if (args.latestUserText) {
+    lines.push("");
+    lines.push(`Latest user reply:\n${args.latestUserText}`);
+  }
+  return lines.join("\n");
+}
+
+async function runDeepening(args: {
+  originalInput: string;
+  coreIntent: string;
+  firstNextStep: string;
+  turns: ThreadTurn[];
+  latestUserText: string;
+}): Promise<SiftTurnMessage> {
+  const userBlock =
+    renderThreadForModel(args) +
+    "\n\nRespond as Sift in Deepening Mode. Return JSON only.";
+  const msg = await client.messages.create({
+    model: MODEL,
+    max_tokens: 512,
+    system: DEEPEN_SYSTEM_PROMPT,
+    messages: [{ role: "user", content: userBlock }],
+  });
+  const textBlock = msg.content.find((b: any) => b.type === "text") as any;
+  const parsed = extractJson((textBlock?.text ?? "").trim());
+  const message = siftTurnMessageSchema.parse(parsed);
+  // Ensure at least one field was populated; if the model returned {} coerce
+  // into a gentle fallback rather than crashing the route.
+  if (
+    !message.mirror &&
+    !message.question &&
+    !message.matters?.length &&
+    !message.noise?.length &&
+    !message.mini
+  ) {
+    return { question: "Say a little more about that." };
+  }
+  return message;
+}
+
+async function runCheckpoint(args: {
+  originalInput: string;
+  coreIntent: string;
+  firstNextStep: string;
+  turns: ThreadTurn[];
+}): Promise<BookmarkPayload> {
+  const userBlock =
+    renderThreadForModel(args) +
+    "\n\nProduce a Checkpoint. Return JSON only.";
+  const msg = await client.messages.create({
+    model: MODEL,
+    max_tokens: 1024,
+    system: CHECKPOINT_SYSTEM_PROMPT,
+    messages: [{ role: "user", content: userBlock }],
+  });
+  const textBlock = msg.content.find((b: any) => b.type === "text") as any;
+  const parsed = extractJson((textBlock?.text ?? "").trim());
+  return bookmarkPayloadSchema.parse(parsed);
+}
+
+async function runClosure(args: {
+  originalInput: string;
+  coreIntent: string;
+  firstNextStep: string;
+  turns: ThreadTurn[];
+}): Promise<string> {
+  const userBlock =
+    renderThreadForModel(args) +
+    "\n\nClose the loop. Return JSON only.";
+  const msg = await client.messages.create({
+    model: MODEL,
+    max_tokens: 300,
+    system: CLOSE_SYSTEM_PROMPT,
+    messages: [{ role: "user", content: userBlock }],
+  });
+  const textBlock = msg.content.find((b: any) => b.type === "text") as any;
+  const parsed = extractJson((textBlock?.text ?? "").trim());
+  const reflection = typeof parsed?.reflection === "string" ? parsed.reflection.trim() : "";
+  if (!reflection) return "You stayed with something long enough to notice where it wanted to rest.";
+  return reflection;
+}
+
+// Convergence: does the newest checkpoint repeat the previous one? We take a
+// small token-set intersection over matters + nextStep normalized to words of
+// length >= 3. If the Jaccard ratio is high, we flag the thread as converged.
+function tokenize(s: string): Set<string> {
+  return new Set(
+    s
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .split(/\s+/)
+      .filter((w) => w.length >= 3),
+  );
+}
+function detectConvergence(
+  prev: BookmarkPayload | undefined,
+  next: BookmarkPayload,
+): boolean {
+  if (!prev) return false;
+  const prevBag = tokenize(
+    [...prev.matters, prev.nextStep, prev.lastLanded].join(" "),
+  );
+  const nextBag = tokenize(
+    [...next.matters, next.nextStep, next.lastLanded].join(" "),
+  );
+  if (prevBag.size === 0 || nextBag.size === 0) return false;
+  let overlap = 0;
+  nextBag.forEach((w) => {
+    if (prevBag.has(w)) overlap++;
+  });
+  // Union size = prev + next - overlap (avoids spreading a Set into an array).
+  const union = prevBag.size + nextBag.size - overlap;
+  if (union === 0) return false;
+  const jaccard = overlap / union;
+  return jaccard >= 0.55;
+}
+
+// Signal screen over a deepening message — a targeted subset of the stored
+// analysis screen. We stringify the message payload and run the same output
+// screener against it for defense in depth.
+function screenDeepenForCrisis(m: SiftTurnMessage): boolean {
+  return screenOutputForCrisis({
+    mirror: m.mirror ?? "",
+    question: m.question ?? "",
+    mini: m.mini ?? "",
+    matters: m.matters ?? [],
+    noise: m.noise ?? [],
+  });
 }
 
 async function runCheckinAnalysis(
@@ -768,7 +1048,12 @@ export async function registerRoutes(
     if (!row) return res.status(404).json({ error: "Not found" });
 
     const viewerId = readToken(req);
+    const isMine = viewerId != null && row.userId === viewerId;
     const checkinRows = await storage.listCheckins(row.id);
+    // Thread state is only returned to the owner — readers of a shared link
+    // see the original sift only, not the private deepening thread.
+    const turns = isMine ? await storage.listTurns(row.id) : [];
+    const bookmark = isMine ? await storage.getBookmark(row.id) : undefined;
 
     const result: SiftResult = {
       id: row.id,
@@ -779,10 +1064,194 @@ export async function registerRoutes(
       coreIntent: row.coreIntent,
       nextStep: row.nextStep,
       reflection: row.reflection,
-      mine: viewerId != null && row.userId === viewerId,
+      mine: isMine,
+      status: (row.status === "closed" ? "closed" : "open") as any,
       checkins: checkinRows.map(checkinToResult),
+      turns,
+      bookmark,
     };
     return res.json(result);
+  });
+
+  // --- Deepening thread (owner only) ---
+  //
+  // POST /api/sift/:id/deepen — append a user turn + run Sift in deepening
+  // mode + append the sift reply. Every ~4 user turns we also run a synthesis
+  // checkpoint and upsert the thread bookmark. Returns the newly appended
+  // turns plus (if fresh) the updated bookmark + convergence hint.
+  app.post("/api/sift/:id/deepen", requireAuth, async (req, res) => {
+    const userId = (req as any).userId as number;
+    const parsed = deepenRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: parsed.error.issues[0]?.message ?? "Invalid input",
+      });
+    }
+    const siftId = String(req.params.id);
+    const sift = await storage.getSift(siftId);
+    if (!sift) return res.status(404).json({ error: "Not found" });
+    if (sift.userId !== userId) {
+      return res.status(403).json({ error: "Not your sift" });
+    }
+
+    // Crisis safeguard on the new user reply — before persistence, before LLM.
+    if (screenForCrisis(parsed.data.text)) {
+      const payload: DeepenResponse = { type: "care" };
+      return res.json(payload);
+    }
+
+    try {
+      // Append the user turn first so it survives even if the LLM call fails.
+      const userTurn = await storage.appendTurn({
+        siftId,
+        role: "user",
+        kind: "message",
+        payload: JSON.stringify({ text: parsed.data.text }),
+      });
+
+      const priorTurns = await storage.listTurns(siftId);
+      // priorTurns already contains the just-appended user turn; pass the full
+      // list to the model.
+      const deepenArgs = {
+        originalInput: sift.input,
+        coreIntent: sift.coreIntent,
+        firstNextStep: sift.nextStep,
+        turns: priorTurns,
+        latestUserText: parsed.data.text,
+      };
+
+      const message = await runDeepening(deepenArgs);
+      if (screenDeepenForCrisis(message)) {
+        console.warn(
+          "[crisis-screen] output tripped on /api/sift/:id/deepen — discarding",
+        );
+        return res.json({ type: "care" });
+      }
+
+      const siftTurn = await storage.appendTurn({
+        siftId,
+        role: "sift",
+        kind: "message",
+        payload: JSON.stringify(message),
+      });
+
+      // Every ~4 user turns, run a synthesis checkpoint + upsert the bookmark.
+      const newTurns: ThreadTurn[] = [userTurn, siftTurn];
+      let bookmark: { updatedAt: number; payload: BookmarkPayload } | undefined;
+      let converged = false;
+
+      const userTurnCount = await storage.countUserTurns(siftId);
+      if (userTurnCount > 0 && userTurnCount % 4 === 0) {
+        try {
+          const checkpointPayload = await runCheckpoint({
+            originalInput: sift.input,
+            coreIntent: sift.coreIntent,
+            firstNextStep: sift.nextStep,
+            turns: [...priorTurns, siftTurn],
+          });
+          // Defense-in-depth: run the analysis-level output screen over the
+          // flattened checkpoint text.
+          if (
+            screenOutputForCrisis({
+              pointing: checkpointPayload.pointing,
+              unfolded: checkpointPayload.unfolded,
+              matters: checkpointPayload.matters,
+              noise: checkpointPayload.noise,
+              lastLanded: checkpointPayload.lastLanded,
+              nextStep: checkpointPayload.nextStep,
+            })
+          ) {
+            console.warn(
+              "[crisis-screen] checkpoint output tripped — discarding",
+            );
+          } else {
+            const prev = await storage.getBookmark(siftId);
+            converged = detectConvergence(prev?.payload, checkpointPayload);
+            const bm = await storage.upsertBookmark(siftId, checkpointPayload);
+            const checkpointTurn = await storage.appendTurn({
+              siftId,
+              role: "sift",
+              kind: "checkpoint",
+              payload: JSON.stringify(checkpointPayload),
+            });
+            newTurns.push(checkpointTurn);
+            bookmark = bm;
+          }
+        } catch (err) {
+          // Checkpoint failures should not block the main deepening reply.
+          console.warn("[deepen] checkpoint failed:", err);
+        }
+      }
+
+      const payload: DeepenResponse = {
+        type: "turns",
+        turns: newTurns,
+        ...(bookmark ? { bookmark } : {}),
+        ...(converged ? { converged: true } : {}),
+      };
+      return res.json(payload);
+    } catch (err: any) {
+      console.error("deepen error", err);
+      return res.status(500).json({
+        error: "Could not deepen that right now.",
+        detail: err?.message ?? String(err),
+      });
+    }
+  });
+
+  // GET /api/sift/:id/bookmark — owner only. Returns the latest bookmark.
+  app.get("/api/sift/:id/bookmark", requireAuth, async (req, res) => {
+    const userId = (req as any).userId as number;
+    const siftId = String(req.params.id);
+    const sift = await storage.getSift(siftId);
+    if (!sift) return res.status(404).json({ error: "Not found" });
+    if (sift.userId !== userId) {
+      return res.status(403).json({ error: "Not your sift" });
+    }
+    const bookmark = await storage.getBookmark(siftId);
+    return res.json({ bookmark: bookmark ?? null });
+  });
+
+  // POST /api/sift/:id/close — owner only. Runs whole-thread closure
+  // reflection, appends a closure turn, marks the sift closed.
+  app.post("/api/sift/:id/close", requireAuth, async (req, res) => {
+    const userId = (req as any).userId as number;
+    const siftId = String(req.params.id);
+    const sift = await storage.getSift(siftId);
+    if (!sift) return res.status(404).json({ error: "Not found" });
+    if (sift.userId !== userId) {
+      return res.status(403).json({ error: "Not your sift" });
+    }
+    try {
+      const turns = await storage.listTurns(siftId);
+      const reflection = await runClosure({
+        originalInput: sift.input,
+        coreIntent: sift.coreIntent,
+        firstNextStep: sift.nextStep,
+        turns,
+      });
+      // Output screen on the closure sentence.
+      if (screenOutputForCrisis({ reflection })) {
+        console.warn("[crisis-screen] closure tripped — discarding");
+        const payload: CloseResponse = { type: "care" };
+        return res.json(payload);
+      }
+      const turn = await storage.appendTurn({
+        siftId,
+        role: "sift",
+        kind: "closure",
+        payload: JSON.stringify({ reflection }),
+      });
+      await storage.updateSiftStatus(siftId, userId, "closed");
+      const payload: CloseResponse = { type: "closed", reflection, turn };
+      return res.json(payload);
+    } catch (err: any) {
+      console.error("close error", err);
+      return res.status(500).json({
+        error: "Could not close this right now.",
+        detail: err?.message ?? String(err),
+      });
+    }
   });
 
   // Create a check-in on a sift (owner only)
