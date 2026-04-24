@@ -11,6 +11,8 @@ import {
   type Bookmark,
   type BookmarkPayload,
   type SiftTurnMessage,
+  type SortPromptPayload,
+  type SortResultPayload,
   sifts,
   users,
   checkins,
@@ -423,6 +425,37 @@ function rowToThreadTurn(row: ThreadTurnRow): ThreadTurn | null {
       role: "sift",
       kind: "closure",
       reflection: payload.reflection,
+    };
+  }
+  if (row.role === "sift" && row.kind === "sort_prompt") {
+    if (
+      typeof payload?.intro !== "string" ||
+      !Array.isArray(payload?.items) ||
+      payload.items.some((x: unknown) => typeof x !== "string")
+    ) {
+      return null;
+    }
+    return {
+      ...base,
+      role: "sift",
+      kind: "sort_prompt",
+      sortPrompt: payload as SortPromptPayload,
+    };
+  }
+  if (row.role === "user" && row.kind === "sort_result") {
+    const matters = Array.isArray(payload?.matters) ? payload.matters : [];
+    const noise = Array.isArray(payload?.noise) ? payload.noise : [];
+    const unsure = Array.isArray(payload?.unsure) ? payload.unsure : [];
+    return {
+      ...base,
+      role: "user",
+      kind: "sort_result",
+      sortResult: {
+        matters,
+        noise,
+        unsure,
+        skipped: Boolean(payload?.skipped),
+      } as SortResultPayload,
     };
   }
   return null;

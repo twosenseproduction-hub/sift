@@ -273,15 +273,20 @@ export const threadTurns = sqliteTable("thread_turns", {
   siftId: text("sift_id").notNull(),
   createdAt: integer("created_at").notNull(),
   role: text("role").notNull(), // 'user' | 'sift'
-  kind: text("kind").notNull(), // 'message' | 'checkpoint' | 'closure'
+  kind: text("kind").notNull(), // 'message' | 'checkpoint' | 'closure' | 'sort_prompt' | 'sort_result'
   // JSON shape depends on kind:
-  //   message (role='user'):   { text: string }
-  //   message (role='sift'):   { mirror?: string, question?: string,
-  //                              matters?: string[], noise?: string[],
-  //                              mini?: string }
-  //   checkpoint (role='sift'):{ pointing, unfolded, matters[], noise[],
-  //                              lastLanded, nextStep } — same shape as Bookmark
-  //   closure (role='sift'):   { reflection: string }
+  //   message (role='user'):    { text: string }
+  //   message (role='sift'):    { mirror?: string, question?: string,
+  //                               matters?: string[], noise?: string[],
+  //                               mini?: string }
+  //   checkpoint (role='sift'): { pointing, unfolded, matters[], noise[],
+  //                               lastLanded, nextStep } — same shape as Bookmark
+  //   closure (role='sift'):    { reflection: string }
+  //   sort_prompt (role='sift'):{ intro: string, items: string[] }
+  //                               — items are short thread-derived phrases
+  //                               the user will sort into matters vs noise
+  //   sort_result (role='user'):{ matters: string[], noise: string[],
+  //                               unsure: string[], skipped?: boolean }
   payload: text("payload").notNull(),
 });
 export type ThreadTurnRow = typeof threadTurns.$inferSelect;
@@ -325,6 +330,27 @@ export const siftTurnMessageSchema = z.object({
 });
 export type SiftTurnMessage = z.infer<typeof siftTurnMessageSchema>;
 
+// Signal/Noise sort practice
+// A dedicated practice moment inserted into the thread every few user turns.
+// Sift offers a set of short phrases distilled from the thread itself, and the
+// user actively sorts each into "matters" vs "noise" vs "not sure". The result
+// is persisted in the thread (so the model and the bookmark can both reflect
+// what the user chose) and materially shapes the next Sift reply.
+export const sortPromptPayloadSchema = z.object({
+  intro: z.string(),
+  // 6–10 short phrases from the thread. 2–7 words each.
+  items: z.array(z.string().min(1).max(80)).min(4).max(10),
+});
+export type SortPromptPayload = z.infer<typeof sortPromptPayloadSchema>;
+
+export const sortResultPayloadSchema = z.object({
+  matters: z.array(z.string()).default([]),
+  noise: z.array(z.string()).default([]),
+  unsure: z.array(z.string()).default([]),
+  skipped: z.boolean().optional(),
+});
+export type SortResultPayload = z.infer<typeof sortResultPayloadSchema>;
+
 export type ThreadTurn =
   | { id: number; createdAt: number; role: "user"; kind: "message"; text: string }
   | {
@@ -347,6 +373,20 @@ export type ThreadTurn =
       role: "sift";
       kind: "closure";
       reflection: string;
+    }
+  | {
+      id: number;
+      createdAt: number;
+      role: "sift";
+      kind: "sort_prompt";
+      sortPrompt: SortPromptPayload;
+    }
+  | {
+      id: number;
+      createdAt: number;
+      role: "user";
+      kind: "sort_result";
+      sortResult: SortResultPayload;
     };
 
 export type Bookmark = {
@@ -361,7 +401,9 @@ export const deepenRequestSchema = z.object({
 export type DeepenRequest = z.infer<typeof deepenRequestSchema>;
 
 // Response can include: the user turn that was just appended, a sift reply,
-// optionally a checkpoint (synthesis) + updated bookmark, and a convergence
+// optionally a checkpoint (synthesis) + updated bookmark, optionally a
+// sort_prompt (when the server decides it's time for a Signal/Noise practice
+// moment — instead of emitting a sift message in this turn), and a convergence
 // flag hinting that the thread may be landing.
 export type DeepenResponse =
   | {
@@ -370,6 +412,29 @@ export type DeepenResponse =
   | {
       type: "turns";
       turns: ThreadTurn[]; // newly appended turns, oldest first
+      bookmark?: Bookmark;
+      converged?: boolean;
+      // When true, the last turn in `turns` is a sort_prompt and the client
+      // should render the practice activity before accepting more input.
+      awaitingSort?: boolean;
+    };
+
+// Submit a completed (or skipped) signal/noise sort. The server persists it,
+// updates the bookmark's matters/noise with the user's own choices, and
+// produces the next Sift reply that references the sort.
+export const sortRequestSchema = z.object({
+  matters: z.array(z.string()).max(10).default([]),
+  noise: z.array(z.string()).max(10).default([]),
+  unsure: z.array(z.string()).max(10).default([]),
+  skipped: z.boolean().optional(),
+});
+export type SortRequest = z.infer<typeof sortRequestSchema>;
+
+export type SortResponse =
+  | { type: "care" }
+  | {
+      type: "turns";
+      turns: ThreadTurn[]; // sort_result + sift message (and optional checkpoint)
       bookmark?: Bookmark;
       converged?: boolean;
     };

@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Send, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { SortPractice } from "@/components/sort-practice";
 import type {
   ThreadTurn,
   Bookmark,
@@ -16,10 +17,13 @@ import type {
 // DeepeningThread
 //
 // A calm, conversational follow-on to the initial sift. Each user turn gets a
-// short reply (mirror / question / shifted matters+noise / mini synthesis) —
-// not a full result card. Every few turns the server emits a checkpoint, which
-// renders inline distinctly. When the server signals the thread is converging,
-// we surface a subtle "close this loop / keep processing" row.
+// short reply (mirror / question / mini synthesis) — not a full result card.
+// Every few turns the thread pauses for a Signal / Noise practice moment: Sift
+// offers a small set of thread-derived phrases, and the user sorts them by
+// hand into what matters vs what's noise. Every few turns the server emits a
+// checkpoint (the six-section synthesis), which renders inline distinctly.
+// When the server signals the thread is converging, we surface a subtle
+// "close this loop / keep processing" row.
 //
 // The parent owns the sift id and the initial turns/bookmark. We mutate a
 // local copy of `turns` as new server responses come in.
@@ -56,6 +60,10 @@ export function DeepeningThread({
   // Keep a ref of the latest bookmark so we don't trigger "converged" twice.
   const lastBookmarkRef = useRef<Bookmark | undefined>(initialBookmark);
 
+  // Derive the "open sort" from the thread rather than holding duplicate
+  // state — the invariant is simpler this way.
+  const openSort = useMemo(() => findOpenSortPrompt(turns), [turns]);
+
   // Scroll the new turns into view when they arrive.
   useEffect(() => {
     if (endRef.current) {
@@ -77,6 +85,14 @@ export function DeepeningThread({
   async function submit() {
     const trimmed = text.trim();
     if (!trimmed || pending) return;
+    if (openSort) {
+      // Shouldn't happen — composer is disabled — but guard anyway.
+      toast({
+        title: "Finish the sort first",
+        description: "The practice pane above is waiting for you.",
+      });
+      return;
+    }
     setPending(true);
     try {
       const res = await apiRequest("POST", `/api/sift/${siftId}/deepen`, {
@@ -96,6 +112,8 @@ export function DeepeningThread({
       if (data.converged) {
         setConverged(true);
       }
+      // If the server handed us a sort_prompt, the UI will pick it up via the
+      // openSort memo. No extra action needed here.
     } catch (err: any) {
       toast({
         title: "Couldn't continue the thread",
@@ -131,21 +149,54 @@ export function DeepeningThread({
     }
   }
 
+  // Called by SortPractice when the user has completed (or skipped) the sort.
+  function handleSortComplete(args: {
+    turns: ThreadTurn[];
+    bookmark?: Bookmark;
+    converged?: boolean;
+  }) {
+    setTurns((prev) => [...prev, ...args.turns]);
+    if (args.bookmark) {
+      lastBookmarkRef.current = args.bookmark;
+      onBookmarkUpdate?.(args.bookmark);
+    }
+    if (args.converged) setConverged(true);
+  }
+
   const closed = closedReflection !== null;
+  const composerLocked = Boolean(openSort) || closed;
 
   return (
     <div className="space-y-6" data-testid="deepening-thread">
-      {/* Thread list */}
+      {/* Thread list. Sort_prompt turns render inline differently based on
+          whether they are the open (active) sort or a historic one. */}
       <div className="space-y-5">
-        {turns.map((t) => (
-          <TurnRow key={`${t.kind}-${t.id}`} turn={t} />
-        ))}
+        {turns.map((t) => {
+          const isOpenSort =
+            openSort &&
+            t.role === "sift" &&
+            t.kind === "sort_prompt" &&
+            t.id === openSort.id;
+          if (isOpenSort && t.role === "sift" && t.kind === "sort_prompt") {
+            return (
+              <SortPractice
+                key={`sort-${t.id}`}
+                siftId={siftId}
+                promptTurnId={t.id}
+                payload={t.sortPrompt}
+                onComplete={handleSortComplete}
+                onCare={onCare}
+              />
+            );
+          }
+          return <TurnRow key={`${t.kind}-${t.id}`} turn={t} />;
+        })}
         <div ref={endRef} />
       </div>
 
       {/* Convergence offering — quiet, inline. Appears once; stays until the
           user chooses one path. Copy matches product labels. */}
-      {converged && !closed && (
+      {converged && !closed && !openSort && (
         <div
           className="rounded-xl border border-border/60 bg-muted/30 px-4 py-4"
           data-testid="panel-convergence"
@@ -207,8 +258,8 @@ export function DeepeningThread({
         </div>
       )}
 
-      {/* Composer — hidden once the loop is closed. */}
-      {!closed && (
+      {/* Composer — hidden once the loop is closed or while a sort is open. */}
+      {!closed && !openSort && (
         <div className="pt-2" data-testid="composer-deepen">
           <Textarea
             value={text}
@@ -248,7 +299,7 @@ export function DeepeningThread({
               <Button
                 type="button"
                 onClick={submit}
-                disabled={pending || !text.trim()}
+                disabled={pending || !text.trim() || composerLocked}
                 data-testid="button-deepen-submit"
                 className="gap-2"
               >
@@ -268,15 +319,45 @@ export function DeepeningThread({
           </div>
         </div>
       )}
+
+      {/* If the composer is locked because of an open sort, add a quiet hint
+          below the practice pane so the thread doesn't feel truncated. */}
+      {!closed && openSort && (
+        <p
+          className="text-xs text-muted-foreground/70 text-center pt-1"
+          data-testid="text-composer-locked-hint"
+        >
+          Take the sort when you're ready. The thread will pick up from your
+          answer.
+        </p>
+      )}
     </div>
   );
 }
 
+// Client-side twin of the server helper. Returns the still-open sort_prompt
+// or null. Walks from the end so the cost is O(k) where k is the distance to
+// the most recent sort event.
+function findOpenSortPrompt(
+  turns: ThreadTurn[],
+): Extract<ThreadTurn, { role: "sift"; kind: "sort_prompt" }> | null {
+  for (let i = turns.length - 1; i >= 0; i--) {
+    const t = turns[i];
+    if (t.role === "user" && t.kind === "sort_result") return null;
+    if (t.role === "sift" && t.kind === "sort_prompt") return t;
+  }
+  return null;
+}
+
 // --- Turn row ---
 // User turns: plain right-leaning bubble. Calm, not chat-appy.
-// Sift message turns: mirror + question + optional matters/noise/mini.
+// Sift message turns: mirror + question + optional mini. (Matters/noise are
+//   no longer emitted in deepening messages — the Signal / Noise practice pane
+//   owns that work — but we still render them for any legacy turns.)
 // Checkpoint turns: inline labeled mini-synthesis card.
-// Closure turns: quiet final reflection.
+// Sort-result turns: quiet compact summary of the user's own sort.
+// Sort-prompt turns (historic, already answered): a short one-line trace.
+// Closure turns: surfaced separately above; skipped here.
 function TurnRow({ turn }: { turn: ThreadTurn }) {
   if (turn.role === "user" && turn.kind === "message") {
     return (
@@ -296,11 +377,112 @@ function TurnRow({ turn }: { turn: ThreadTurn }) {
   if (turn.role === "sift" && turn.kind === "checkpoint") {
     return <CheckpointTurn payload={turn.checkpoint} id={turn.id} />;
   }
+  if (turn.role === "sift" && turn.kind === "sort_prompt") {
+    // Already answered (otherwise parent would have rendered the active
+    // SortPractice). Leave a thin trace so the history reads correctly.
+    return (
+      <div
+        className="text-xs tracking-wide uppercase text-muted-foreground/70 font-medium"
+        data-testid={`turn-sort-prompt-${turn.id}`}
+      >
+        Signal / noise · sorted
+      </div>
+    );
+  }
+  if (turn.role === "user" && turn.kind === "sort_result") {
+    return <SortResultRow turn={turn} />;
+  }
   if (turn.role === "sift" && turn.kind === "closure") {
     // Closure is surfaced in its own panel above; avoid double-render here.
     return null;
   }
   return null;
+}
+
+function SortResultRow({
+  turn,
+}: {
+  turn: Extract<ThreadTurn, { role: "user"; kind: "sort_result" }>;
+}) {
+  const { sortResult } = turn;
+  if (sortResult.skipped) {
+    return (
+      <div
+        className="flex justify-end"
+        data-testid={`turn-sort-skipped-${turn.id}`}
+      >
+        <div className="text-sm text-muted-foreground/80 italic">
+          Skipped the sort for now.
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div
+      className="rounded-xl border border-border/60 bg-background/50 px-4 py-3"
+      data-testid={`turn-sort-result-${turn.id}`}
+    >
+      <p className="text-[11px] tracking-[0.22em] uppercase text-muted-foreground/80 mb-2 font-medium">
+        Your sort
+      </p>
+      <div className="space-y-2.5">
+        {sortResult.matters.length > 0 && (
+          <div>
+            <p className="text-[11px] uppercase tracking-wider text-primary/70 mb-1">
+              Matters
+            </p>
+            <ul className="space-y-0.5">
+              {sortResult.matters.map((m, i) => (
+                <li
+                  key={`srm-${i}`}
+                  className="text-[14px] leading-relaxed text-foreground/90 flex gap-2"
+                >
+                  <span className="text-primary/60 mt-[0.4em]">·</span>
+                  <span>{m}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {sortResult.noise.length > 0 && (
+          <div>
+            <p className="text-[11px] uppercase tracking-wider text-muted-foreground/80 mb-1">
+              Noise
+            </p>
+            <ul className="space-y-0.5">
+              {sortResult.noise.map((n, i) => (
+                <li
+                  key={`srn-${i}`}
+                  className="text-[14px] leading-relaxed text-muted-foreground flex gap-2"
+                >
+                  <span className="text-muted-foreground/50 mt-[0.4em]">·</span>
+                  <span>{n}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {sortResult.unsure.length > 0 && (
+          <div>
+            <p className="text-[11px] uppercase tracking-wider text-muted-foreground/70 mb-1">
+              Not sure yet
+            </p>
+            <ul className="space-y-0.5">
+              {sortResult.unsure.map((u, i) => (
+                <li
+                  key={`sru-${i}`}
+                  className="text-[14px] leading-relaxed text-muted-foreground/90 flex gap-2"
+                >
+                  <span className="text-muted-foreground/50 mt-[0.4em]">·</span>
+                  <span>{u}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function SiftMessageTurn({
@@ -330,6 +512,9 @@ function SiftMessageTurn({
           {m.mini}
         </p>
       )}
+      {/* Legacy rendering for any older turns that still include matters/noise.
+          New deepening replies no longer emit these fields — the sort pane
+          carries that work now. */}
       {(m.matters?.length ?? 0) > 0 && (
         <div data-testid={`turn-matters-${turn.id}`}>
           <p className="text-[11px] tracking-[0.22em] uppercase text-muted-foreground/80 mb-1 font-medium">

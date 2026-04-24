@@ -19,6 +19,8 @@ import {
   deepenRequestSchema,
   bookmarkPayloadSchema,
   siftTurnMessageSchema,
+  sortPromptPayloadSchema,
+  sortRequestSchema,
   type Analysis,
   type CheckinAnalysis,
   type CheckinResult,
@@ -31,6 +33,11 @@ import {
   type BookmarkPayload,
   type DeepenResponse,
   type CloseResponse,
+  type SortPromptPayload,
+  type SortResultPayload,
+  type SortResponse,
+  type Bookmark,
+  type Sift,
 } from "@shared/schema";
 
 const client = new Anthropic();
@@ -82,21 +89,20 @@ const DEEPEN_SYSTEM_PROMPT = `You are Sift in Deepening Mode.
 The person already has an original sift (their opening input and your first response). They are continuing the thread. You will receive:
 - The original input they first brought
 - Your original coreIntent, themes, and next step
-- The full back-and-forth so far
+- The full back-and-forth so far (may include user sort_result turns where the user actively sorted thread-derived phrases into matters / noise / unsure)
 - Their newest reply
 
 Your job is NOT to regenerate the full card. You are having a short, grounded exchange that deepens the thread. Each reply is small. Treat this like a slow conversation, not a report.
 
-Respond with ONE or TWO of the following fields, whichever the moment actually calls for:
+Respond with ONE or TWO of these fields, whichever the moment actually calls for:
 - mirror: one short sentence naming what you just heard (not a summary — a distillation). Under 25 words.
 - question: one sharper follow-up question that goes a layer deeper than where they currently are. Not leading. Not therapeutic. Under 20 words.
-- matters: 1–3 short phrases, each drawn from the user's actual words in this thread, that seem to matter most right now.
-- noise: 1–2 short phrases, each drawn from the user's actual words in this thread, that seem to be noise right now.
 - mini: one short synthesizing sentence, only if the thread just took a real turn. Under 30 words. Omit otherwise.
 
+DO NOT emit matters[] or noise[] arrays in deepening replies. The signal / noise work is now a dedicated practice moment the user does by hand between turns. Your only job in this reply is mirror / question / mini. If the most recent turn is a user sort_result, explicitly take it seriously in your mirror or question — name what they chose to treat as mattering or as noise, and respond to that shift.
+
 Rules:
-- Output at most 3 of the 5 fields. Usually 1–2. Keep it small.
-- matters / noise phrases MUST be short (2–6 words) and derived from what the user actually wrote in the thread. Do not invent generic words like "fear", "chaos", "growth". Use their language.
+- Output at most 2 of the 3 fields. Usually 1. Keep it small.
 - Never greet, never praise, never validate generically. No "that makes sense". No "I hear you".
 - No exclamation points. No emojis. No corporate language.
 - If the user seems to be landing or repeating, prefer a short mini or question that names the landing, rather than pushing them further.
@@ -106,8 +112,32 @@ ${SAFETY_CLAUSE}
 Return STRICT JSON. Only the fields you actually chose. Example shapes:
 {"mirror": "…"}
 {"mirror": "…", "question": "…"}
-{"matters": ["…", "…"], "noise": ["…"]}
 {"mini": "…"}
+Output JSON only. No prose before or after.`;
+
+// SORT_ITEMS fires when the server decides it is time for a Signal/Noise
+// practice moment. The model's only job is to distill 6–8 short phrases from
+// the actual thread that the user will then sort by hand. The phrases must be
+// drawn from the user's language — never generic.
+const SORT_ITEMS_SYSTEM_PROMPT = `You are Sift preparing a Signal / Noise practice moment.
+
+You will receive the original input, the coreIntent, and the full thread so far. Produce 6 to 8 short phrases the user will sort by hand into "what matters most right now" vs "what may be noise right now".
+
+Rules — these are non-negotiable:
+- Every phrase must be drawn from the user's own words or a close interpretive distillation of a specific moment in the thread. Do not invent generic words like "fear", "clarity", "chaos", "growth", "balance". Use their language.
+- Mix both the loud, surface-level concerns and the quiet, deeper threads you have noticed. A good set includes some items that obviously matter and some that feel loud but may actually be noise. Do not stack the deck toward one side.
+- Include phrases that represent distinct concerns — avoid near-duplicates.
+- Each phrase is 2 to 7 words. Short. Concrete. No quotation marks. No periods at the end.
+- Do not label anything as matters or noise yourself. The user does the sorting.
+- Also produce one short intro sentence (under 20 words) that gently invites them into the practice. Calm, not clinical. No greeting. No "let's". No exclamation points.
+
+${SAFETY_CLAUSE}
+
+Return STRICT JSON matching this shape:
+{
+  "intro": string,
+  "items": [string, string, ...]   // 6 to 8 phrases
+}
 Output JSON only. No prose before or after.`;
 
 // CHECKPOINT fires periodically (every ~4 user turns) to produce a synthesis
@@ -115,7 +145,9 @@ Output JSON only. No prose before or after.`;
 // spec copy must match the product labels verbatim on the client.
 const CHECKPOINT_SYSTEM_PROMPT = `You are Sift producing a Checkpoint — a short structured synthesis of a threaded conversation so far.
 
-You will receive the original input, the original coreIntent + next step, and the full thread to date. Produce a calm recap that someone could re-open later and immediately re-orient from.
+You will receive the original input, the original coreIntent + next step, and the full thread to date. The thread may include user sort_result turns where the user actively sorted phrases into matters / noise / unsure. Treat the most recent sort_result as the authoritative signal for what they currently consider matters vs noise — your matters[] and noise[] in this checkpoint should reflect their sort first, and may add at most one additional observation per column if something important is missing.
+
+Produce a calm recap that someone could re-open later and immediately re-orient from.
 
 Return STRICT JSON matching this shape:
 {
@@ -340,6 +372,24 @@ function renderThreadForModel(args: {
         );
       } else if (t.role === "sift" && t.kind === "closure") {
         lines.push(`SIFT (closure): ${t.reflection}`);
+      } else if (t.role === "sift" && t.kind === "sort_prompt") {
+        lines.push(
+          `SIFT (sort_prompt): offered phrases for sorting: [${t.sortPrompt.items.join(
+            " | ",
+          )}]`,
+        );
+      } else if (t.role === "user" && t.kind === "sort_result") {
+        if (t.sortResult.skipped) {
+          lines.push(`USER (sort_result): skipped the sort.`);
+        } else {
+          lines.push(
+            `USER (sort_result): matters=[${t.sortResult.matters.join(
+              " | ",
+            )}]; noise=[${t.sortResult.noise.join(
+              " | ",
+            )}]; unsure=[${t.sortResult.unsure.join(" | ")}]`,
+          );
+        }
       }
     }
   }
@@ -348,6 +398,50 @@ function renderThreadForModel(args: {
     lines.push(`Latest user reply:\n${args.latestUserText}`);
   }
   return lines.join("\n");
+}
+
+// Generate the 6–8 thread-derived phrases for the sort activity. Items are
+// deduplicated post-hoc and capped to 8. We fall back to a minimal set only
+// if the model returns something unusable — never to generic words.
+async function runSortItems(args: {
+  originalInput: string;
+  coreIntent: string;
+  firstNextStep: string;
+  turns: ThreadTurn[];
+}): Promise<SortPromptPayload> {
+  const userBlock =
+    renderThreadForModel(args) +
+    "\n\nProduce the Signal / Noise practice items. Return JSON only.";
+  const msg = await client.messages.create({
+    model: MODEL,
+    max_tokens: 512,
+    system: SORT_ITEMS_SYSTEM_PROMPT,
+    messages: [{ role: "user", content: userBlock }],
+  });
+  const textBlock = msg.content.find((b: any) => b.type === "text") as any;
+  const parsed = extractJson((textBlock?.text ?? "").trim());
+  const validated = sortPromptPayloadSchema.parse(parsed);
+  // Dedupe and trim to keep the practice pane visually calm.
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  for (const raw of validated.items) {
+    const item = raw.trim().replace(/[.“”"]+$/g, "");
+    const key = item.toLowerCase();
+    if (!item || seen.has(key)) continue;
+    seen.add(key);
+    unique.push(item);
+    if (unique.length >= 8) break;
+  }
+  return {
+    intro: validated.intro.trim(),
+    items: unique.length >= 4 ? unique : validated.items,
+  };
+}
+
+// Output screen on the sort prompt. Runs the same crisis output screen over
+// the flattened intro + items text for defense in depth.
+function screenSortPromptForCrisis(p: SortPromptPayload): boolean {
+  return screenOutputForCrisis({ intro: p.intro, items: p.items });
 }
 
 async function runDeepening(args: {
@@ -458,6 +552,113 @@ function detectConvergence(
   if (union === 0) return false;
   const jaccard = overlap / union;
   return jaccard >= 0.55;
+}
+
+// --- Sort cadence helpers ---
+//
+// A sort is "open" when the most recent sort turn is a sort_prompt with no
+// sort_result that follows it. We look backward through the thread so the
+// lookup is O(turns).
+function findOpenSortPrompt(
+  turns: ThreadTurn[],
+): Extract<ThreadTurn, { role: "sift"; kind: "sort_prompt" }> | null {
+  for (let i = turns.length - 1; i >= 0; i--) {
+    const t = turns[i];
+    if (t.role === "user" && t.kind === "sort_result") return null;
+    if (t.role === "sift" && t.kind === "sort_prompt") return t;
+  }
+  return null;
+}
+
+// How many user message turns have happened since the last sort_result. Used
+// so two sort pauses don't stack inside the same few turns.
+function countUserMessagesSinceLastSort(turns: ThreadTurn[]): number {
+  let count = 0;
+  for (let i = turns.length - 1; i >= 0; i--) {
+    const t = turns[i];
+    if (t.role === "user" && t.kind === "sort_result") return count;
+    if (t.role === "user" && t.kind === "message") count++;
+  }
+  // No prior sort at all — treat everything as "since last sort".
+  return count;
+}
+
+// Merge the user's sort into an existing bookmark column. Priority:
+//   1. Everything the user placed into THIS column — in their order.
+//   2. Prior entries that were NOT moved to the opposite column by the user.
+//      (If they put a phrase into noise, don't keep it in matters.)
+function mergePreservingUserSort(
+  prior: string[],
+  userThisColumn: string[],
+  userOtherColumn: string[],
+  cap: number,
+): string[] {
+  const lower = (s: string) => s.trim().toLowerCase();
+  const opposed = new Set(userOtherColumn.map(lower));
+  const chosen = new Set(userThisColumn.map(lower));
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const item of userThisColumn) {
+    const k = lower(item);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(item);
+  }
+  for (const item of prior) {
+    const k = lower(item);
+    if (seen.has(k)) continue;
+    if (opposed.has(k)) continue; // user moved it to the other side
+    if (chosen.has(k)) continue; // already covered
+    seen.add(k);
+    out.push(item);
+  }
+  return out.slice(0, cap);
+}
+
+// Shared checkpoint emitter — used by both /deepen and /sort. Appends the
+// checkpoint turn into `newTurns` on success, upserts the bookmark, and
+// returns the bookmark + convergence flag. On error or crisis trip, returns
+// null (caller proceeds without a checkpoint).
+async function tryEmitCheckpoint(args: {
+  sift: Sift;
+  turnsForModel: ThreadTurn[];
+  newTurns: ThreadTurn[];
+}): Promise<{ bookmark: Bookmark; converged: boolean } | null> {
+  try {
+    const checkpointPayload = await runCheckpoint({
+      originalInput: args.sift.input,
+      coreIntent: args.sift.coreIntent,
+      firstNextStep: args.sift.nextStep,
+      turns: args.turnsForModel,
+    });
+    if (
+      screenOutputForCrisis({
+        pointing: checkpointPayload.pointing,
+        unfolded: checkpointPayload.unfolded,
+        matters: checkpointPayload.matters,
+        noise: checkpointPayload.noise,
+        lastLanded: checkpointPayload.lastLanded,
+        nextStep: checkpointPayload.nextStep,
+      })
+    ) {
+      console.warn("[crisis-screen] checkpoint output tripped — discarding");
+      return null;
+    }
+    const prev = await storage.getBookmark(args.sift.id);
+    const converged = detectConvergence(prev?.payload, checkpointPayload);
+    const bm = await storage.upsertBookmark(args.sift.id, checkpointPayload);
+    const checkpointTurn = await storage.appendTurn({
+      siftId: args.sift.id,
+      role: "sift",
+      kind: "checkpoint",
+      payload: JSON.stringify(checkpointPayload),
+    });
+    args.newTurns.push(checkpointTurn);
+    return { bookmark: bm, converged };
+  } catch (err) {
+    console.warn("[deepen] checkpoint failed:", err);
+    return null;
+  }
 }
 
 // Signal screen over a deepening message — a targeted subset of the stored
@@ -1076,9 +1277,12 @@ export async function registerRoutes(
   // --- Deepening thread (owner only) ---
   //
   // POST /api/sift/:id/deepen — append a user turn + run Sift in deepening
-  // mode + append the sift reply. Every ~4 user turns we also run a synthesis
-  // checkpoint and upsert the thread bookmark. Returns the newly appended
-  // turns plus (if fresh) the updated bookmark + convergence hint.
+  // mode. Every 3rd user message turn we instead emit a Signal / Noise sort
+  // practice pane (sort_prompt) for the user to complete by hand. Every 4th
+  // user message turn we also run a synthesis checkpoint and upsert the thread
+  // bookmark. Returns the newly appended turns plus (if fresh) the updated
+  // bookmark + convergence hint. If a sort_prompt is still unanswered, the
+  // route returns 409 — the client must call /sort first.
   app.post("/api/sift/:id/deepen", requireAuth, async (req, res) => {
     const userId = (req as any).userId as number;
     const parsed = deepenRequestSchema.safeParse(req.body);
@@ -1092,6 +1296,19 @@ export async function registerRoutes(
     if (!sift) return res.status(404).json({ error: "Not found" });
     if (sift.userId !== userId) {
       return res.status(403).json({ error: "Not your sift" });
+    }
+
+    // Block new user messages if a sort is still open. The client should be
+    // rendering the practice pane; this guards against race conditions.
+    {
+      const existing = await storage.listTurns(siftId);
+      const openSort = findOpenSortPrompt(existing);
+      if (openSort) {
+        return res.status(409).json({
+          error: "There is still a sort in progress. Complete it first.",
+          awaitingSortTurnId: openSort.id,
+        });
+      }
     }
 
     // Crisis safeguard on the new user reply — before persistence, before LLM.
@@ -1110,8 +1327,54 @@ export async function registerRoutes(
       });
 
       const priorTurns = await storage.listTurns(siftId);
-      // priorTurns already contains the just-appended user turn; pass the full
-      // list to the model.
+
+      // --- Signal / Noise practice cadence ---
+      // Trigger a sort pane every 3rd user message turn (messages only, not
+      // sort_results). Require at least 2 user messages since the last sort
+      // so we don't stack them.
+      const userMessageCount = priorTurns.filter(
+        (t) => t.role === "user" && t.kind === "message",
+      ).length;
+      const messagesSinceLastSort = countUserMessagesSinceLastSort(priorTurns);
+      const shouldOfferSort =
+        userMessageCount >= 3 &&
+        userMessageCount % 3 === 0 &&
+        messagesSinceLastSort >= 2;
+
+      if (shouldOfferSort) {
+        try {
+          const sortPayload = await runSortItems({
+            originalInput: sift.input,
+            coreIntent: sift.coreIntent,
+            firstNextStep: sift.nextStep,
+            turns: priorTurns,
+          });
+          if (!screenSortPromptForCrisis(sortPayload)) {
+            const sortTurn = await storage.appendTurn({
+              siftId,
+              role: "sift",
+              kind: "sort_prompt",
+              payload: JSON.stringify(sortPayload),
+            });
+            const payload: DeepenResponse = {
+              type: "turns",
+              turns: [userTurn, sortTurn],
+              awaitingSort: true,
+            };
+            return res.json(payload);
+          } else {
+            console.warn(
+              "[crisis-screen] sort_prompt output tripped — falling through to normal deepen",
+            );
+          }
+        } catch (err) {
+          // Sort generation failure should never block the main deepening
+          // reply — fall through to the normal message turn.
+          console.warn("[deepen] sort_items failed, falling through:", err);
+        }
+      }
+
+      // --- Normal deepening message turn ---
       const deepenArgs = {
         originalInput: sift.input,
         coreIntent: sift.coreIntent,
@@ -1135,51 +1398,21 @@ export async function registerRoutes(
         payload: JSON.stringify(message),
       });
 
-      // Every ~4 user turns, run a synthesis checkpoint + upsert the bookmark.
+      // Every 4th user message turn, run a synthesis checkpoint + upsert the
+      // bookmark.
       const newTurns: ThreadTurn[] = [userTurn, siftTurn];
       let bookmark: { updatedAt: number; payload: BookmarkPayload } | undefined;
       let converged = false;
 
-      const userTurnCount = await storage.countUserTurns(siftId);
-      if (userTurnCount > 0 && userTurnCount % 4 === 0) {
-        try {
-          const checkpointPayload = await runCheckpoint({
-            originalInput: sift.input,
-            coreIntent: sift.coreIntent,
-            firstNextStep: sift.nextStep,
-            turns: [...priorTurns, siftTurn],
-          });
-          // Defense-in-depth: run the analysis-level output screen over the
-          // flattened checkpoint text.
-          if (
-            screenOutputForCrisis({
-              pointing: checkpointPayload.pointing,
-              unfolded: checkpointPayload.unfolded,
-              matters: checkpointPayload.matters,
-              noise: checkpointPayload.noise,
-              lastLanded: checkpointPayload.lastLanded,
-              nextStep: checkpointPayload.nextStep,
-            })
-          ) {
-            console.warn(
-              "[crisis-screen] checkpoint output tripped — discarding",
-            );
-          } else {
-            const prev = await storage.getBookmark(siftId);
-            converged = detectConvergence(prev?.payload, checkpointPayload);
-            const bm = await storage.upsertBookmark(siftId, checkpointPayload);
-            const checkpointTurn = await storage.appendTurn({
-              siftId,
-              role: "sift",
-              kind: "checkpoint",
-              payload: JSON.stringify(checkpointPayload),
-            });
-            newTurns.push(checkpointTurn);
-            bookmark = bm;
-          }
-        } catch (err) {
-          // Checkpoint failures should not block the main deepening reply.
-          console.warn("[deepen] checkpoint failed:", err);
+      if (userMessageCount > 0 && userMessageCount % 4 === 0) {
+        const bookmarkResult = await tryEmitCheckpoint({
+          sift,
+          turnsForModel: [...priorTurns, siftTurn],
+          newTurns,
+        });
+        if (bookmarkResult) {
+          bookmark = bookmarkResult.bookmark;
+          converged = bookmarkResult.converged;
         }
       }
 
@@ -1194,6 +1427,152 @@ export async function registerRoutes(
       console.error("deepen error", err);
       return res.status(500).json({
         error: "Could not deepen that right now.",
+        detail: err?.message ?? String(err),
+      });
+    }
+  });
+
+  // POST /api/sift/:id/sort — the user has finished (or skipped) the
+  // Signal / Noise practice pane. Persists their sort_result, merges their
+  // choices into the bookmark so the recap reflects THEIR sort first, then
+  // generates the next deepening reply that responds to the sort.
+  app.post("/api/sift/:id/sort", requireAuth, async (req, res) => {
+    const userId = (req as any).userId as number;
+    const parsed = sortRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: parsed.error.issues[0]?.message ?? "Invalid input",
+      });
+    }
+    const siftId = String(req.params.id);
+    const sift = await storage.getSift(siftId);
+    if (!sift) return res.status(404).json({ error: "Not found" });
+    if (sift.userId !== userId) {
+      return res.status(403).json({ error: "Not your sift" });
+    }
+
+    try {
+      const priorTurns = await storage.listTurns(siftId);
+      const openSort = findOpenSortPrompt(priorTurns);
+      if (!openSort) {
+        return res.status(409).json({ error: "No open sort to submit." });
+      }
+
+      // Constrain the user's arrays to the items that were offered — anything
+      // else is discarded. Prevents the client from smuggling in arbitrary
+      // phrases. Comparisons are case-insensitive after trim.
+      const offered = new Set(
+        openSort.sortPrompt.items.map((s) => s.trim().toLowerCase()),
+      );
+      const filter = (arr: string[]) =>
+        arr
+          .map((s) => s.trim())
+          .filter((s) => s && offered.has(s.toLowerCase()));
+
+      const result: SortResultPayload = parsed.data.skipped
+        ? { matters: [], noise: [], unsure: [], skipped: true }
+        : {
+            matters: filter(parsed.data.matters),
+            noise: filter(parsed.data.noise),
+            unsure: filter(parsed.data.unsure),
+          };
+
+      const sortResultTurn = await storage.appendTurn({
+        siftId,
+        role: "user",
+        kind: "sort_result",
+        payload: JSON.stringify(result),
+      });
+
+      // Merge the user's sort into the bookmark. If there's no bookmark yet,
+      // we do nothing here — the next checkpoint will build one from scratch
+      // and will already have the user's sort in its context.
+      let bookmark: Bookmark | undefined;
+      if (!result.skipped) {
+        const prev = await storage.getBookmark(siftId);
+        if (prev) {
+          const merged: BookmarkPayload = {
+            ...prev.payload,
+            matters: mergePreservingUserSort(
+              prev.payload.matters,
+              result.matters,
+              result.noise,
+              4,
+            ),
+            noise: mergePreservingUserSort(
+              prev.payload.noise,
+              result.noise,
+              result.matters,
+              3,
+            ),
+          };
+          // Bookmark schema requires min(1) for matters and noise — pad with
+          // the prior entries rather than letting it drop below.
+          if (merged.matters.length === 0) merged.matters = prev.payload.matters;
+          if (merged.noise.length === 0) merged.noise = prev.payload.noise;
+          bookmark = await storage.upsertBookmark(siftId, merged);
+        }
+      }
+
+      // Generate the next Sift reply with the sort_result now in the thread.
+      const turnsWithSort = [...priorTurns, sortResultTurn];
+      const latestUserText = result.skipped
+        ? ""
+        : `I sorted these as matters: ${result.matters.join("; ") || "(none)"}. Noise: ${result.noise.join("; ") || "(none)"}. Unsure: ${result.unsure.join("; ") || "(none)"}.`;
+
+      const message = await runDeepening({
+        originalInput: sift.input,
+        coreIntent: sift.coreIntent,
+        firstNextStep: sift.nextStep,
+        turns: turnsWithSort,
+        latestUserText,
+      });
+      if (screenDeepenForCrisis(message)) {
+        console.warn(
+          "[crisis-screen] output tripped on /api/sift/:id/sort — discarding",
+        );
+        return res.json({ type: "care" });
+      }
+      const siftTurn = await storage.appendTurn({
+        siftId,
+        role: "sift",
+        kind: "message",
+        payload: JSON.stringify(message),
+      });
+
+      const newTurns: ThreadTurn[] = [sortResultTurn, siftTurn];
+
+      // Sort completion counts toward the checkpoint cadence too — if the
+      // current user-message count is a multiple of 4, run a checkpoint. This
+      // ensures the bookmark catches up after the sort has reshaped matters
+      // and noise.
+      const userMessageCount = turnsWithSort.filter(
+        (t) => t.role === "user" && t.kind === "message",
+      ).length;
+      let converged = false;
+      if (userMessageCount > 0 && userMessageCount % 4 === 0) {
+        const bookmarkResult = await tryEmitCheckpoint({
+          sift,
+          turnsForModel: [...turnsWithSort, siftTurn],
+          newTurns,
+        });
+        if (bookmarkResult) {
+          bookmark = bookmarkResult.bookmark;
+          converged = bookmarkResult.converged;
+        }
+      }
+
+      const payload: SortResponse = {
+        type: "turns",
+        turns: newTurns,
+        ...(bookmark ? { bookmark } : {}),
+        ...(converged ? { converged: true } : {}),
+      };
+      return res.json(payload);
+    } catch (err: any) {
+      console.error("sort error", err);
+      return res.status(500).json({
+        error: "Could not finish the sort right now.",
         detail: err?.message ?? String(err),
       });
     }
