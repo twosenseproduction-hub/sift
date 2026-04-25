@@ -531,3 +531,61 @@ export type FeedbackStats = {
   topTags: Array<{ tag: string; count: number; sentiment: FeedbackSentiment }>;
 };
 
+// ---- Admin review privacy boundary ----
+//
+// The admin reviewer needs enough context to assess sift quality (themes,
+// coreIntent, nextStep, reflection, basic metadata) without ever seeing the
+// raw user prompt. The DB still stores the raw input on the sifts table and
+// truncated input snapshots on the feedback table — those columns are
+// intentionally untouched so normal product behavior continues to work. But
+// admin review responses are built from these explicit allowlist DTOs, which
+// have no field that could carry prompt text. The `promptRedacted: true`
+// literal lets the admin UI surface the boundary intentionally.
+
+export type AdminReviewSift = {
+  id: string;
+  createdAt: number;
+  inputMode: "text" | "voice";
+  promptRedacted: true;
+  themes: Theme[];
+  coreIntent: string;
+  nextStep: string;
+  reflection: string;
+  status?: SiftStatus;
+  promptMeta: {
+    charCount: number;
+    inputMode: "text" | "voice";
+  };
+};
+
+// Admin-side review shape for a single feedback row. Mirrors the user-facing
+// Feedback type but strips both the user's typed message AND any field that
+// could leak the original prompt (inputSnapshot is removed; coreIntentSnapshot
+// stays because coreIntent is a model output, not the user's words). The
+// admin reviewer still sees the user's free-text feedback message because
+// that's what they typed about the sift, not the sift itself.
+export type AdminReviewFeedback = {
+  id: number;
+  createdAt: number;
+  userId: number | null;
+  userHandle: string | null;
+  siftId: string | null;
+  stage: FeedbackStage;
+  sentiment: FeedbackSentiment;
+  tag: string | null;
+  message: string | null;
+  resolved: boolean;
+  // Explicit redaction marker — `true` means the original prompt is in storage
+  // but intentionally withheld from admin review.
+  promptRedacted: true;
+  // Model-output context the reviewer is allowed to see. Null when the
+  // feedback row has no associated sift (e.g. closure feedback without id).
+  coreIntentSnapshot: string | null;
+  // Lightweight, non-content-revealing metadata about the original prompt.
+  // Null when the feedback row has no associated sift.
+  promptMeta: {
+    charCount: number;
+    inputMode: "text" | "voice";
+  } | null;
+};
+

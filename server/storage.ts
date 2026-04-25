@@ -17,6 +17,9 @@ import {
   type FeedbackStage,
   type FeedbackSentiment,
   type FeedbackStats,
+  type AdminReviewFeedback,
+  type AdminReviewSift,
+  type Theme,
   sifts,
   users,
   checkins,
@@ -182,6 +185,17 @@ export interface IStorage {
   listFeedback(filters: ListFeedbackFilters): Promise<Feedback[]>;
   getFeedbackStats(): Promise<FeedbackStats>;
   setFeedbackResolved(id: number, resolved: boolean): Promise<Feedback | undefined>;
+  // --- Admin review (privacy-safe) ---
+  // These return prompt-redacted DTOs only. Routes serving the admin review
+  // surface MUST use these instead of the unfiltered methods above so raw
+  // prompt text never reaches the wire.
+  listFeedbackForReview(filters: ListFeedbackFilters): Promise<AdminReviewFeedback[]>;
+  getFeedbackForReview(id: number): Promise<AdminReviewFeedback | undefined>;
+  setFeedbackResolvedForReview(
+    id: number,
+    resolved: boolean,
+  ): Promise<AdminReviewFeedback | undefined>;
+  getAdminReviewSift(id: string): Promise<AdminReviewSift | undefined>;
 }
 
 export type CreateFeedbackParams = {
@@ -566,6 +580,167 @@ export class DatabaseStorage implements IStorage {
     return rowToFeedback(updated, userHandle);
   }
 
+  // --- Admin review (privacy-safe) implementations ---
+  //
+  // These methods are the ONLY ones the admin feedback review routes should
+  // call. They funnel every read through the explicit allowlist serializers
+  // (toAdminReviewFeedback, toAdminReviewSift) so raw prompt text — stored
+  // intact in the DB — cannot accidentally leak into a response.
+
+  async listFeedbackForReview(
+    filters: ListFeedbackFilters,
+  ): Promise<AdminReviewFeedback[]> {
+    // Reuse the same SQL but project a column set that omits inputSnapshot.
+    // Even if the unfiltered listFeedback ever changes, this path stays
+    // explicitly allowlisted via toAdminReviewFeedback.
+    const where: string[] = [];
+    const params: any[] = [];
+    if (filters.stage) {
+      where.push("f.stage = ?");
+      params.push(filters.stage);
+    }
+    if (filters.sentiment) {
+      where.push("f.sentiment = ?");
+      params.push(filters.sentiment);
+    }
+    if (filters.tag) {
+      where.push("f.tag = ?");
+      params.push(filters.tag);
+    }
+    if (filters.resolved !== undefined) {
+      where.push("f.resolved = ?");
+      params.push(filters.resolved ? 1 : 0);
+    }
+    if (filters.signedInOnly) {
+      where.push("f.user_id IS NOT NULL");
+    }
+    if (filters.anonymousOnly) {
+      where.push("f.user_id IS NULL");
+    }
+    const limit = Math.min(filters.limit ?? 500, 1000);
+    // Note: we deliberately project f.input_snapshot here (as inputCharCount)
+    // ONLY to derive prompt metadata. The serializer never returns the raw
+    // text. We also LEFT JOIN sifts to read the input_mode + true input length
+    // when a sift is linked, since the truncated snapshot under-counts long
+    // prompts.
+    const sql = `SELECT f.id, f.created_at AS createdAt, f.user_id AS userId,
+                        u.handle AS userHandle, f.sift_id AS siftId,
+                        f.stage, f.sentiment, f.tag, f.message,
+                        f.core_intent_snapshot AS coreIntentSnapshot,
+                        f.resolved,
+                        s.input_mode AS siftInputMode,
+                        LENGTH(s.input) AS siftInputLength
+                 FROM feedback f
+                 LEFT JOIN users u ON u.id = f.user_id
+                 LEFT JOIN sifts s ON s.id = f.sift_id
+                 ${where.length ? "WHERE " + where.join(" AND ") : ""}
+                 ORDER BY f.created_at DESC
+                 LIMIT ${limit}`;
+    const rows = rawDb.prepare(sql).all(...params) as Array<{
+      id: number;
+      createdAt: number;
+      userId: number | null;
+      userHandle: string | null;
+      siftId: string | null;
+      stage: string;
+      sentiment: string;
+      tag: string | null;
+      message: string | null;
+      coreIntentSnapshot: string | null;
+      resolved: number;
+      siftInputMode: string | null;
+      siftInputLength: number | null;
+    }>;
+    return rows.map((r) =>
+      toAdminReviewFeedback({
+        id: r.id,
+        createdAt: r.createdAt,
+        userId: r.userId,
+        userHandle: r.userHandle,
+        siftId: r.siftId,
+        stage: r.stage as FeedbackStage,
+        sentiment: r.sentiment as FeedbackSentiment,
+        tag: r.tag,
+        message: r.message,
+        coreIntentSnapshot: r.coreIntentSnapshot,
+        resolved: !!r.resolved,
+        siftInputMode: (r.siftInputMode as "text" | "voice" | null) ?? null,
+        siftInputLength: r.siftInputLength,
+      }),
+    );
+  }
+
+  async getFeedbackForReview(
+    id: number,
+  ): Promise<AdminReviewFeedback | undefined> {
+    const row = rawDb
+      .prepare(
+        `SELECT f.id, f.created_at AS createdAt, f.user_id AS userId,
+                u.handle AS userHandle, f.sift_id AS siftId,
+                f.stage, f.sentiment, f.tag, f.message,
+                f.core_intent_snapshot AS coreIntentSnapshot,
+                f.resolved,
+                s.input_mode AS siftInputMode,
+                LENGTH(s.input) AS siftInputLength
+         FROM feedback f
+         LEFT JOIN users u ON u.id = f.user_id
+         LEFT JOIN sifts s ON s.id = f.sift_id
+         WHERE f.id = ?`,
+      )
+      .get(id) as
+      | {
+          id: number;
+          createdAt: number;
+          userId: number | null;
+          userHandle: string | null;
+          siftId: string | null;
+          stage: string;
+          sentiment: string;
+          tag: string | null;
+          message: string | null;
+          coreIntentSnapshot: string | null;
+          resolved: number;
+          siftInputMode: string | null;
+          siftInputLength: number | null;
+        }
+      | undefined;
+    if (!row) return undefined;
+    return toAdminReviewFeedback({
+      id: row.id,
+      createdAt: row.createdAt,
+      userId: row.userId,
+      userHandle: row.userHandle,
+      siftId: row.siftId,
+      stage: row.stage as FeedbackStage,
+      sentiment: row.sentiment as FeedbackSentiment,
+      tag: row.tag,
+      message: row.message,
+      coreIntentSnapshot: row.coreIntentSnapshot,
+      resolved: !!row.resolved,
+      siftInputMode: (row.siftInputMode as "text" | "voice" | null) ?? null,
+      siftInputLength: row.siftInputLength,
+    });
+  }
+
+  async setFeedbackResolvedForReview(
+    id: number,
+    resolved: boolean,
+  ): Promise<AdminReviewFeedback | undefined> {
+    const updated = await this.setFeedbackResolved(id, resolved);
+    if (!updated) return undefined;
+    // Re-read through the review path so the response is identical to a
+    // GET. Cheaper than rebuilding metadata in two places.
+    return this.getFeedbackForReview(id);
+  }
+
+  async getAdminReviewSift(
+    id: string,
+  ): Promise<AdminReviewSift | undefined> {
+    const row = await this.getSift(id);
+    if (!row) return undefined;
+    return toAdminReviewSift(row);
+  }
+
   async upsertBookmark(
     siftId: string,
     payload: BookmarkPayload,
@@ -584,6 +759,87 @@ export class DatabaseStorage implements IStorage {
       .run(siftId, updatedAt, payloadJson);
     return { updatedAt, payload };
   }
+}
+
+// --- Admin review allowlist serializers ---
+//
+// Explicitly enumerated property maps. New fields on Sift / Feedback do NOT
+// flow into the admin review surface unless a developer adds them here on
+// purpose — which is the whole point. Do not replace these with object
+// spreads or `delete` operations. Do not call these from non-admin paths.
+
+export function toAdminReviewSift(row: Sift): AdminReviewSift {
+  let themes: Theme[] = [];
+  try {
+    const parsed = JSON.parse(row.themes);
+    if (Array.isArray(parsed)) themes = parsed as Theme[];
+  } catch {
+    themes = [];
+  }
+  return {
+    id: row.id,
+    createdAt: row.createdAt,
+    inputMode: (row.inputMode as "text" | "voice") ?? "text",
+    promptRedacted: true,
+    themes,
+    coreIntent: row.coreIntent,
+    nextStep: row.nextStep,
+    reflection: row.reflection,
+    status:
+      row.status === "closed" || row.status === "open"
+        ? (row.status as SiftStatus)
+        : undefined,
+    promptMeta: {
+      // Length of the stored input string, not a substring of it.
+      charCount: typeof row.input === "string" ? row.input.length : 0,
+      inputMode: (row.inputMode as "text" | "voice") ?? "text",
+    },
+  };
+}
+
+// Internal join shape used by listFeedbackForReview / getFeedbackForReview.
+// Carries only the metadata needed to derive `promptMeta` — not the raw
+// snapshot string itself.
+type AdminFeedbackJoin = {
+  id: number;
+  createdAt: number;
+  userId: number | null;
+  userHandle: string | null;
+  siftId: string | null;
+  stage: FeedbackStage;
+  sentiment: FeedbackSentiment;
+  tag: string | null;
+  message: string | null;
+  coreIntentSnapshot: string | null;
+  resolved: boolean;
+  siftInputMode: "text" | "voice" | null;
+  siftInputLength: number | null;
+};
+
+export function toAdminReviewFeedback(
+  r: AdminFeedbackJoin,
+): AdminReviewFeedback {
+  const inputMode: "text" | "voice" =
+    r.siftInputMode === "voice" ? "voice" : "text";
+  const promptMeta =
+    r.siftId && r.siftInputLength != null
+      ? { charCount: r.siftInputLength, inputMode }
+      : null;
+  return {
+    id: r.id,
+    createdAt: r.createdAt,
+    userId: r.userId,
+    userHandle: r.userHandle,
+    siftId: r.siftId,
+    stage: r.stage,
+    sentiment: r.sentiment,
+    tag: r.tag,
+    message: r.message,
+    resolved: r.resolved,
+    promptRedacted: true,
+    coreIntentSnapshot: r.coreIntentSnapshot,
+    promptMeta,
+  };
 }
 
 function rowToFeedback(

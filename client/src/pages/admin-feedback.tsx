@@ -8,7 +8,8 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { ChevronRight, Check } from "lucide-react";
 import type {
-  Feedback,
+  AdminReviewFeedback,
+  AdminReviewSift,
   FeedbackStage,
   FeedbackSentiment,
   FeedbackStats,
@@ -86,7 +87,7 @@ export default function AdminFeedbackPage() {
     });
 
   const { data: feedbackData, isLoading: feedbackLoading } = useQuery<{
-    feedback: Feedback[];
+    feedback: AdminReviewFeedback[];
   }>({
     queryKey: ["/api/admin/feedback", queryString],
     queryFn: async () => {
@@ -465,10 +466,28 @@ function FeedbackCard({
   onResolve,
   pending,
 }: {
-  item: Feedback;
+  item: AdminReviewFeedback;
   onResolve: (resolved: boolean) => void;
   pending: boolean;
 }) {
+  const [reviewOpen, setReviewOpen] = useState(false);
+  // Lazy-load the sift's structured output ONLY when the reviewer opens the
+  // panel — we don't want to fan out N parallel detail requests on list load.
+  // The endpoint returns AdminReviewFeedback + AdminReviewSift; both are
+  // explicitly allowlist-serialized server-side and never include raw input.
+  const { data: detail, isLoading: detailLoading } = useQuery<{
+    feedback: AdminReviewFeedback;
+    sift: AdminReviewSift | null;
+  }>({
+    queryKey: ["/api/admin/feedback", item.id],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/admin/feedback/${item.id}`);
+      return res.json();
+    },
+    enabled: reviewOpen && !!item.siftId,
+    refetchOnWindowFocus: false,
+  });
+
   const when = new Date(item.createdAt).toLocaleString();
   const sentimentLabel =
     item.sentiment === "helpful" ? "Helpful" : "Not helpful";
@@ -519,43 +538,60 @@ function FeedbackCard({
         </p>
       )}
 
-      {(item.coreIntentSnapshot || item.inputSnapshot || item.siftId) && (
-        <details className="mt-3 group">
-          <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground transition-colors list-none flex items-center gap-2">
+      {/* Privacy boundary: the original user prompt is intentionally not
+          shown anywhere in admin review. Reviewers see the model's structured
+          output (themes, core intent, next step, reflection) plus harmless
+          metadata (char count, input mode) so they can assess sift quality
+          without ever reading the user's exact wording. */}
+      <p
+        className="mt-3 text-[11px] uppercase tracking-widest text-muted-foreground inline-flex items-center gap-2"
+        data-testid={`feedback-prompt-redacted-${item.id}`}
+        aria-label="Original prompt hidden for review privacy"
+      >
+        <span aria-hidden="true" className="opacity-60">—</span>
+        Original prompt hidden for review privacy
+        {item.promptMeta && (
+          <span className="normal-case tracking-normal text-muted-foreground/80">
+            · {item.promptMeta.inputMode === "voice" ? "voice" : "text"} ·{" "}
+            {item.promptMeta.charCount.toLocaleString()} chars
+          </span>
+        )}
+      </p>
+
+      {(item.coreIntentSnapshot || item.siftId) && (
+        <details
+          className="mt-3 group"
+          onToggle={(e) =>
+            setReviewOpen((e.target as HTMLDetailsElement).open)
+          }
+        >
+          <summary
+            className="cursor-pointer text-xs text-muted-foreground hover:text-foreground transition-colors list-none flex items-center gap-2"
+            data-testid={`feedback-review-toggle-${item.id}`}
+          >
             <ChevronRight className="w-3.5 h-3.5 transition-transform group-open:rotate-90" />
-            Context
+            Sift output
           </summary>
-          <div className="mt-2 space-y-2 text-xs">
+          <div className="mt-2 space-y-3 text-xs">
             {item.coreIntentSnapshot && (
               <div>
                 <p className="uppercase tracking-widest text-muted-foreground mb-1">
                   Core intent
                 </p>
-                <p className="text-foreground/85 leading-relaxed">
+                <p
+                  className="text-foreground/85 leading-relaxed"
+                  data-testid={`feedback-core-intent-${item.id}`}
+                >
                   {item.coreIntentSnapshot}
                 </p>
               </div>
             )}
-            {item.inputSnapshot && (
-              <div>
-                <p className="uppercase tracking-widest text-muted-foreground mb-1">
-                  Original input (snapshot)
-                </p>
-                <p className="text-muted-foreground leading-relaxed whitespace-pre-wrap">
-                  {item.inputSnapshot}
-                </p>
-              </div>
-            )}
-            {item.siftId && (
-              <p>
-                <Link
-                  href={`/s/${item.siftId}`}
-                  className="underline underline-offset-4 hover:text-foreground"
-                  data-testid={`feedback-sift-link-${item.id}`}
-                >
-                  Open this sift →
-                </Link>
-              </p>
+            {item.siftId && reviewOpen && (
+              <SiftReviewBlock
+                feedbackId={item.id}
+                sift={detail?.sift ?? null}
+                loading={detailLoading}
+              />
             )}
           </div>
         </details>
@@ -576,6 +612,76 @@ function FeedbackCard({
         </Button>
       </div>
     </li>
+  );
+}
+
+// --- Sift review block ---
+//
+// Renders the prompt-redacted sift output (themes, next step, reflection)
+// fetched on demand. Receives an AdminReviewSift — the type literally has no
+// field that could carry raw prompt text.
+function SiftReviewBlock({
+  feedbackId,
+  sift,
+  loading,
+}: {
+  feedbackId: number;
+  sift: AdminReviewSift | null;
+  loading: boolean;
+}) {
+  if (loading) {
+    return (
+      <div
+        className="h-12 rounded-md bg-foreground/[0.03] animate-pulse"
+        data-testid={`feedback-sift-loading-${feedbackId}`}
+      />
+    );
+  }
+  if (!sift) {
+    return (
+      <p
+        className="text-muted-foreground"
+        data-testid={`feedback-sift-missing-${feedbackId}`}
+      >
+        Sift no longer available.
+      </p>
+    );
+  }
+  return (
+    <div
+      className="space-y-3 rounded-md border border-border/60 px-3 py-3"
+      data-testid={`feedback-sift-review-${feedbackId}`}
+    >
+      {sift.themes.length > 0 && (
+        <div>
+          <p className="uppercase tracking-widest text-muted-foreground mb-1">
+            Themes
+          </p>
+          <ul className="space-y-1.5">
+            {sift.themes.map((t, i) => (
+              <li key={i} className="text-foreground/85 leading-relaxed">
+                <span className="text-foreground">{t.title}</span>
+                {t.summary ? (
+                  <span className="text-muted-foreground"> — {t.summary}</span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <div>
+        <p className="uppercase tracking-widest text-muted-foreground mb-1">
+          Next step
+        </p>
+        <p className="text-foreground/85 leading-relaxed">{sift.nextStep}</p>
+      </div>
+      <div>
+        <p className="uppercase tracking-widest text-muted-foreground mb-1">
+          Reflection
+        </p>
+        <p className="text-foreground/85 leading-relaxed">{sift.reflection}</p>
+      </div>
+    </div>
   );
 }
 

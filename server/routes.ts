@@ -41,8 +41,9 @@ import {
   type SortResponse,
   type Bookmark,
   type Sift,
-  type Feedback,
   type FeedbackStats,
+  type AdminReviewFeedback,
+  type AdminReviewSift,
 } from "@shared/schema";
 
 const client = new Anthropic();
@@ -1072,6 +1073,17 @@ export async function registerRoutes(
     res.json({ feedback: created });
   });
 
+  // --- Admin feedback review (privacy-safe) ---
+  //
+  // The admin reviewer needs to assess Sift quality — themes, coreIntent,
+  // nextStep, reflection, and basic metadata — without ever seeing the raw
+  // user prompt. Routes below return ONLY review-safe DTOs (AdminReviewFeedback
+  // / AdminReviewSift) built via explicit allowlist serializers in storage.ts.
+  // The unfiltered listFeedback / setFeedbackResolved methods are deliberately
+  // not used here so a future schema addition can't accidentally leak prompt
+  // text through this surface. The DB still stores everything intact for
+  // normal product behavior.
+
   app.get("/api/admin/feedback", requireAdmin, async (req, res) => {
     // Lightweight query-string parsing. All filters optional; invalid values
     // are ignored rather than returning a 400, since the admin UI may glue
@@ -1079,10 +1091,10 @@ export async function registerRoutes(
     const stageRaw = req.query.stage as string | undefined;
     const sentimentRaw = req.query.sentiment as string | undefined;
     const stage = stageRaw && feedbackStageSchema.safeParse(stageRaw).success
-      ? (stageRaw as Feedback["stage"])
+      ? (stageRaw as AdminReviewFeedback["stage"])
       : undefined;
     const sentiment = sentimentRaw && feedbackSentimentSchema.safeParse(sentimentRaw).success
-      ? (sentimentRaw as Feedback["sentiment"])
+      ? (sentimentRaw as AdminReviewFeedback["sentiment"])
       : undefined;
     const tag = typeof req.query.tag === "string" && req.query.tag
       ? (req.query.tag as string).slice(0, 64)
@@ -1091,7 +1103,7 @@ export async function registerRoutes(
     if (req.query.resolved === "true") resolved = true;
     else if (req.query.resolved === "false") resolved = false;
     const audience = typeof req.query.audience === "string" ? req.query.audience : undefined;
-    const items = await storage.listFeedback({
+    const items: AdminReviewFeedback[] = await storage.listFeedbackForReview({
       stage,
       sentiment,
       tag,
@@ -1108,6 +1120,24 @@ export async function registerRoutes(
     res.json(stats);
   });
 
+  // Single-feedback detail with the linked sift's structured output (themes,
+  // coreIntent, nextStep, reflection) for review. The sift comes through the
+  // allowlist serializer toAdminReviewSift — no `input` field, ever.
+  app.get("/api/admin/feedback/:id", requireAdmin, async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) {
+      return res.status(400).json({ error: "Invalid feedback id" });
+    }
+    const item: AdminReviewFeedback | undefined =
+      await storage.getFeedbackForReview(id);
+    if (!item) return res.status(404).json({ error: "Not found" });
+    let sift: AdminReviewSift | null = null;
+    if (item.siftId) {
+      sift = (await storage.getAdminReviewSift(item.siftId)) ?? null;
+    }
+    res.json({ feedback: item, sift });
+  });
+
   app.patch("/api/admin/feedback/:id", requireAdmin, async (req, res) => {
     const id = Number(req.params.id);
     if (!Number.isFinite(id) || id <= 0) {
@@ -1117,7 +1147,8 @@ export async function registerRoutes(
     if (typeof resolved !== "boolean") {
       return res.status(400).json({ error: "resolved must be boolean" });
     }
-    const updated = await storage.setFeedbackResolved(id, resolved);
+    const updated: AdminReviewFeedback | undefined =
+      await storage.setFeedbackResolvedForReview(id, resolved);
     if (!updated) return res.status(404).json({ error: "Not found" });
     res.json({ feedback: updated });
   });
