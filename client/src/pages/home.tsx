@@ -167,7 +167,7 @@ export default function Home() {
                     className="text-[11px] tracking-[0.25em] uppercase text-primary/80 mb-4 font-medium"
                     data-testid="text-eyebrow"
                   >
-                    Clarity over comfort
+                    A quiet tool for a noisy mind
                   </p>
                   <h1
                     className="font-serif text-4xl md:text-6xl leading-[1.05] tracking-tight"
