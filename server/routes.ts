@@ -9,6 +9,9 @@ import { screenForCrisis, screenOutputForCrisis } from "./crisis-screen";
 import {
   analyzeRequestSchema,
   analysisSchema,
+  feedbackRequestSchema,
+  feedbackStageSchema,
+  feedbackSentimentSchema,
   loginSchema,
   signupSchema,
   contactUpdateSchema,
@@ -38,6 +41,8 @@ import {
   type SortResponse,
   type Bookmark,
   type Sift,
+  type Feedback,
+  type FeedbackStats,
 } from "@shared/schema";
 
 const client = new Anthropic();
@@ -1017,6 +1022,104 @@ export async function registerRoutes(
         lastSiftAt: r.lastSiftAt,
       })),
     });
+  });
+
+  // --- Feedback ---
+  //
+  // POST /api/feedback creates a feedback row. Open to both signed-in and
+  // anonymous users (anonymous = userId null). The client supplies stage,
+  // sentiment, optional tag, optional message, and an optional siftId. If a
+  // siftId is given we hydrate the input + coreIntent snapshots server-side
+  // so the admin can see context without an extra fetch.
+  app.post("/api/feedback", async (req, res) => {
+    const parsed = feedbackRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: parsed.error.issues[0]?.message ?? "Invalid feedback",
+      });
+    }
+    const userId = readToken(req); // null = anonymous
+    const { siftId, stage, sentiment } = parsed.data;
+    const tag = (parsed.data.tag ?? null)?.toString().slice(0, 64) || null;
+    const messageRaw = parsed.data.message ?? null;
+    const message = messageRaw && messageRaw.trim()
+      ? messageRaw.trim().slice(0, 2000)
+      : null;
+
+    let inputSnapshot: string | null = null;
+    let coreIntentSnapshot: string | null = null;
+    if (siftId) {
+      const sift = await storage.getSift(siftId);
+      if (sift) {
+        // Truncate the input snapshot — we only need a hint of context, not
+        // the entire raw dump. 600 chars is enough to recognize the sift
+        // without bloating the feedback table.
+        inputSnapshot = sift.input.slice(0, 600);
+        coreIntentSnapshot = sift.coreIntent;
+      }
+    }
+
+    const created = await storage.createFeedback({
+      userId,
+      siftId: siftId ?? null,
+      stage,
+      sentiment,
+      tag,
+      message,
+      inputSnapshot,
+      coreIntentSnapshot,
+    });
+    res.json({ feedback: created });
+  });
+
+  app.get("/api/admin/feedback", requireAdmin, async (req, res) => {
+    // Lightweight query-string parsing. All filters optional; invalid values
+    // are ignored rather than returning a 400, since the admin UI may glue
+    // together filters loosely.
+    const stageRaw = req.query.stage as string | undefined;
+    const sentimentRaw = req.query.sentiment as string | undefined;
+    const stage = stageRaw && feedbackStageSchema.safeParse(stageRaw).success
+      ? (stageRaw as Feedback["stage"])
+      : undefined;
+    const sentiment = sentimentRaw && feedbackSentimentSchema.safeParse(sentimentRaw).success
+      ? (sentimentRaw as Feedback["sentiment"])
+      : undefined;
+    const tag = typeof req.query.tag === "string" && req.query.tag
+      ? (req.query.tag as string).slice(0, 64)
+      : undefined;
+    let resolved: boolean | undefined;
+    if (req.query.resolved === "true") resolved = true;
+    else if (req.query.resolved === "false") resolved = false;
+    const audience = typeof req.query.audience === "string" ? req.query.audience : undefined;
+    const items = await storage.listFeedback({
+      stage,
+      sentiment,
+      tag,
+      resolved,
+      signedInOnly: audience === "signed_in",
+      anonymousOnly: audience === "anonymous",
+      limit: 500,
+    });
+    res.json({ feedback: items });
+  });
+
+  app.get("/api/admin/feedback/stats", requireAdmin, async (_req, res) => {
+    const stats: FeedbackStats = await storage.getFeedbackStats();
+    res.json(stats);
+  });
+
+  app.patch("/api/admin/feedback/:id", requireAdmin, async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) {
+      return res.status(400).json({ error: "Invalid feedback id" });
+    }
+    const resolved = req.body?.resolved;
+    if (typeof resolved !== "boolean") {
+      return res.status(400).json({ error: "resolved must be boolean" });
+    }
+    const updated = await storage.setFeedbackResolved(id, resolved);
+    if (!updated) return res.status(404).json({ error: "Not found" });
+    res.json({ feedback: updated });
   });
 
   // --- Daily prompt (reads the 300-prompt library) ---

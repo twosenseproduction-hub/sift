@@ -13,11 +13,16 @@ import {
   type SiftTurnMessage,
   type SortPromptPayload,
   type SortResultPayload,
+  type Feedback,
+  type FeedbackStage,
+  type FeedbackSentiment,
+  type FeedbackStats,
   sifts,
   users,
   checkins,
   threadTurns,
   threadBookmarks,
+  feedback,
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import Database from "better-sqlite3";
@@ -75,6 +80,23 @@ sqlite.exec(`
     updated_at INTEGER NOT NULL,
     payload TEXT NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS feedback (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at INTEGER NOT NULL,
+    user_id INTEGER,
+    sift_id TEXT,
+    stage TEXT NOT NULL,
+    sentiment TEXT NOT NULL,
+    tag TEXT,
+    message TEXT,
+    input_snapshot TEXT,
+    core_intent_snapshot TEXT,
+    resolved INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE INDEX IF NOT EXISTS idx_feedback_created
+    ON feedback(created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_feedback_sift
+    ON feedback(sift_id);
 `);
 
 // Add user_id column to sifts if it doesn't exist (safe migration for prototype)
@@ -155,7 +177,33 @@ export interface IStorage {
   countUserTurns(siftId: string): Promise<number>;
   getBookmark(siftId: string): Promise<Bookmark | undefined>;
   upsertBookmark(siftId: string, payload: BookmarkPayload): Promise<Bookmark>;
+  // Feedback
+  createFeedback(input: CreateFeedbackParams): Promise<Feedback>;
+  listFeedback(filters: ListFeedbackFilters): Promise<Feedback[]>;
+  getFeedbackStats(): Promise<FeedbackStats>;
+  setFeedbackResolved(id: number, resolved: boolean): Promise<Feedback | undefined>;
 }
+
+export type CreateFeedbackParams = {
+  userId: number | null;
+  siftId: string | null;
+  stage: FeedbackStage;
+  sentiment: FeedbackSentiment;
+  tag: string | null;
+  message: string | null;
+  inputSnapshot: string | null;
+  coreIntentSnapshot: string | null;
+};
+
+export type ListFeedbackFilters = {
+  stage?: FeedbackStage;
+  sentiment?: FeedbackSentiment;
+  tag?: string;
+  resolved?: boolean;
+  signedInOnly?: boolean;
+  anonymousOnly?: boolean;
+  limit?: number;
+};
 
 export type CreateUserParams = {
   handle: string;
@@ -367,6 +415,157 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
+  async createFeedback(input: CreateFeedbackParams): Promise<Feedback> {
+    const row = db
+      .insert(feedback)
+      .values({
+        createdAt: Date.now(),
+        userId: input.userId,
+        siftId: input.siftId,
+        stage: input.stage,
+        sentiment: input.sentiment,
+        tag: input.tag,
+        message: input.message,
+        inputSnapshot: input.inputSnapshot,
+        coreIntentSnapshot: input.coreIntentSnapshot,
+        resolved: 0,
+      })
+      .returning()
+      .get();
+    // No handle join on insert path — admin views fetch via listFeedback.
+    return rowToFeedback(row, null);
+  }
+
+  async listFeedback(filters: ListFeedbackFilters): Promise<Feedback[]> {
+    const where: string[] = [];
+    const params: any[] = [];
+    if (filters.stage) {
+      where.push("f.stage = ?");
+      params.push(filters.stage);
+    }
+    if (filters.sentiment) {
+      where.push("f.sentiment = ?");
+      params.push(filters.sentiment);
+    }
+    if (filters.tag) {
+      where.push("f.tag = ?");
+      params.push(filters.tag);
+    }
+    if (filters.resolved !== undefined) {
+      where.push("f.resolved = ?");
+      params.push(filters.resolved ? 1 : 0);
+    }
+    if (filters.signedInOnly) {
+      where.push("f.user_id IS NOT NULL");
+    }
+    if (filters.anonymousOnly) {
+      where.push("f.user_id IS NULL");
+    }
+    const limit = Math.min(filters.limit ?? 500, 1000);
+    const sql = `SELECT f.id, f.created_at AS createdAt, f.user_id AS userId,
+                        u.handle AS userHandle, f.sift_id AS siftId,
+                        f.stage, f.sentiment, f.tag, f.message,
+                        f.input_snapshot AS inputSnapshot,
+                        f.core_intent_snapshot AS coreIntentSnapshot,
+                        f.resolved
+                 FROM feedback f
+                 LEFT JOIN users u ON u.id = f.user_id
+                 ${where.length ? "WHERE " + where.join(" AND ") : ""}
+                 ORDER BY f.created_at DESC
+                 LIMIT ${limit}`;
+    const rows = rawDb.prepare(sql).all(...params) as Array<
+      Omit<Feedback, "resolved"> & { resolved: number }
+    >;
+    return rows.map((r) => ({
+      ...r,
+      stage: r.stage as FeedbackStage,
+      sentiment: r.sentiment as FeedbackSentiment,
+      resolved: !!r.resolved,
+    }));
+  }
+
+  async getFeedbackStats(): Promise<FeedbackStats> {
+    const totalsRow = rawDb
+      .prepare(
+        `SELECT
+           COUNT(*) AS total,
+           SUM(CASE WHEN sentiment = 'helpful' THEN 1 ELSE 0 END) AS helpful,
+           SUM(CASE WHEN sentiment = 'not_helpful' THEN 1 ELSE 0 END) AS notHelpful,
+           SUM(CASE WHEN resolved = 0 THEN 1 ELSE 0 END) AS unresolved
+         FROM feedback`,
+      )
+      .get() as { total: number; helpful: number | null; notHelpful: number | null; unresolved: number | null };
+
+    // by-stage breakdown
+    const stages: FeedbackStage[] = ["result", "deepening", "summary", "closure"];
+    const byStage = stages.reduce(
+      (acc, s) => {
+        acc[s] = { helpful: 0, notHelpful: 0 };
+        return acc;
+      },
+      {} as FeedbackStats["byStage"],
+    );
+    const stageRows = rawDb
+      .prepare(
+        `SELECT stage, sentiment, COUNT(*) AS n FROM feedback
+         GROUP BY stage, sentiment`,
+      )
+      .all() as Array<{ stage: string; sentiment: string; n: number }>;
+    for (const r of stageRows) {
+      const stage = r.stage as FeedbackStage;
+      if (!byStage[stage]) continue;
+      if (r.sentiment === "helpful") byStage[stage].helpful += r.n;
+      else if (r.sentiment === "not_helpful") byStage[stage].notHelpful += r.n;
+    }
+
+    // top tags — most-frequent first, capped at 10. We bring back the
+    // sentiment alongside so the admin can see at a glance whether a tag is
+    // a celebration or a complaint without clicking through.
+    const tagRows = rawDb
+      .prepare(
+        `SELECT tag, sentiment, COUNT(*) AS n FROM feedback
+         WHERE tag IS NOT NULL AND tag <> ''
+         GROUP BY tag, sentiment
+         ORDER BY n DESC
+         LIMIT 10`,
+      )
+      .all() as Array<{ tag: string; sentiment: string; n: number }>;
+    const topTags = tagRows.map((r) => ({
+      tag: r.tag,
+      count: r.n,
+      sentiment: r.sentiment as FeedbackSentiment,
+    }));
+
+    return {
+      total: totalsRow.total ?? 0,
+      helpful: totalsRow.helpful ?? 0,
+      notHelpful: totalsRow.notHelpful ?? 0,
+      unresolved: totalsRow.unresolved ?? 0,
+      byStage,
+      topTags,
+    };
+  }
+
+  async setFeedbackResolved(
+    id: number,
+    resolved: boolean,
+  ): Promise<Feedback | undefined> {
+    const updated = db
+      .update(feedback)
+      .set({ resolved: resolved ? 1 : 0 })
+      .where(eq(feedback.id, id))
+      .returning()
+      .get();
+    if (!updated) return undefined;
+    // Pull the handle separately for consistency with listFeedback.
+    let userHandle: string | null = null;
+    if (updated.userId !== null) {
+      const u = await this.getUserById(updated.userId);
+      userHandle = u?.handle ?? null;
+    }
+    return rowToFeedback(updated, userHandle);
+  }
+
   async upsertBookmark(
     siftId: string,
     payload: BookmarkPayload,
@@ -385,6 +584,26 @@ export class DatabaseStorage implements IStorage {
       .run(siftId, updatedAt, payloadJson);
     return { updatedAt, payload };
   }
+}
+
+function rowToFeedback(
+  row: typeof feedback.$inferSelect,
+  userHandle: string | null,
+): Feedback {
+  return {
+    id: row.id,
+    createdAt: row.createdAt,
+    userId: row.userId ?? null,
+    userHandle,
+    siftId: row.siftId ?? null,
+    stage: row.stage as FeedbackStage,
+    sentiment: row.sentiment as FeedbackSentiment,
+    tag: row.tag ?? null,
+    message: row.message ?? null,
+    inputSnapshot: row.inputSnapshot ?? null,
+    coreIntentSnapshot: row.coreIntentSnapshot ?? null,
+    resolved: !!row.resolved,
+  };
 }
 
 // --- Row → ThreadTurn adapter ---

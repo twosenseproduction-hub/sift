@@ -247,6 +247,15 @@ export default function AdminPage() {
               Three numbers. Seven days. Enough to know whether the work is
               landing.
             </p>
+            <div className="mt-4 text-sm">
+              <Link
+                href="/admin/feedback"
+                className="underline underline-offset-4 text-muted-foreground hover:text-foreground"
+                data-testid="link-admin-feedback"
+              >
+                Read feedback →
+              </Link>
+            </div>
           </div>
 
           {meLoading || isLoading ? (

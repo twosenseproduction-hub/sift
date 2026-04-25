@@ -5,6 +5,7 @@ import { clearResume, readResume } from "@/lib/resume";
 import { Header, Footnote } from "@/components/brand";
 import { Result, Thinking } from "@/components/sift-ui";
 import { CheckinBlock } from "@/components/checkin";
+import { FeedbackPrompt } from "@/components/feedback-prompt";
 import { BookmarkCard } from "@/components/bookmark-card";
 import { DeepeningThread } from "@/components/deepening-thread";
 import { CareScreen } from "@/components/care-screen";
@@ -150,6 +151,10 @@ export default function Shared() {
                     <Result result={data} readOnly />
                   </div>
                 </details>
+              )}
+
+              {data.mine && (
+                <FeedbackPrompt stage="result" siftId={data.id} />
               )}
 
               <CheckinBlock sift={data} readOnly={!data.mine} />

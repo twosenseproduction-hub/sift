@@ -443,3 +443,91 @@ export type CloseResponse =
   | { type: "care" }
   | { type: "closed"; reflection: string; turn: ThreadTurn };
 
+// ---- Feedback ----
+//
+// First-party in-app feedback. Captured at well-defined moments in the flow
+// (the result card, mid-deepening, summary/checkpoint, and at closure) and
+// reviewed in the admin page. We persist tiny snapshots of the user's input
+// and the model's coreIntent at the moment they gave feedback so the admin
+// can spot patterns without having to chase the original sift each time.
+export const feedback = sqliteTable("feedback", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  createdAt: integer("created_at").notNull(),
+  userId: integer("user_id"), // nullable: anonymous feedback
+  siftId: text("sift_id"), // nullable: feedback not tied to a sift
+  stage: text("stage").notNull(), // 'result' | 'deepening' | 'summary' | 'closure'
+  sentiment: text("sentiment").notNull(), // 'helpful' | 'not_helpful'
+  tag: text("tag"), // nullable label
+  message: text("message"), // optional free text
+  inputSnapshot: text("input_snapshot"), // truncated copy of the user's original input
+  coreIntentSnapshot: text("core_intent_snapshot"), // model's coreIntent at the time
+  resolved: integer("resolved").notNull().default(0), // 0|1
+});
+export type FeedbackRow = typeof feedback.$inferSelect;
+
+export const feedbackStageSchema = z.enum([
+  "result",
+  "deepening",
+  "summary",
+  "closure",
+]);
+export type FeedbackStage = z.infer<typeof feedbackStageSchema>;
+
+export const feedbackSentimentSchema = z.enum(["helpful", "not_helpful"]);
+export type FeedbackSentiment = z.infer<typeof feedbackSentimentSchema>;
+
+// Suggested tags. The server accepts any short snake_case-ish string within
+// these bounds so we can experiment without locking the wire format, but the
+// client only surfaces this curated set.
+export const POSITIVE_TAGS = [
+  "felt_accurate",
+  "made_things_clearer",
+  "good_next_step",
+  "calming",
+  "helped_me_focus",
+] as const;
+export const NEGATIVE_TAGS = [
+  "too_vague",
+  "missed_the_point",
+  "too_wordy",
+  "not_actionable",
+  "felt_repetitive",
+] as const;
+export type PositiveTag = (typeof POSITIVE_TAGS)[number];
+export type NegativeTag = (typeof NEGATIVE_TAGS)[number];
+
+export const feedbackRequestSchema = z.object({
+  siftId: z.string().min(1).max(64).optional().nullable(),
+  stage: feedbackStageSchema,
+  sentiment: feedbackSentimentSchema,
+  tag: z.string().min(1).max(64).optional().nullable(),
+  message: z.string().max(2000).optional().nullable(),
+});
+export type FeedbackRequest = z.infer<typeof feedbackRequestSchema>;
+
+// Wire shape returned by the API. Booleans/nulls are normalized; raw 0/1
+// flags from SQLite are converted before this leaves the server.
+export type Feedback = {
+  id: number;
+  createdAt: number;
+  userId: number | null;
+  userHandle: string | null; // joined for admin convenience
+  siftId: string | null;
+  stage: FeedbackStage;
+  sentiment: FeedbackSentiment;
+  tag: string | null;
+  message: string | null;
+  inputSnapshot: string | null;
+  coreIntentSnapshot: string | null;
+  resolved: boolean;
+};
+
+export type FeedbackStats = {
+  total: number;
+  helpful: number;
+  notHelpful: number;
+  unresolved: number;
+  byStage: Record<FeedbackStage, { helpful: number; notHelpful: number }>;
+  topTags: Array<{ tag: string; count: number; sentiment: FeedbackSentiment }>;
+};
+

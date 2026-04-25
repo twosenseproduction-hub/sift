@@ -16,6 +16,7 @@ import { QuickResetDialog } from "@/components/quick-reset-dialog";
 import { BreathingDot } from "@/components/breathing-dot";
 import { CareScreen } from "@/components/care-screen";
 import { DeepeningThread } from "@/components/deepening-thread";
+import { FeedbackPrompt } from "@/components/feedback-prompt";
 import { Button } from "@/components/ui/button";
 import { useMe } from "@/lib/auth";
 import { useDailyPrompt } from "@/lib/useDailyPrompt";
@@ -403,6 +404,7 @@ export default function Home() {
                 }}
                 onSave={!me ? () => setAuthOpen(true) : undefined}
               />
+              <FeedbackPrompt stage="result" siftId={result.id} />
             </div>
           ) : null}
         </div>
