@@ -59,9 +59,14 @@ interface ComposerProps {
   prefillToken?: number;
 }
 
+// The first three are inner-monologue style — thoughts the user might
+// actually be holding. The fourth is a quieter instructional line that
+// gently signals past writing is welcome too: a journal page, an old note,
+// a draft that still has weight.
 const PLACEHOLDER_PROMPTS = [
   "I have too many ideas and don't know what to focus on.",
   "I know what I need to do, but I'm not doing it.",
+  "Paste something old.",
   "I can't tell what matters most right now.",
 ];
 

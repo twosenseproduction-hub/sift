@@ -214,47 +214,12 @@ export default function Home() {
                 prefillToken={composerPrefillToken}
               />
 
-              {/* Helper line below composer. "Paste something old" sits
-                  inline as a soft permission slip — lower contrast than the
-                  helper itself, no underline at rest, no icon. Clicking it
-                  just focuses the existing composer; the framing does the
-                  rest. */}
+              {/* Helper line below composer */}
               <p
                 className="mt-3 text-xs text-muted-foreground/70"
                 data-testid="text-helper"
               >
                 Messy is fine.
-                <span
-                  className="mx-2 text-muted-foreground/40"
-                  aria-hidden="true"
-                >
-                  ·
-                </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const el = document.querySelector<HTMLTextAreaElement>(
-                      '[data-testid="input-thoughts"]',
-                    );
-                    if (!el) return;
-                    try {
-                      el.scrollIntoView({ behavior: "smooth", block: "center" });
-                    } catch {
-                      // older browsers — ignore.
-                    }
-                    el.focus();
-                    const len = el.value.length;
-                    try {
-                      el.setSelectionRange(len, len);
-                    } catch {
-                      // ignore.
-                    }
-                  }}
-                  data-testid="link-paste-old"
-                  className="text-muted-foreground/55 hover:text-muted-foreground focus-visible:text-muted-foreground focus-visible:outline-none transition-colors"
-                >
-                  Paste something old
-                </button>
               </p>
 
               {/* See example — only for first-time users */}
