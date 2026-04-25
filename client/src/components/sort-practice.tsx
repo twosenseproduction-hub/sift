@@ -14,15 +14,15 @@ import type {
 //
 // A dedicated Signal / Noise practice moment inserted into the deepening
 // thread. The server hands us 6–8 short phrases distilled from the actual
-// conversation. The user sorts each one — by hand — into "matters" or "noise"
-// (or leaves it in the pool as "not sure"). When they press Done, we submit
+// conversation. The user sorts them — one card at a time — into "matters"
+// or "noise" (or sets aside as "not sure"). When the deck is done, we submit
 // to /api/sift/:id/sort, which persists the sort, updates the bookmark's
 // matters/noise with the user's choices, and returns the next Sift reply.
 //
 // Design rules (from the brief):
-//   - Calm and intentional, not gamey. No drag animations, no random motion.
+//   - One card at a time. Focused, spacious, sequential.
+//   - Calm and intentional, not gamey. Subtle transitions, no drag.
 //   - Reflects the actual conversation — phrases come from the thread.
-//   - Emotionally spacious. One clear thing on the screen.
 //   - Mobile-first. Low cognitive load.
 //   - Materially affects what Sift says next.
 //
@@ -52,16 +52,16 @@ export function SortPractice({
   onCare,
 }: SortPracticeProps) {
   const { toast } = useToast();
-  // Per-item assignment. Items not in the map are still "in the pool".
-  const [assignments, setAssignments] = useState<Record<string, Bin>>({});
-  const [submitting, setSubmitting] = useState(false);
-
   const items = payload.items;
 
-  const pool = useMemo(
-    () => items.filter((it) => !assignments[it]),
-    [items, assignments],
-  );
+  // Per-item assignment. Items not in the map are still "in the deck".
+  const [assignments, setAssignments] = useState<Record<string, Bin>>({});
+  // Which card index we're currently looking at.
+  const [cursor, setCursor] = useState(0);
+  // Brief fade between cards so the change is felt, not jarring.
+  const [transitioning, setTransitioning] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
   const matters = useMemo(
     () => items.filter((it) => assignments[it] === "matters"),
     [items, assignments],
@@ -75,20 +75,38 @@ export function SortPractice({
     [items, assignments],
   );
 
-  function assign(item: string, bin: Bin) {
+  const total = items.length;
+  const current = cursor < total ? items[cursor] : null;
+  const deckDone = cursor >= total;
+  const anyAssigned = matters.length + noise.length + unsure.length > 0;
+
+  function chooseCurrent(bin: Bin) {
+    if (!current || transitioning) return;
+    const item = current;
     setAssignments((prev) => ({ ...prev, [item]: bin }));
-  }
-  function unassign(item: string) {
-    setAssignments((prev) => {
-      const next = { ...prev };
-      delete next[item];
-      return next;
-    });
+    // Subtle transition to the next card.
+    setTransitioning(true);
+    window.setTimeout(() => {
+      setCursor((c) => c + 1);
+      setTransitioning(false);
+    }, 180);
   }
 
-  const pooledCount = pool.length;
-  const anyAssigned = matters.length + noise.length + unsure.length > 0;
-  const allSorted = pooledCount === 0;
+  function undoLast() {
+    if (cursor === 0 || transitioning) return;
+    const prevIndex = cursor - 1;
+    const prevItem = items[prevIndex];
+    setAssignments((prev) => {
+      const next = { ...prev };
+      delete next[prevItem];
+      return next;
+    });
+    setTransitioning(true);
+    window.setTimeout(() => {
+      setCursor(prevIndex);
+      setTransitioning(false);
+    }, 140);
+  }
 
   async function submit(skipped: boolean) {
     if (submitting) return;
@@ -99,7 +117,11 @@ export function SortPractice({
         : {
             matters,
             noise,
-            unsure: [...unsure, ...pool], // anything still in the pool reads as unsure
+            // Anything the user never reached reads as unsure.
+            unsure: [
+              ...unsure,
+              ...items.filter((it) => !assignments[it]),
+            ],
           };
       const res = await apiRequest("POST", `/api/sift/${siftId}/sort`, body);
       const data = (await res.json()) as SortResponse;
@@ -132,7 +154,7 @@ export function SortPractice({
         className="text-[11px] tracking-[0.25em] uppercase text-primary/80 mb-3 font-medium"
         data-testid="label-sort-practice"
       >
-        A pause — sort by hand
+        A pause — one at a time
       </p>
       <p
         className="font-serif text-xl md:text-2xl leading-snug text-foreground/95 mb-2"
@@ -141,145 +163,191 @@ export function SortPractice({
         {payload.intro}
       </p>
       <p className="text-sm text-muted-foreground mb-6 leading-relaxed">
-        Move each phrase into what seems to matter most right now, what may be
-        noise right now, or set it aside if you are not sure. Your sort shapes
-        what happens next.
+        A few phrases from this thread, one at a time. Place each one where it
+        seems to belong right now.
       </p>
 
-      {/* Pool of unsorted phrases. Each is a calm typographic row with three
-          quiet actions — no drag, no animation, no color overload. */}
-      {pool.length > 0 && (
-        <div className="mb-6" data-testid="sort-pool">
-          <p className="text-[11px] tracking-[0.22em] uppercase text-muted-foreground/80 mb-3 font-medium">
-            {anyAssigned
-              ? `Still to sort · ${pool.length}`
-              : `From this thread · ${pool.length}`}
+      {/* Progress — quiet, not gamified. */}
+      <div
+        className="flex items-center justify-between mb-5"
+        data-testid="sort-progress"
+      >
+        <p className="text-[11px] tracking-[0.22em] uppercase text-muted-foreground/80 font-medium">
+          {deckDone
+            ? `Sorted · ${total} of ${total}`
+            : `Phrase ${Math.min(cursor + 1, total)} of ${total}`}
+        </p>
+        <div className="flex items-center gap-1.5" aria-hidden="true">
+          {items.map((it, idx) => {
+            const assigned = assignments[it];
+            const isCurrent = idx === cursor && !deckDone;
+            return (
+              <span
+                key={it}
+                className={[
+                  "h-1.5 rounded-full transition-all duration-300",
+                  isCurrent ? "w-5" : "w-1.5",
+                  assigned === "matters"
+                    ? "bg-primary/70"
+                    : assigned === "noise"
+                    ? "bg-muted-foreground/40"
+                    : assigned === "unsure"
+                    ? "bg-muted-foreground/25"
+                    : isCurrent
+                    ? "bg-foreground/40"
+                    : "bg-border",
+                ].join(" ")}
+              />
+            );
+          })}
+        </div>
+      </div>
+
+      {/* One card at a time. Fades softly between cards. */}
+      {current && (
+        <div
+          className={[
+            "rounded-xl border border-border/60 bg-background px-5 py-6 md:px-6 md:py-7 transition-opacity duration-200",
+            transitioning ? "opacity-0" : "opacity-100",
+          ].join(" ")}
+          data-testid={`sort-card-${slug(current)}`}
+          aria-live="polite"
+        >
+          <p
+            className="font-serif text-lg md:text-xl leading-snug text-foreground/95 mb-5 min-h-[2.5rem]"
+            data-testid={`sort-card-text-${slug(current)}`}
+          >
+            {current}
           </p>
-          <ul className="space-y-2.5">
-            {pool.map((item) => (
-              <li
-                key={item}
-                className="rounded-xl border border-border/60 bg-background px-4 py-3"
-                data-testid={`sort-item-${slug(item)}`}
-              >
-                <p
-                  className="text-[15px] leading-relaxed text-foreground/90 mb-3"
-                  data-testid={`sort-item-text-${slug(item)}`}
-                >
-                  {item}
-                </p>
-                <div className="flex flex-wrap items-center gap-2">
-                  <SortButton
-                    variant="matters"
-                    onClick={() => assign(item, "matters")}
-                    testId={`button-assign-matters-${slug(item)}`}
-                  >
-                    Matters
-                  </SortButton>
-                  <SortButton
-                    variant="noise"
-                    onClick={() => assign(item, "noise")}
-                    testId={`button-assign-noise-${slug(item)}`}
-                  >
-                    Noise
-                  </SortButton>
-                  <SortButton
-                    variant="unsure"
-                    onClick={() => assign(item, "unsure")}
-                    testId={`button-assign-unsure-${slug(item)}`}
-                  >
-                    Not sure
-                  </SortButton>
-                </div>
-              </li>
-            ))}
-          </ul>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-2">
+            <ChoiceButton
+              variant="matters"
+              onClick={() => chooseCurrent("matters")}
+              testId={`button-assign-matters-${slug(current)}`}
+              disabled={transitioning}
+            >
+              What matters
+            </ChoiceButton>
+            <ChoiceButton
+              variant="noise"
+              onClick={() => chooseCurrent("noise")}
+              testId={`button-assign-noise-${slug(current)}`}
+              disabled={transitioning}
+            >
+              Noise
+            </ChoiceButton>
+            <ChoiceButton
+              variant="unsure"
+              onClick={() => chooseCurrent("unsure")}
+              testId={`button-assign-unsure-${slug(current)}`}
+              disabled={transitioning}
+            >
+              Not sure yet
+            </ChoiceButton>
+          </div>
+          <div className="mt-4 flex items-center justify-between">
+            <button
+              type="button"
+              onClick={undoLast}
+              disabled={cursor === 0 || transitioning}
+              className="inline-flex items-center gap-1.5 text-xs text-muted-foreground/80 hover:text-foreground transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              data-testid="button-sort-undo"
+            >
+              <Undo2 className="w-3.5 h-3.5" />
+              Undo last
+            </button>
+            <button
+              type="button"
+              onClick={() => submit(true)}
+              disabled={submitting}
+              data-testid="button-sort-skip"
+              className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-4 decoration-border hover:decoration-foreground transition-colors disabled:opacity-50"
+            >
+              Skip this for now
+            </button>
+          </div>
         </div>
       )}
 
-      {/* Sorted columns — matters first, then noise, then unsure. Each item
-          is tappable to move it back out. Labels are verbatim product copy. */}
-      <div className="space-y-5">
-        <SortedColumn
-          label="What seems to matter most right now"
-          tone="matters"
-          items={matters}
-          onUnassign={unassign}
-        />
-        <SortedColumn
-          label="What may be noise right now"
-          tone="noise"
-          items={noise}
-          onUnassign={unassign}
-        />
-        {unsure.length > 0 && (
-          <SortedColumn
-            label="Not sure yet"
-            tone="unsure"
-            items={unsure}
-            onUnassign={unassign}
-          />
-        )}
-      </div>
-
-      <div className="mt-7 pt-5 border-t border-border/60 flex flex-wrap items-center justify-between gap-3">
-        <p
-          className="text-xs text-muted-foreground/70"
-          data-testid="text-sort-helper"
+      {/* When the deck is done, show a calm summary and the done button. */}
+      {deckDone && (
+        <div
+          className="rounded-xl border border-border/60 bg-background px-5 py-6 md:px-6 md:py-7"
+          data-testid="sort-summary"
         >
-          {allSorted
-            ? "Ready when you are."
-            : pool.length === items.length
-            ? "Tap a row to place it."
-            : `${pool.length} left in the pool.`}
-        </p>
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => submit(true)}
-            disabled={submitting}
-            data-testid="button-sort-skip"
-            className="text-sm text-muted-foreground hover:text-foreground underline underline-offset-4 decoration-border hover:decoration-foreground transition-colors disabled:opacity-50"
-          >
-            Skip this for now
-          </button>
-          <Button
-            type="button"
-            onClick={() => submit(false)}
-            disabled={submitting || !anyAssigned}
-            data-testid="button-sort-done"
-            className="gap-2"
-          >
-            {submitting ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Saving sort…
-              </>
-            ) : (
-              "Done sorting"
+          <p className="text-[11px] tracking-[0.22em] uppercase text-muted-foreground/80 mb-4 font-medium">
+            How you sorted
+          </p>
+          <div className="space-y-4 mb-5">
+            <SummaryRow
+              label="What seems to matter most right now"
+              tone="matters"
+              items={matters}
+            />
+            <SummaryRow
+              label="What may be noise right now"
+              tone="noise"
+              items={noise}
+            />
+            {unsure.length > 0 && (
+              <SummaryRow
+                label="Not sure yet"
+                tone="unsure"
+                items={unsure}
+              />
             )}
-          </Button>
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-border/60">
+            <button
+              type="button"
+              onClick={undoLast}
+              disabled={submitting || cursor === 0}
+              className="inline-flex items-center gap-1.5 text-xs text-muted-foreground/80 hover:text-foreground transition-colors disabled:opacity-40"
+              data-testid="button-sort-revise"
+            >
+              <Undo2 className="w-3.5 h-3.5" />
+              Revise last
+            </button>
+            <Button
+              type="button"
+              onClick={() => submit(false)}
+              disabled={submitting || !anyAssigned}
+              data-testid="button-sort-done"
+              className="gap-2"
+            >
+              {submitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Saving sort…
+                </>
+              ) : (
+                "Done sorting"
+              )}
+            </Button>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
 
 // --- Sub-components ---
 
-function SortButton({
+function ChoiceButton({
   variant,
   children,
   onClick,
   testId,
+  disabled,
 }: {
   variant: Bin;
   children: React.ReactNode;
   onClick: () => void;
   testId: string;
+  disabled?: boolean;
 }) {
   const base =
-    "text-xs tracking-wide px-3 py-1.5 rounded-full border transition-colors";
+    "flex-1 text-sm tracking-wide px-4 py-2.5 rounded-full border transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
   const styles: Record<Bin, string> = {
     matters:
       "border-primary/30 text-primary hover:bg-primary/10 hover:border-primary/50",
@@ -292,6 +360,7 @@ function SortButton({
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
       className={`${base} ${styles[variant]}`}
       data-testid={testId}
     >
@@ -300,75 +369,44 @@ function SortButton({
   );
 }
 
-function SortedColumn({
+function SummaryRow({
   label,
   tone,
   items,
-  onUnassign,
 }: {
   label: string;
   tone: Bin;
   items: string[];
-  onUnassign: (item: string) => void;
 }) {
-  if (items.length === 0) {
-    // Still render the label so the user sees the two homes waiting to receive
-    // phrases. An empty state keeps the spatial structure clear.
-    return (
-      <div data-testid={`sort-column-${tone}-empty`}>
-        <p className="text-[11px] tracking-[0.22em] uppercase text-muted-foreground/80 mb-2 font-medium">
-          {label}
-        </p>
-        <div className="rounded-xl border border-dashed border-border/60 px-4 py-3">
-          <p className="text-sm text-muted-foreground/70">
-            {tone === "matters"
-              ? "Nothing placed here yet."
-              : tone === "noise"
-              ? "Nothing placed here yet."
-              : "Nothing set aside."}
-          </p>
-        </div>
-      </div>
-    );
-  }
   const rowStyles: Record<Bin, string> = {
-    matters: "border-primary/30 bg-primary/5",
-    noise: "border-border bg-muted/30",
-    unsure: "border-dashed border-border/70 bg-transparent",
+    matters: "border-primary/30 bg-primary/5 text-foreground/90",
+    noise: "border-border bg-muted/30 text-muted-foreground",
+    unsure: "border-dashed border-border/70 bg-transparent text-foreground/80",
   };
   return (
-    <div data-testid={`sort-column-${tone}`}>
+    <div data-testid={`sort-summary-${tone}`}>
       <p className="text-[11px] tracking-[0.22em] uppercase text-muted-foreground/80 mb-2 font-medium">
         {label}
       </p>
-      <ul className="space-y-2">
-        {items.map((item) => (
-          <li
-            key={item}
-            className={`rounded-xl border ${rowStyles[tone]} px-4 py-2.5 flex items-start justify-between gap-3`}
-            data-testid={`sort-placed-${tone}-${slug(item)}`}
-          >
-            <span
-              className={`text-[15px] leading-relaxed ${
-                tone === "noise"
-                  ? "text-muted-foreground"
-                  : "text-foreground/90"
-              }`}
+      {items.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-border/60 px-4 py-2.5">
+          <p className="text-sm text-muted-foreground/70">
+            {tone === "unsure" ? "Nothing set aside." : "Nothing placed here."}
+          </p>
+        </div>
+      ) : (
+        <ul className="space-y-2">
+          {items.map((item) => (
+            <li
+              key={item}
+              className={`rounded-xl border ${rowStyles[tone]} px-4 py-2.5 text-[15px] leading-relaxed`}
+              data-testid={`sort-placed-${tone}-${slug(item)}`}
             >
               {item}
-            </span>
-            <button
-              type="button"
-              onClick={() => onUnassign(item)}
-              aria-label={`Move "${item}" back`}
-              className="text-muted-foreground/60 hover:text-foreground transition-colors shrink-0 mt-0.5"
-              data-testid={`button-unassign-${tone}-${slug(item)}`}
-            >
-              <Undo2 className="w-3.5 h-3.5" />
-            </button>
-          </li>
-        ))}
-      </ul>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
