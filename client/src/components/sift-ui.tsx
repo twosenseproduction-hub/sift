@@ -154,12 +154,12 @@ export function Composer({ onResult, onCare, initialText, prefillToken }: Compos
     return () => clearInterval(id);
   }, [loading]);
 
-  // Rotate placeholder every 6s, but pause while focused or while user has typed something.
+  // Rotate placeholder every 3s, but pause while focused or while user has typed something.
   useEffect(() => {
     if (focused || input || recording) return;
     const id = setInterval(
       () => setPlaceholderIdx((i) => (i + 1) % PLACEHOLDER_PROMPTS.length),
-      6000,
+      3000,
     );
     return () => clearInterval(id);
   }, [focused, input, recording]);
