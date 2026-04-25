@@ -5,6 +5,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { SortPractice } from "@/components/sort-practice";
+import { writeResume, clearResume } from "@/lib/resume";
 import type {
   ThreadTurn,
   Bookmark,
@@ -112,6 +113,12 @@ export function DeepeningThread({
       if (data.converged) {
         setConverged(true);
       }
+      // Thread is still open after a deepening exchange — remember it so the
+      // user can come back if they navigate away or reload.
+      writeResume({
+        siftId,
+        lastCheckpointAt: data.bookmark ? Date.now() : undefined,
+      });
       // If the server handed us a sort_prompt, the UI will pick it up via the
       // openSort memo. No extra action needed here.
     } catch (err: any) {
@@ -137,6 +144,8 @@ export function DeepeningThread({
       }
       setTurns((prev) => [...prev, data.turn]);
       setClosedReflection(data.reflection);
+      // The loop is closed — nothing left to resume.
+      clearResume();
       onClosed?.(data.reflection);
     } catch (err: any) {
       toast({
@@ -161,6 +170,13 @@ export function DeepeningThread({
       onBookmarkUpdate?.(args.bookmark);
     }
     if (args.converged) setConverged(true);
+    // Sort completed (or skipped) — thread is still open. Update resume
+    // state so the user can come back here directly.
+    writeResume({
+      siftId,
+      lastSortAt: Date.now(),
+      lastCheckpointAt: args.bookmark ? Date.now() : undefined,
+    });
   }
 
   const closed = closedReflection !== null;

@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useRoute, Link } from "wouter";
+import { clearResume, readResume } from "@/lib/resume";
 import { Header, Footnote } from "@/components/brand";
 import { Result, Thinking } from "@/components/sift-ui";
 import { CheckinBlock } from "@/components/checkin";
@@ -38,6 +39,16 @@ export default function Shared() {
   });
 
   const activeBookmark = bookmarkOverride ?? data?.bookmark;
+
+  // If this thread is already closed, there is nothing to resume — clear
+  // any lingering recovery state for it so Home stops offering to return.
+  useEffect(() => {
+    if (!data) return;
+    if (data.status === "closed") {
+      const r = readResume();
+      if (r && r.siftId === data.id) clearResume();
+    }
+  }, [data?.id, data?.status]);
 
   return (
     <div className="min-h-screen flex flex-col">

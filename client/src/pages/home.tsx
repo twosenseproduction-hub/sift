@@ -19,8 +19,9 @@ import { DeepeningThread } from "@/components/deepening-thread";
 import { Button } from "@/components/ui/button";
 import { useMe } from "@/lib/auth";
 import { useDailyPrompt } from "@/lib/useDailyPrompt";
+import { useResume, clearResume } from "@/lib/resume";
 import { useQuery } from "@tanstack/react-query";
-import { Bookmark, ChevronDown } from "lucide-react";
+import { Bookmark, ChevronDown, ArrowRight } from "lucide-react";
 import type { SiftResult, SiftListItem } from "@shared/schema";
 
 // Hardcoded seed for "Free write from this". Keeps the app voice:
@@ -123,6 +124,26 @@ export default function Home() {
   });
   const isReturning = !!me && (siftsData?.sifts.length ?? 0) > 0;
 
+  // Resume state — surfaced only on the idle home view. If the referenced
+  // sift is known to be closed in the user's list, we silently clear so the
+  // card never misleads.
+  const resume = useResume();
+  useEffect(() => {
+    if (!resume || !siftsData) return;
+    const match = siftsData.sifts.find((s) => s.id === resume.siftId);
+    if (match && match.status === "closed") clearResume();
+  }, [resume?.siftId, siftsData]);
+  const canShowResume =
+    !!me && !!resume && (flow === "idle" || flow === "sifting");
+
+  const onResumeThread = () => {
+    if (!resume) return;
+    window.location.hash = `/s/${resume.siftId}`;
+  };
+  const onStartFresh = () => {
+    clearResume();
+  };
+
   return (
     <div className="min-h-screen flex flex-col">
       <Header />
@@ -131,6 +152,12 @@ export default function Home() {
         <div className="mx-auto max-w-3xl px-6 md:px-8 pb-16">
           {flow === "idle" || flow === "sifting" ? (
             <div className="pt-10 md:pt-16">
+              {canShowResume && (
+                <ResumeCard
+                  onResume={onResumeThread}
+                  onStartFresh={onStartFresh}
+                />
+              )}
               {/* Hero — first-time users get the full reflective hero.
                   Returning users get a minimal prompt label only. */}
               {!isReturning ? (
@@ -434,6 +461,58 @@ export default function Home() {
           setComposerPrefillToken((n) => n + 1);
         }}
       />
+    </div>
+  );
+}
+
+function ResumeCard({
+  onResume,
+  onStartFresh,
+}: {
+  onResume: () => void;
+  onStartFresh: () => void;
+}) {
+  return (
+    <div
+      className="mb-8 md:mb-10 rounded-xl border border-primary/20 bg-primary/5 px-4 py-4 md:px-5 md:py-5"
+      data-testid="card-resume"
+    >
+      <div className="flex items-start gap-3">
+        <Bookmark className="w-4 h-4 mt-1 text-primary shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p
+            className="text-[11px] tracking-[0.25em] uppercase text-primary/80 mb-1.5 font-medium"
+            data-testid="text-resume-eyebrow"
+          >
+            Pick up where you left off
+          </p>
+          <p
+            className="text-sm text-foreground/85 leading-relaxed mb-3"
+            data-testid="text-resume-body"
+          >
+            You were in the middle of a thread.
+          </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              size="sm"
+              onClick={onResume}
+              data-testid="button-resume-thread"
+              className="gap-2"
+            >
+              Resume thread
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Button>
+            <button
+              type="button"
+              onClick={onStartFresh}
+              data-testid="button-resume-start-fresh"
+              className="text-sm text-muted-foreground hover:text-foreground underline underline-offset-4 decoration-border hover:decoration-foreground transition-colors"
+            >
+              Start fresh
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
