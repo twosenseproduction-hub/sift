@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Moon, Sun } from "lucide-react";
-import { Logo } from "@/components/brand";
+import { Logo, LogoMark } from "@/components/brand";
 import { useTheme } from "@/lib/theme";
 
 // The landing page is the marketing surface that lives at the apex.
@@ -173,10 +173,7 @@ function LandingHeader() {
           aria-label="Sift home"
           data-testid="link-landing-brand"
         >
-          <span className="text-primary">
-            <Logo size={36} />
-          </span>
-          <span className="font-serif text-xl tracking-tight">Sift</span>
+          <Logo size={32} />
         </a>
         <nav
           className="hidden gap-5 text-sm text-muted-foreground md:flex"
@@ -450,7 +447,7 @@ export default function Landing() {
           <Content className="text-center">
             <Reveal className="mx-auto max-w-[960px]">
               <div className="mx-auto mb-6 h-20 w-20 text-primary">
-                <Logo size={80} />
+                <LogoMark size={80} />
               </div>
               <p className="mb-4 text-[12px] font-medium uppercase tracking-[0.26em] text-muted-foreground">
                 A quiet tool for a noisy mind

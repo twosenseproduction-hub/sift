@@ -19,12 +19,41 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 
+// Brand lockup (icon + wordmark). The colored version reads on light
+// surfaces; the light gray version reads on dark surfaces. Both PNGs
+// already include the wordmark, so callers should NOT render a
+// separate "Sift" text next to this component.
+//
+// `size` controls the rendered HEIGHT in px. The native asset is
+// 600×253 (≈2.37:1) so width is set automatically.
 export function Logo({ size = 28 }: { size?: number }) {
-  // Cyclone mark: four tapering horizontal strokes that sweep into a funnel,
-  // with a single dot at the tip. The geometry is arranged so each row is
-  // narrower than the one above it, and the left edge steps inward — reading
-  // as wind shearing into a single point. Uses currentColor so it inherits
-  // from the header's text/hover state.
+  return (
+    <>
+      <img
+        src="/sift-logo-colored.png"
+        alt="Sift"
+        height={size}
+        style={{ height: size, width: "auto" }}
+        className="block dark:hidden select-none"
+        draggable={false}
+      />
+      <img
+        src="/sift-logo-light.png"
+        alt="Sift"
+        height={size}
+        style={{ height: size, width: "auto" }}
+        className="hidden dark:block select-none"
+        draggable={false}
+      />
+    </>
+  );
+}
+
+// Icon-only mark, for places where the wordmark would be redundant
+// (e.g. directly above the giant "Sift helps you find" headline on
+// the landing hero). Inherits color from currentColor so it plays
+// nicely with theme tokens — still SVG, not PNG.
+export function LogoMark({ size = 28 }: { size?: number }) {
   return (
     <svg
       width={size}
@@ -34,15 +63,10 @@ export function Logo({ size = 28 }: { size?: number }) {
       aria-label="Sift"
       role="img"
     >
-      {/* Row 1 — widest, thinnest */}
       <rect x="5" y="9" width="22" height="1.8" rx="0.9" />
-      {/* Row 2 — slightly inset, thicker */}
       <rect x="7" y="13" width="18" height="2.1" rx="1.05" />
-      {/* Row 3 — narrower, thicker still */}
       <rect x="9.5" y="17" width="13" height="2.1" rx="1.05" />
-      {/* Row 4 — short tail */}
       <rect x="12" y="21" width="7" height="1.8" rx="0.9" />
-      {/* Tip dot */}
       <circle cx="14.5" cy="25.5" r="1.05" />
     </svg>
   );
@@ -71,10 +95,7 @@ export function Header() {
               }
             }}
           >
-            <span className="text-foreground/90 group-hover:text-primary transition-colors">
-              <Logo />
-            </span>
-            <span className="font-serif text-xl tracking-tight">Sift</span>
+            <Logo size={32} />
           </a>
         </Link>
 

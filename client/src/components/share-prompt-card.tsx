@@ -1,5 +1,5 @@
 import { forwardRef } from "react";
-import { Logo } from "@/components/brand";
+import { LogoMark } from "@/components/brand";
 
 interface SharePromptCardProps {
   eyebrow?: string;
@@ -146,7 +146,7 @@ export const SharePromptCard = forwardRef<HTMLDivElement, SharePromptCardProps>(
             wraps — the export canvas always shows both. */}
         <div className="flex items-center justify-between gap-6">
           <div className="flex items-center gap-3 text-[#28251D]">
-            <Logo size={logoSize} />
+            <LogoMark size={logoSize} />
             <span
               className={[
                 "text-[#28251D] tracking-tight whitespace-nowrap",
