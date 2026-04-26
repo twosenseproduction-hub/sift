@@ -469,9 +469,79 @@ function LandingHeader() {
 // Mini composer mock used in the "actual experience" section. This is
 // a static facsimile of the real composer — same hero question, same
 // helper line, same warm cream framing — but it's not interactive.
+// ComposerMock — the composer surface that sits beside the
+// "clear surface" copy. It slowly types one honest line, holds it,
+// then quietly clears and starts again. Different example from the
+// hero so the page does not feel repetitive on second look. Uses an
+// IntersectionObserver to delay the typing until the section is in
+// view, so the visitor catches the start of the line, not the end.
 function ComposerMock() {
+  const FULL =
+    "I keep saying yes to things I do not actually want to do, and I cannot tell if it is generosity or fear.";
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [typed, setTyped] = useState("");
+  const [seen, setSeen] = useState(false);
+
+  // Trigger once when the composer enters the viewport.
+  useEffect(() => {
+    const node = containerRef.current;
+    if (!node) return;
+    const obs = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (e.isIntersecting) {
+            setSeen(true);
+            obs.disconnect();
+            break;
+          }
+        }
+      },
+      { threshold: 0.4 }
+    );
+    obs.observe(node);
+    return () => obs.disconnect();
+  }, []);
+
+  // Loop: type → hold → clear → type again. Slower than the hero
+  // (40ms/char) so this section feels patient, not performing.
+  useEffect(() => {
+    if (!seen) return;
+    let cancelled = false;
+    const timers: number[] = [];
+    const t = (ms: number, fn: () => void) => {
+      const id = window.setTimeout(() => !cancelled && fn(), ms);
+      timers.push(id);
+    };
+    const run = () => {
+      setTyped("");
+      let i = 0;
+      const tick = () => {
+        if (cancelled) return;
+        i += 1;
+        setTyped(FULL.slice(0, i));
+        if (i < FULL.length) {
+          const id = window.setTimeout(tick, 40);
+          timers.push(id);
+        } else {
+          // Hold the full line for a beat, then clear and restart.
+          t(6000, () => {
+            setTyped("");
+            t(1200, run);
+          });
+        }
+      };
+      t(900, tick);
+    };
+    run();
+    return () => {
+      cancelled = true;
+      timers.forEach((id) => window.clearTimeout(id));
+    };
+  }, [seen]);
+
   return (
     <div
+      ref={containerRef}
       className="overflow-hidden rounded-[34px] bg-card shadow-[0_24px_50px_hsl(var(--foreground)/0.08)]"
       data-testid="mock-composer"
     >
@@ -486,8 +556,19 @@ function ComposerMock() {
       </div>
       <div className="px-8 pb-7">
         <div className="flex min-h-[176px] flex-col justify-between border-t border-border/60 pt-4">
-          <div className="text-base text-muted-foreground/90">
-            What's on your mind?
+          <div className="text-base leading-[1.7] text-foreground/85">
+            {typed}
+            {seen && (
+              <span
+                className="ml-[2px] inline-block h-[1.05em] w-[2px] -translate-y-[2px] bg-foreground/55 align-middle"
+                style={{ animation: "blink 1s step-end infinite" }}
+              />
+            )}
+            {!seen && (
+              <span className="text-muted-foreground/90">
+                What's on your mind?
+              </span>
+            )}
           </div>
           <div className="flex flex-wrap items-center justify-between gap-4 pt-6">
             <span className="text-sm text-muted-foreground/70">
@@ -500,9 +581,13 @@ function ComposerMock() {
   );
 }
 
-// The rotating example in the "Clarity" section. Cycles through three
-// real-world prompts every 5s — emotional clarity, project pressure,
-// decision overload — to show the breadth of what Sift handles.
+// The rotating example in the "Clarity" section. Cycles through four
+// real-world scenarios — each from a different domain (emotional,
+// project work, relational, decision pressure) — to show the breadth
+// of what Sift handles. The rotation is now visible: a pill row at
+// the top shows all tags with the current one highlighted, and the
+// content crossfades between scenarios with a brief typing reveal
+// on the input field so the change reads as deliberate, not a glitch.
 const EXAMPLES = [
   {
     tag: "Emotional clarity",
@@ -525,6 +610,16 @@ const EXAMPLES = [
     step: "Write the smallest visible starting brief: objective, audience, and the first task you can finish in 25 minutes.",
   },
   {
+    tag: "Hard conversation",
+    input:
+      "I owe someone an honest conversation and I keep rehearsing it instead of having it.",
+    signal:
+      "The rehearsal is not preparation. It is a way of staying in control of an outcome you cannot control.",
+    noise:
+      "Trying to script a version of the talk where no one feels anything difficult.",
+    step: "Send a short message that names the topic and proposes a time — nothing about the content yet.",
+  },
+  {
     tag: "Decision overload",
     input:
       "I have too many good options and I keep researching instead of choosing one path for this month.",
@@ -538,13 +633,77 @@ const EXAMPLES = [
 
 function ExampleRotator() {
   const [idx, setIdx] = useState(0);
+  // Track whether we are mid-transition so we can fade out, swap, fade in.
+  const [phase, setPhase] = useState<"in" | "out">("in");
+  // Type the input field on each switch so the change is legible.
+  const [typed, setTyped] = useState(EXAMPLES[0].input);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [active, setActive] = useState(false);
+
+  // Only run the rotation while the section is on screen — avoids
+  // burning CPU when the visitor has scrolled away.
   useEffect(() => {
-    const id = setInterval(() => setIdx((i) => (i + 1) % EXAMPLES.length), 5000);
-    return () => clearInterval(id);
+    const node = containerRef.current;
+    if (!node) return;
+    const obs = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) setActive(e.isIntersecting);
+      },
+      { threshold: 0.25 }
+    );
+    obs.observe(node);
+    return () => obs.disconnect();
   }, []);
+
+  // Drive the rotation. Each cycle: hold (~7s) → fade out (450ms) →
+  // advance index → type the new input → fade in.
+  useEffect(() => {
+    if (!active) return;
+    let cancelled = false;
+    const timers: number[] = [];
+    const t = (ms: number, fn: () => void) => {
+      const id = window.setTimeout(() => !cancelled && fn(), ms);
+      timers.push(id);
+    };
+    // Schedule the next swap.
+    t(7000, () => {
+      setPhase("out");
+      t(450, () => {
+        const next = (idx + 1) % EXAMPLES.length;
+        const fullInput = EXAMPLES[next].input;
+        setIdx(next);
+        setTyped("");
+        setPhase("in");
+        // Type the new input quickly (22ms/char so a long line lands
+        // in well under a second). The other panels just fade in.
+        let i = 0;
+        const tick = () => {
+          if (cancelled) return;
+          i += 1;
+          setTyped(fullInput.slice(0, i));
+          if (i < fullInput.length) {
+            const id = window.setTimeout(tick, 22);
+            timers.push(id);
+          }
+        };
+        t(120, tick);
+      });
+    });
+    return () => {
+      cancelled = true;
+      timers.forEach((id) => window.clearTimeout(id));
+    };
+  }, [idx, active]);
+
   const ex = EXAMPLES[idx];
+  const fadeClass =
+    phase === "in"
+      ? "opacity-100 translate-y-0"
+      : "opacity-0 -translate-y-1";
+
   return (
     <div
+      ref={containerRef}
       className="overflow-hidden rounded-[28px] border border-border/60 bg-card shadow-[var(--shadow-lg)]"
       data-testid="mock-example"
     >
@@ -556,15 +715,50 @@ function ExampleRotator() {
         </div>
         <span>Sift examples</span>
       </div>
-      <div className="grid gap-3.5 p-5">
-        <div>
-          <Pill key={`tag-${idx}`}>{ex.tag}</Pill>
-        </div>
+      {/* Tag rail — every scenario is visible at once so the rotation
+          is legible. The active one fills with primary; the others sit
+          quiet. Tapping is intentionally not wired — keeps the demo
+          honest as a demo, not a half-built control. */}
+      <div
+        role="tablist"
+        aria-label="Example scenarios"
+        className="flex flex-wrap gap-2 border-b border-border/60 px-5 py-4"
+      >
+        {EXAMPLES.map((e, i) => {
+          const isActive = i === idx;
+          return (
+            <span
+              key={e.tag}
+              role="tab"
+              aria-selected={isActive}
+              data-testid={`example-tag-${i}`}
+              className={`inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-medium uppercase tracking-[0.14em] transition-colors duration-500 ${
+                isActive
+                  ? "border-primary/40 bg-primary/10 text-primary"
+                  : "border-border/60 bg-transparent text-muted-foreground/70"
+              }`}
+            >
+              {e.tag}
+            </span>
+          );
+        })}
+      </div>
+      <div
+        className={`grid gap-3.5 p-5 transition-all duration-500 ease-out ${fadeClass}`}
+      >
         <div className="rounded-2xl border border-border/60 bg-muted/40 p-4">
           <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
             Input
           </div>
-          <div className="leading-7 text-foreground/80">{ex.input}</div>
+          <div className="min-h-[3.5rem] leading-7 text-foreground/80">
+            {typed}
+            {phase === "in" && typed.length < ex.input.length && (
+              <span
+                className="ml-[2px] inline-block h-[1.05em] w-[2px] -translate-y-[2px] bg-foreground/55 align-middle"
+                style={{ animation: "blink 1s step-end infinite" }}
+              />
+            )}
+          </div>
         </div>
         <div className="rounded-2xl border border-l-[3px] border-border/60 border-l-primary/55 bg-muted/40 p-4">
           <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
