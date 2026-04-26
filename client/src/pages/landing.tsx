@@ -102,16 +102,6 @@ function Section({
       id={id}
       className={`relative flex min-h-[100svh] items-center justify-center overflow-clip py-[clamp(88px,10vw,124px)] ${className}`}
     >
-      {/* Vignette — radial gradient that gently darkens the edges of
-          each section so it feels held. */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 z-[1]"
-        style={{
-          background:
-            "radial-gradient(ellipse at center, transparent 50%, hsl(var(--foreground) / 0.06) 100%)",
-        }}
-      />
       {children}
     </section>
   );
@@ -226,13 +216,17 @@ function HeroDemo() {
       className="relative w-full"
       aria-label="A short example of what Sift does"
       data-testid="hero-demo"
+      // The wrapper holds two absolutely-stacked cards. Min-height keeps
+      // the taller of the two (the result) inside its bounds at every
+      // breakpoint, so neither card spills past the hero.
+      style={{ minHeight: "clamp(440px, 56vh, 540px)" }}
     >
-      {/* The composer card (always rendered, fades when result shows). */}
+      {/* The composer card. Absolute so it can cross‑fade with the
+          result without one pushing the other around. */}
       <div
-        className={`rounded-3xl border border-border/60 bg-card/80 p-6 shadow-[0_24px_60px_-30px_rgba(0,0,0,0.18)] backdrop-blur-md transition-opacity duration-700 ${
-          composerActive ? "opacity-100" : "opacity-0"
+        className={`absolute inset-0 rounded-3xl border border-border/60 bg-card/80 p-6 shadow-[0_24px_60px_-30px_rgba(0,0,0,0.18)] backdrop-blur-md transition-opacity duration-700 ${
+          composerActive ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
-        style={{ minHeight: 280 }}
       >
         <p className="mb-3 text-[11px] font-medium uppercase tracking-[0.22em] text-muted-foreground">
           Clarity over comfort
@@ -656,7 +650,9 @@ function ExampleRotator() {
   }, []);
 
   // Drive the rotation. Each cycle: hold (~7s) → fade out (450ms) →
-  // advance index → type the new input → fade in.
+  // advance index. Typing for the new input lives in its own effect
+  // below — that way advancing the index cleans up only the rotation
+  // timer, never the in-flight typing for the new scenario.
   useEffect(() => {
     if (!active) return;
     let cancelled = false;
@@ -665,28 +661,11 @@ function ExampleRotator() {
       const id = window.setTimeout(() => !cancelled && fn(), ms);
       timers.push(id);
     };
-    // Schedule the next swap.
     t(7000, () => {
       setPhase("out");
       t(450, () => {
-        const next = (idx + 1) % EXAMPLES.length;
-        const fullInput = EXAMPLES[next].input;
-        setIdx(next);
-        setTyped("");
+        setIdx((prev) => (prev + 1) % EXAMPLES.length);
         setPhase("in");
-        // Type the new input quickly (22ms/char so a long line lands
-        // in well under a second). The other panels just fade in.
-        let i = 0;
-        const tick = () => {
-          if (cancelled) return;
-          i += 1;
-          setTyped(fullInput.slice(0, i));
-          if (i < fullInput.length) {
-            const id = window.setTimeout(tick, 22);
-            timers.push(id);
-          }
-        };
-        t(120, tick);
       });
     });
     return () => {
@@ -694,6 +673,36 @@ function ExampleRotator() {
       timers.forEach((id) => window.clearTimeout(id));
     };
   }, [idx, active]);
+
+  // Type the input field whenever the active scenario changes. Owned
+  // by its own effect so a rotation tick advancing `idx` does not
+  // cancel the typing chain mid-character.
+  useEffect(() => {
+    const fullInput = EXAMPLES[idx].input;
+    // First scenario shows fully typed on mount; subsequent ones
+    // animate. Detect by whether `typed` already matches.
+    if (typed === fullInput) return;
+    let cancelled = false;
+    const timers: number[] = [];
+    setTyped("");
+    let i = 0;
+    const tick = () => {
+      if (cancelled) return;
+      i += 1;
+      setTyped(fullInput.slice(0, i));
+      if (i < fullInput.length) {
+        const id = window.setTimeout(tick, 22);
+        timers.push(id);
+      }
+    };
+    const startId = window.setTimeout(tick, 120);
+    timers.push(startId);
+    return () => {
+      cancelled = true;
+      timers.forEach((id) => window.clearTimeout(id));
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idx]);
 
   const ex = EXAMPLES[idx];
   const fadeClass =
