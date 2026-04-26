@@ -426,6 +426,13 @@ function LandingHeader() {
             Use cases
           </a>
           <a
+            href="/#/pricing"
+            className="transition-colors hover:text-foreground"
+            data-testid="link-nav-pricing"
+          >
+            Pricing
+          </a>
+          <a
             href="#faq"
             className="transition-colors hover:text-foreground"
             data-testid="link-nav-faq"
@@ -1337,9 +1344,19 @@ export default function Landing() {
                     clearer thought.
                   </FaqItem>
                   <FaqItem q="Is it free?">
-                    Free during beta. When pricing arrives it will be plain
-                    and honest, and the version you are using now will
-                    remain usable in some form.
+                    There is a free tier forever — three sifts a month,
+                    full history, every feature. Plus is six dollars a
+                    month or forty‑eight a year for unlimited sifts. If
+                    you are using Sift before Plus launches, you get six
+                    months of Plus free as a thank you. Pricing details
+                    on the <a href="/#/pricing" className="underline decoration-primary/40 underline-offset-4 transition-colors hover:text-foreground">pricing page</a>.
+                  </FaqItem>
+                  <FaqItem q={`What happens when I hit the three\u2011sift limit?`}>
+                    Nothing breaks. Your history stays visible, the
+                    composer tells you when your next sift unlocks, and
+                    there is a quiet upgrade option if you want more
+                    now. The limit is a pace, not a paywall around what
+                    you have already written.
                   </FaqItem>
                   <FaqItem q="Who built this?">
                     A small independent team. Sift was built because the
@@ -1444,6 +1461,13 @@ export default function Landing() {
             data-testid="link-footer-cases"
           >
             Use cases
+          </a>
+          <a
+            href="/#/pricing"
+            className="transition-colors hover:text-foreground"
+            data-testid="link-footer-pricing"
+          >
+            Pricing
           </a>
           <a
             href="#faq"

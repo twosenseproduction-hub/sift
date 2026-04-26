@@ -11,6 +11,7 @@ import HistoryPage from "@/pages/history";
 import AdminPage from "@/pages/admin";
 import AdminFeedbackPage from "@/pages/admin-feedback";
 import Landing from "@/pages/landing";
+import Pricing from "@/pages/pricing";
 import { ThemeProvider } from "@/lib/theme";
 
 function AppRouter() {
@@ -22,6 +23,7 @@ function AppRouter() {
       <Route path="/admin/feedback" component={AdminFeedbackPage} />
       <Route path="/s/:id" component={Shared} />
       <Route path="/landing" component={Landing} />
+      <Route path="/pricing" component={Pricing} />
       <Route component={NotFound} />
     </Switch>
   );
