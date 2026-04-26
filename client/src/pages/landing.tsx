@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Moon, Sun } from "lucide-react";
 import { Logo, LogoMark } from "@/components/brand";
 import { useTheme } from "@/lib/theme";
+import { EngineDemo } from "@/components/engine-demo";
 
 // The landing page is the marketing surface that lives at the apex.
 // It's modeled directly on the Sift deck — same sections, same copy,
@@ -410,6 +411,13 @@ function LandingHeader() {
             data-testid="link-nav-how"
           >
             How it works
+          </a>
+          <a
+            href="#engine"
+            className="transition-colors hover:text-foreground"
+            data-testid="link-nav-engine"
+          >
+            The engine
           </a>
           <a
             href="#clarity"
@@ -1144,6 +1152,54 @@ export default function Landing() {
           </Content>
         </Section>
 
+        {/* The engine — animated demo of how the sort actually happens */}
+        <Section id="engine">
+          <div aria-hidden="true" className="absolute inset-0 z-0 overflow-hidden">
+            <div
+              className="absolute h-[340px] w-[340px] rounded-full blur-[80px]"
+              style={{
+                top: -80,
+                right: "6%",
+                background: "hsl(186 40% 38% / 0.14)",
+                animation: "float 18s ease-in-out infinite",
+              }}
+            />
+            <div
+              className="absolute h-[280px] w-[280px] rounded-full blur-[80px]"
+              style={{
+                bottom: -50,
+                left: "4%",
+                background: "hsl(36 35% 70% / 0.22)",
+                animation: "float 22s ease-in-out infinite",
+              }}
+            />
+          </div>
+          <Content>
+            <Reveal>
+              <p className="mb-4 text-center text-[12px] font-medium uppercase tracking-[0.26em] text-muted-foreground">
+                The engine
+              </p>
+            </Reveal>
+            <Reveal delay={80}>
+              <h2 className="mx-auto m-0 mb-4 max-w-[22ch] text-center font-serif text-[clamp(2.2rem,4.2vw,4rem)] leading-[0.95] tracking-[-0.05em]">
+                How the sort happens.
+              </h2>
+            </Reveal>
+            <Reveal delay={140}>
+              <p className="mx-auto mb-12 max-w-[58ch] text-center leading-7 text-muted-foreground">
+                A messy paragraph goes in. Sift listens for the phrases that
+                are actually there, separates what matters from what doesn’t,
+                and hands back one small, doable thing.
+              </p>
+            </Reveal>
+            <Reveal delay={200}>
+              <div className="mx-auto max-w-[1080px]">
+                <EngineDemo />
+              </div>
+            </Reveal>
+          </Content>
+        </Section>
+
         {/* Clarity */}
         <Section id="clarity">
           <div aria-hidden="true" className="absolute inset-0 z-0 overflow-hidden">
@@ -1513,6 +1569,13 @@ export default function Landing() {
             data-testid="link-footer-how"
           >
             How it works
+          </a>
+          <a
+            href="#engine"
+            className="transition-colors hover:text-foreground"
+            data-testid="link-footer-engine"
+          >
+            The engine
           </a>
           <a
             href="#clarity"
