@@ -10,6 +10,7 @@ import Shared from "@/pages/shared";
 import HistoryPage from "@/pages/history";
 import AdminPage from "@/pages/admin";
 import AdminFeedbackPage from "@/pages/admin-feedback";
+import Landing from "@/pages/landing";
 import { ThemeProvider } from "@/lib/theme";
 
 function AppRouter() {
@@ -20,6 +21,7 @@ function AppRouter() {
       <Route path="/admin" component={AdminPage} />
       <Route path="/admin/feedback" component={AdminFeedbackPage} />
       <Route path="/s/:id" component={Shared} />
+      <Route path="/landing" component={Landing} />
       <Route component={NotFound} />
     </Switch>
   );
