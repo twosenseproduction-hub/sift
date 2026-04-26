@@ -7,11 +7,20 @@ import { useTheme } from "@/lib/theme";
 // It's modeled directly on the Sift deck — same sections, same copy,
 // same visual language — but rebuilt natively in React + Tailwind so
 // it shares the app's design system (Instrument Serif + DM Sans, the
-// warm cream and deep teal palette, the same dark mode tokens). The
-// CTA targets /app since that is where the product will live once we
-// flip routing.
-
-const APP_URL = "/app";
+// warm cream and deep teal palette, the same dark mode tokens).
+//
+// CTA target is host-aware: on the marketing domain (siftnow.io /
+// www.siftnow.io) it cross-links to the app subdomain; on the app
+// host or anywhere else (localhost, *.fly.dev, preview environments)
+// it stays on the current host so previews don't bounce people away.
+function getAppHref() {
+  if (typeof window === "undefined") return "/";
+  const h = window.location.hostname;
+  if (h === "siftnow.io" || h === "www.siftnow.io") {
+    return "https://app.siftnow.io/";
+  }
+  return "/";
+}
 
 // Reveal-on-scroll: a small wrapper that fades + slides in once the
 // element enters the viewport. Once revealed it stays revealed.
@@ -217,7 +226,7 @@ function LandingHeader() {
             )}
           </button>
           <a
-            href={APP_URL}
+            href={getAppHref()}
             className="hidden h-11 items-center justify-center rounded-full border border-border/60 bg-card/70 px-5 text-sm font-semibold backdrop-blur-md transition-transform hover:-translate-y-px md:inline-flex"
             data-testid="link-header-cta"
           >
@@ -463,7 +472,7 @@ export default function Landing() {
               </div>
               <div className="mt-10">
                 <a
-                  href={APP_URL}
+                  href={getAppHref()}
                   className="inline-flex h-12 items-center justify-center rounded-full bg-primary px-7 text-sm font-semibold text-primary-foreground shadow-md transition-transform hover:-translate-y-px"
                   data-testid="link-hero-cta"
                 >
@@ -858,7 +867,7 @@ export default function Landing() {
             <Reveal delay={220}>
               <div className="mt-10 flex flex-wrap justify-center gap-4">
                 <a
-                  href={APP_URL}
+                  href={getAppHref()}
                   className="inline-flex h-12 min-w-[180px] items-center justify-center rounded-full bg-primary px-7 text-sm font-semibold text-primary-foreground shadow-md transition-transform hover:-translate-y-px"
                   data-testid="link-cta-primary"
                 >

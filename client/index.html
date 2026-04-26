@@ -16,6 +16,31 @@
     />
   </head>
   <body>
+    <script>
+      // Host-based routing split. Runs before React mounts so the right
+      // hash is in place when the router reads it.
+      // - app.siftnow.io: serve the app at /. Normalize away /#/landing.
+      // - siftnow.io / www.siftnow.io: serve the landing page by default.
+      // - any other host (localhost, *.fly.dev, previews): pass through.
+      (function () {
+        try {
+          var h = window.location.hostname;
+          var isApp = h === "app.siftnow.io";
+          var isMarketing = h === "siftnow.io" || h === "www.siftnow.io";
+          if (!isApp && !isMarketing) return;
+          var hash = window.location.hash || "";
+          if (isApp) {
+            if (hash === "" || hash === "#" || hash === "#/" || hash === "#/landing") {
+              window.location.replace("/#/");
+            }
+          } else if (isMarketing) {
+            if (hash === "" || hash === "#" || hash === "#/") {
+              window.location.replace("/#/landing");
+            }
+          }
+        } catch (e) {}
+      })();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
