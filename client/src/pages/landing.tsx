@@ -1480,12 +1480,15 @@ export default function Landing() {
                     now. The limit is a pace, not a paywall around what
                     you have already written.
                   </FaqItem>
-                  <FaqItem q="Who built this?">
-                    A small independent team. Sift was built because the
-                    builders needed it themselves — a way to hear what was
-                    underneath the day without performing for an app or a
-                    timeline. If you want to reach us, write to
-                    hello@siftnow.io.
+                  <FaqItem q="Who is this for?">
+                    People whose minds don’t get quiet on their own.
+                    Parents holding too many roles in a day. Builders
+                    and creatives stuck between the work that pays
+                    and the work that’s theirs. Anyone who writes
+                    or talks to themselves to figure out what they
+                    actually feel — and wants a calmer place to
+                    do it than a notes app or a feed. If that’s
+                    you, Sift was built for you.
                   </FaqItem>
                 </div>
               </Reveal>
