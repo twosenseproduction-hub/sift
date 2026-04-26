@@ -447,11 +447,17 @@ export function Result({
   const [fitState, setFitState] = useState<
     null | "fits" | "skipped" | "editing"
   >(null);
+  // Quiet exhale: when the user chooses to let this sift rest, we swap
+  // the followup row for a calm acknowledgment. No CTAs, no pressure —
+  // just a soft close. They can still sift again from inside the panel
+  // if something else surfaces, but the moment is allowed to end.
+  const [resting, setResting] = useState(false);
   const [correction, setCorrection] = useState("");
   const [correctionSubmitting, setCorrectionSubmitting] = useState(false);
   useEffect(() => {
     setView(result);
     setFitState(null);
+    setResting(false);
     setCorrection("");
     setCorrectionSubmitting(false);
   }, [result.id, result.coreIntent]);
@@ -688,7 +694,65 @@ export function Result({
         </section>
 
         {/* Actions */}
-        {showFollowup && !readOnly ? (
+        {showFollowup && !readOnly && resting ? (
+          // Quiet exhale: the moment after a sift, when the answer is
+          // enough. Replaces the followup row with a calm close. No
+          // urgent CTAs — the user can still sift again or come back to
+          // this, but they can also just leave.
+          <div
+            className="pt-2 fade-in-slow"
+            data-testid="panel-quiet-exhale"
+          >
+            <div className="rounded-2xl border border-primary/20 bg-primary/5 px-6 py-7 md:px-8 md:py-8">
+              <p
+                className="text-[11px] tracking-[0.25em] uppercase text-primary/70 mb-3 font-medium"
+                data-testid="text-rest-eyebrow"
+              >
+                Let it rest
+              </p>
+              <p
+                className="font-serif text-xl md:text-2xl leading-snug text-foreground"
+                data-testid="text-rest-line"
+              >
+                That’s enough for now.
+              </p>
+              <p className="mt-3 text-sm md:text-[15px] text-muted-foreground leading-relaxed">
+                Nothing more is required of this thought today. Come
+                back when something else surfaces.
+              </p>
+            </div>
+            <div className="mt-5 flex flex-wrap items-center gap-4">
+              {onCheckInLater && (
+                <button
+                  type="button"
+                  onClick={onCheckInLater}
+                  data-testid="link-rest-checkin-later"
+                  className="text-sm text-muted-foreground hover:text-foreground underline underline-offset-4 decoration-border hover:decoration-foreground transition-colors"
+                >
+                  Come back to this later
+                </button>
+              )}
+              {onReset && (
+                <button
+                  type="button"
+                  onClick={onReset}
+                  data-testid="link-rest-sift-again"
+                  className="text-sm text-muted-foreground hover:text-foreground underline underline-offset-4 decoration-border hover:decoration-foreground transition-colors"
+                >
+                  Sift something else
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setResting(false)}
+                data-testid="link-rest-undo"
+                className="text-xs text-muted-foreground/70 hover:text-foreground transition-colors"
+              >
+                Not yet
+              </button>
+            </div>
+          </div>
+        ) : showFollowup && !readOnly ? (
           <div className="pt-2" data-testid="followup-row">
             <p
               className="text-sm text-muted-foreground mb-4"
@@ -720,6 +784,14 @@ export function Result({
                   Come back to this later
                 </Button>
               )}
+              <button
+                type="button"
+                onClick={() => setResting(true)}
+                data-testid="link-let-it-rest"
+                className="text-sm text-muted-foreground hover:text-foreground underline underline-offset-4 decoration-border hover:decoration-foreground transition-colors px-1"
+              >
+                Let it rest
+              </button>
             </div>
             <div className="mt-4 flex flex-wrap items-center gap-4">
               {onSave && (
