@@ -31,23 +31,30 @@ interface Phrase {
   fromY: number;
 }
 
+// Phrases lifted from the paragraph below. The fromX/fromY values
+// are tuned so each chip appears to rise from the part of the
+// paragraph where its words actually sit — working out lives near
+// the start, "too tired" sits late, etc.
 const PHRASES: Phrase[] = [
-  { id: "p1", text: "The work deadline.", bucket: "matters", fromX: 26, fromY: 24 },
-  { id: "p2", text: "Calling my mom.", bucket: "matters", fromX: 64, fromY: 38 },
-  { id: "p3", text: "The side project.", bucket: "matters", fromX: 30, fromY: 62 },
-  { id: "p4", text: "\u201CI'm just lazy.\u201D", bucket: "noise", fromX: 70, fromY: 70 },
-  { id: "p5", text: "The dishes.", bucket: "noise", fromX: 18, fromY: 80 },
-  { id: "p6", text: "Doom-scrolling.", bucket: "noise", fromX: 56, fromY: 14 },
+  { id: "p1", text: "Working out.", bucket: "matters", fromX: 38, fromY: 22 },
+  { id: "p2", text: "Writing.", bucket: "matters", fromX: 30, fromY: 88 },
+  { id: "p3", text: "Time for myself.", bucket: "matters", fromX: 70, fromY: 28 },
+  { id: "p4", text: "\u201CThere\u2019s no time.\u201D", bucket: "noise", fromX: 22, fromY: 14 },
+  { id: "p5", text: "\u201CToo tired to try.\u201D", bucket: "noise", fromX: 60, fromY: 70 },
+  { id: "p6", text: "Sleeping instead.", bucket: "noise", fromX: 50, fromY: 92 },
 ];
 
 // Cumulative milestones the stage clock advances through.
-// The total cycle length is the last entry.
+// The total cycle length is the last entry. Pacing is deliberately
+// slow — a viewer should be able to read every chip and the next
+// step without rushing. Roughly twice the speed of an attention-
+// economy demo, because Sift is the opposite of that.
 const STAGES = {
-  pile: 1400,   // 0     -> 1400  paragraph fades in, sits
-  lift: 2600,   // 1400  -> 4000  chips rise out of paragraph
-  sort: 5400,   // 4000  -> 9400  chips fly to bins (staggered)
-  step: 11200,  // 9400  -> 11200 next step materializes
-  rest: 14000,  // 11200 -> 14000 quiet pause, then loop
+  pile: 3800,   // 0      -> 3800   paragraph fades in, breathes, then sits
+  lift: 9200,   // 3800   -> 9200   chips rise out of paragraph, one at a time
+  sort: 17000,  // 9200   -> 17000  chips fly to bins, well staggered
+  step: 24000,  // 17000  -> 24000  next step materializes and holds long enough to read
+  rest: 28000,  // 24000  -> 28000  quiet pause, then loop
 } as const;
 
 type StageName = keyof typeof STAGES;
@@ -84,9 +91,10 @@ const CAPTIONS: Record<StageName, { eyebrow: string; line: string }> = {
   },
 };
 
-const PARAGRAPH = `I keep starting things and not finishing them. The deadline at work is in two weeks. I haven't called my mom in a month. I'm probably not eating enough. I want to start that side project but I keep doom-scrolling. Maybe I'm just lazy. The dishes are piling up.`;
+const PARAGRAPH = `I can’t seem to find time to do the things I need to do like working out or doing some personal things, because I have to wake up, then be a dad, then go to work, then come home, then be a dad. Then I’m too tired to do anything for myself, so I end up sleeping instead of working out or writing or doing something else.`;
 
-const NEXT_STEP = "Send your mom a two-line text. Set a 25-minute timer for the side project after.";
+const NEXT_STEP =
+  "Pick one fifteen-minute window today — before work, or right after the kids are down. Move, or write. Just that one window.";
 
 export function EngineDemo() {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -205,7 +213,7 @@ function ParagraphBlock({ stage, reducedMotion }: { stage: StageName; reducedMot
   return (
     <div
       aria-hidden="true"
-      className="absolute inset-0 flex items-center justify-center px-2 transition-opacity duration-[900ms] ease-out"
+      className="absolute inset-0 flex items-center justify-center px-2 transition-opacity duration-[1400ms] ease-out"
       style={{ opacity }}
     >
       <p
@@ -225,7 +233,7 @@ function Bins({ stage, reducedMotion }: { stage: StageName; reducedMotion: boole
   return (
     <div
       aria-hidden="true"
-      className="pointer-events-none absolute inset-x-0 bottom-0 grid grid-cols-2 gap-4 transition-all duration-[800ms] ease-out"
+      className="pointer-events-none absolute inset-x-0 bottom-0 grid grid-cols-2 gap-4 transition-all duration-[1100ms] ease-out"
       style={{
         opacity: visible ? 1 : 0,
         transform: visible ? "translateY(0)" : "translateY(16px)",
@@ -358,9 +366,11 @@ function Chip({
   reducedMotion: boolean;
 }) {
   // Stagger each chip's lift and sort so they don't all move at once.
-  // We do this with per-chip CSS transition delays.
-  const liftDelay = index * 110; // ms — chips lift in order
-  const sortDelay = index * 130; // ms — chips fly to bins in order
+  // The delays are deliberately wide — the viewer should be able to
+  // read each chip as it appears, and feel each one travel to its
+  // bin individually. This is the engine talking, slowly.
+  const liftDelay = index * 700; // ms — chips lift one at a time
+  const sortDelay = index * 800; // ms — chips fly to bins one at a time
 
   // During the "lift" stage, chips that haven't yet "lifted" should
   // still read as invisible. We compute a per-chip activation time.
@@ -399,18 +409,19 @@ function Chip({
       : "hsl(var(--muted-foreground))"
     : "hsl(var(--foreground))";
 
-  // Per-stage transition timing.
-  let duration = 800;
+  // Per-stage transition timing. Slow, calm easings — every move is
+  // long enough to feel intentional rather than animated.
+  let duration = 900;
   let delay = 0;
   if (!reducedMotion) {
     if (stage === "lift") {
-      duration = 700;
+      duration = 1100;
       delay = liftDelay;
     } else if (stage === "sort") {
-      duration = 850;
+      duration = 1300;
       delay = sortDelay;
     } else {
-      duration = 600;
+      duration = 800;
       delay = 0;
     }
   } else {
@@ -445,7 +456,7 @@ function NextStep({ stage, reducedMotion }: { stage: StageName; reducedMotion: b
   return (
     <div
       aria-hidden="true"
-      className="pointer-events-none absolute inset-x-0 flex justify-center px-2 transition-all duration-[900ms] ease-out"
+      className="pointer-events-none absolute inset-x-0 flex justify-center px-2 transition-all duration-[1200ms] ease-out"
       style={{
         top: "22%",
         opacity: visible ? 1 : 0,
