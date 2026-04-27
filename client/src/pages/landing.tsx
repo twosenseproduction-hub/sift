@@ -907,9 +907,11 @@ export default function Landing() {
                   A quiet tool for a noisy mind
                 </p>
                 <h1 className="m-0 mb-5 font-serif text-[clamp(2.6rem,5vw,4.6rem)] leading-[0.95] tracking-[-0.045em]">
-                  Sift helps you find
+                  Sift helps you tell
                   <br />
-                  what actually matters.
+                  what matters from
+                  <br />
+                  what is only loud.
                 </h1>
                 <p className="max-w-[34rem] text-[clamp(1.05rem,1.4vw,1.25rem)] leading-[1.65] text-muted-foreground">
                   You speak or type what you are holding. Sift separates signal
@@ -1127,9 +1129,9 @@ export default function Landing() {
                     Sift returns the shape.
                   </h3>
                   <p className="m-0 leading-7 text-muted-foreground">
-                    Themes you keep returning to, what actually matters, what
-                    is noise, and one next step you can take. Structured
-                    enough to move, restrained enough to feel human.
+                    What seems to matter most, what may only be loud, why this
+                    could be the signal, and one next step you can take.
+                    Structured enough to move, restrained enough to feel human.
                   </p>
                 </div>
               </Reveal>

@@ -542,7 +542,15 @@ export function Result({
         "",
       );
     }
-    lines.push(`Next step:`, view.nextStep, "", `Reflection:`, view.reflection, "", shareUrl);
+    lines.push(
+      `One next step:`,
+      view.nextStep,
+      "",
+      `Quiet reflection:`,
+      view.reflection,
+      "",
+      shareUrl,
+    );
     const body = lines.join("\n");
     try {
       await navigator.clipboard.writeText(body);

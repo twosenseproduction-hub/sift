@@ -186,8 +186,8 @@ export default function Home() {
                     className="mt-5 text-base md:text-lg text-muted-foreground max-w-xl mx-auto leading-relaxed"
                     data-testid="text-hero-sub"
                   >
-                    Speak it or type it. Sift strips away the noise and returns
-                    the themes, the real want, and one next step you can take.
+                    Speak it or type it. Sift tells you what seems to matter,
+                    what may only be loud, and one next step you can take.
                   </p>
                 </div>
               ) : (

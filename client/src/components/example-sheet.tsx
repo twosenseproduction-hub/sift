@@ -57,8 +57,8 @@ function IntroStage({
           How Sift works
         </SheetTitle>
         <SheetDescription className="text-base text-muted-foreground leading-relaxed">
-          Write what's on your mind. Sift reflects what matters, what's noise,
-          and one next step.
+          Write what's on your mind. Sift tells you what seems to matter
+          right now, what may be only loud, and one next step.
         </SheetDescription>
       </SheetHeader>
 
@@ -108,42 +108,60 @@ function OutputStage({ onTryOwn }: { onTryOwn: () => void }) {
         </p>
       </div>
 
-      {/* Mirrors the real Result layout: intent → themes → next step → reflection. */}
+      {/* Mirrors the real Result layout: intent → matters → noise →
+          why this may be the signal → next step → reflection. */}
       <section data-testid="example-intent">
-        <Label>What you actually want</Label>
+        <Label>What this may be pointing to</Label>
         <p className="font-serif text-2xl md:text-3xl leading-[1.25] text-foreground mt-3">
-          A low-pressure starting point — not the perfect plan.
+          You want a low-pressure starting point — not the perfect plan.
         </p>
       </section>
 
-      <section data-testid="example-themes">
-        <Label>Themes underneath</Label>
+      <section data-testid="example-matters">
+        <Label>What seems to matter most right now</Label>
         <ul className="mt-4 divide-y divide-border/70 border-y border-border/70">
-          <li className="py-4 md:py-5 flex gap-4 md:gap-6">
+          <li className="py-3.5 md:py-4 flex gap-4 md:gap-6">
             <span className="font-mono text-xs text-muted-foreground pt-1 w-6">01</span>
-            <div className="flex-1">
-              <h3 className="font-serif text-lg md:text-xl text-foreground">
-                Fear of picking wrong
-              </h3>
-              <p className="text-sm md:text-[15px] text-muted-foreground mt-1.5 leading-relaxed">
-                You're treating the first move like the final one, so nothing
-                feels safe to try.
-              </p>
-            </div>
+            <p className="flex-1 font-serif text-lg md:text-xl text-foreground leading-snug">
+              the desire to start something for yourself
+            </p>
           </li>
-          <li className="py-4 md:py-5 flex gap-4 md:gap-6">
+          <li className="py-3.5 md:py-4 flex gap-4 md:gap-6">
             <span className="font-mono text-xs text-muted-foreground pt-1 w-6">02</span>
-            <div className="flex-1">
-              <h3 className="font-serif text-lg md:text-xl text-foreground">
-                Certainty over momentum
-              </h3>
-              <p className="text-sm md:text-[15px] text-muted-foreground mt-1.5 leading-relaxed">
-                You're waiting to feel sure before you begin. Momentum usually
-                comes after starting, not before.
-              </p>
-            </div>
+            <p className="flex-1 font-serif text-lg md:text-xl text-foreground leading-snug">
+              the cost of staying still
+            </p>
+          </li>
+          <li className="py-3.5 md:py-4 flex gap-4 md:gap-6">
+            <span className="font-mono text-xs text-muted-foreground pt-1 w-6">03</span>
+            <p className="flex-1 font-serif text-lg md:text-xl text-foreground leading-snug">
+              wanting to feel sure before beginning
+            </p>
           </li>
         </ul>
+      </section>
+
+      <section data-testid="example-noise">
+        <Label>What may be noise right now</Label>
+        <ul className="mt-4 space-y-2.5">
+          <li className="text-sm md:text-[15px] text-muted-foreground/85 leading-relaxed flex gap-3">
+            <span aria-hidden="true" className="text-muted-foreground/50 select-none">—</span>
+            <span className="flex-1">treating the first move like the final one</span>
+          </li>
+          <li className="text-sm md:text-[15px] text-muted-foreground/85 leading-relaxed flex gap-3">
+            <span aria-hidden="true" className="text-muted-foreground/50 select-none">—</span>
+            <span className="flex-1">looping through every possible outcome before starting</span>
+          </li>
+        </ul>
+      </section>
+
+      <section data-testid="example-signal-reason">
+        <Label>Why this may be the signal</Label>
+        <p className="mt-3 font-serif text-lg md:text-xl text-foreground leading-relaxed">
+          The wish to start something for yourself may carry the most
+          consequence right now — it is the one move only you can make, and
+          the second-guessing is the cost of leaving it unmade.
+        </p>
       </section>
 
       <section data-testid="example-next">
