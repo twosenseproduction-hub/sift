@@ -728,7 +728,7 @@ function ExampleRotator() {
   return (
     <div
       ref={containerRef}
-      className="overflow-hidden rounded-[28px] border border-border/60 bg-card shadow-[var(--shadow-lg)]"
+      className="overflow-hidden rounded-[28px] border border-border/60 bg-card/70 shadow-[var(--shadow-lg)]"
       data-testid="mock-example"
     >
       <div className="flex items-center justify-between border-b border-border/60 px-5 py-4 text-[12px] uppercase tracking-[0.18em] text-muted-foreground/80">
@@ -900,8 +900,8 @@ export default function Landing() {
           <Content>
             <div className="grid items-center gap-12 md:grid-cols-[1.05fr_1fr]">
               <Reveal>
-                <div className="mb-6 h-16 w-16 text-primary">
-                  <LogoMark size={64} />
+                <div className="mb-6">
+                  <Logo size={72} />
                 </div>
                 <p className="mb-4 text-[12px] font-medium uppercase tracking-[0.26em] text-muted-foreground">
                   A quiet tool for a noisy mind
@@ -1290,7 +1290,7 @@ export default function Landing() {
               </p>
             </Reveal>
             <Reveal delay={80}>
-              <h2 className="mx-auto m-0 max-w-[22ch] font-serif text-[clamp(2.2rem,4.2vw,4rem)] leading-[0.95] tracking-[-0.05em]">
+              <h2 className="mx-auto m-0 max-w-[22ch] font-serif text-[clamp(2.2rem,4vw,2.8rem)] leading-[1.05] tracking-[-0.03em]">
                 For emotional clutter, hard decisions, and recurring loops.
               </h2>
             </Reveal>
