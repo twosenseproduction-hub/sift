@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { track } from "@/lib/track";
 import {
   createRecognizer,
   isVoiceSupported,
@@ -764,7 +765,10 @@ export function Result({
               {onExpand && (
                 <Button
                   type="button"
-                  onClick={onExpand}
+                  onClick={() => {
+                    track("sn.expand_now");
+                    onExpand();
+                  }}
                   data-testid="button-expand-now"
                   className="gap-2"
                 >
@@ -776,7 +780,10 @@ export function Result({
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={onCheckInLater}
+                  onClick={() => {
+                    track("sn.come_back_later");
+                    onCheckInLater();
+                  }}
                   data-testid="button-checkin-later"
                   className="gap-2"
                 >

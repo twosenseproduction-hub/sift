@@ -105,7 +105,14 @@ Respond with ONE or TWO of these fields, whichever the moment actually calls for
 - question: one sharper follow-up question that goes a layer deeper than where they currently are. Not leading. Not therapeutic. Under 20 words.
 - mini: one short synthesizing sentence, only if the thread just took a real turn. Under 30 words. Omit otherwise.
 
-DO NOT emit matters[] or noise[] arrays in deepening replies. The signal / noise work is now a dedicated practice moment the user does by hand between turns. Your only job in this reply is mirror / question / mini. If the most recent turn is a user sort_result, explicitly take it seriously in your mirror or question — name what they chose to treat as mattering or as noise, and respond to that shift.
+DO NOT emit matters[] or noise[] arrays in deepening replies. The signal / noise work is now a dedicated practice moment the user does by hand between turns. Your only job in this reply is mirror / question / mini.
+
+POST-SORT BRANCH — when the most recent turn is a user sort_result with at least one item under matters[], your reply MUST do all three of the following inside the small mirror/question/mini fields, in this order:
+  1. NAME the elevated signal. Reference what they chose to treat as mattering, using their exact phrase or a near-verbatim distillation. This goes in mirror.
+  2. SAY — in ONE provisional sentence — why this may carry consequence right now. Use "may", "seems", "right now". This can extend the mirror (still under 25 words combined) or sit in mini (under 30 words). Do NOT moralize, do NOT diagnose. Example shape: "That seems to carry consequence because it returns even when the louder things quiet down."
+  3. ASK exactly ONE concrete, forward-leaning next-step question that takes the elevated signal seriously. Place this in question. Examples of the right shape: "What would move this one inch forward this week?" "What is the smallest honest thing you could do about this in the next day?" Never generic, never therapeutic, never "how does that make you feel".
+Quiet (do not name) what they sorted as noise. If they marked items as unsure, you may briefly acknowledge them as still unresolved — but do not push them to decide. Unsure is part of discernment.
+If the sort_result was skipped or has no matters[], skip the post-sort branch and respond as a normal deepening turn.
 
 Rules:
 - Output at most 2 of the 3 fields. Usually 1. Keep it small.
@@ -131,10 +138,17 @@ You will receive the original input, the coreIntent, and the full thread so far.
 
 Rules — these are non-negotiable:
 - Every phrase must be drawn from the user's own words or a close interpretive distillation of a specific moment in the thread. Do not invent generic words like "fear", "clarity", "chaos", "growth", "balance". Use their language.
-- Mix both the loud, surface-level concerns and the quiet, deeper threads you have noticed. A good set includes some items that obviously matter and some that feel loud but may actually be noise. Do not stack the deck toward one side.
-- Include phrases that represent distinct concerns — avoid near-duplicates.
-- Each phrase is 2 to 7 words. Short. Concrete. No quotation marks. No periods at the end.
-- Do not label anything as matters or noise yourself. The user does the sorting.
+- The cards are not random fragments. Aim to surface DISTINCT mental threads. From the thread, look for and (when present) include examples of:
+    1. a real obligation or commitment they have named
+    2. a self-judgment they have made about themselves
+    3. an avoidance loop — a thing they keep returning to but not engaging
+    4. a fear statement — something they have explicitly worried about
+    5. a quieter, deeper truth they have stated almost in passing
+    6. an emotionally charged thought that is loud but not currently directional
+You do not need one of each — only include kinds that are honestly present. Two cards from the same kind is fine if both are genuinely distinct concerns. Never duplicate the same thread under two phrasings.
+- Mix the loud, surface-level concerns with the quiet, deeper threads. A good set holds some items that may obviously matter alongside some that feel loud but may actually be noise. Do not stack the deck toward one side. The user must do the discerning.
+- Each phrase is 2 to 7 words. Short. Concrete. No quotation marks. No periods at the end. Each one should feel worth pausing on — not throwaway.
+- Do not label anything as matters or noise yourself. Do not hint at the answer. The user does the sorting.
 - Also produce one short intro sentence (under 20 words) that gently invites them into the practice. Calm, not clinical. No greeting. No "let's". No exclamation points.
 
 ${SAFETY_CLAUSE}
@@ -1466,14 +1480,28 @@ export async function registerRoutes(
       // Trigger a sort pane every 3rd user message turn (messages only, not
       // sort_results). Require at least 2 user messages since the last sort
       // so we don't stack them.
+      // Additionally require enough thread material to sort meaningfully —
+      // a thin thread will not produce distinct, useful cards. We check the
+      // cumulative user-message character count rather than building a
+      // larger orchestration system.
       const userMessageCount = priorTurns.filter(
         (t) => t.role === "user" && t.kind === "message",
       ).length;
       const messagesSinceLastSort = countUserMessagesSinceLastSort(priorTurns);
+      const userMaterialChars =
+        sift.input.length +
+        priorTurns.reduce((sum, t) => {
+          if (t.role === "user" && t.kind === "message") {
+            return sum + (typeof t.text === "string" ? t.text.length : 0);
+          }
+          return sum;
+        }, 0);
+      const ENOUGH_MATERIAL_TO_SORT = 240; // ~3 short sentences across the thread.
       const shouldOfferSort =
         userMessageCount >= 3 &&
         userMessageCount % 3 === 0 &&
-        messagesSinceLastSort >= 2;
+        messagesSinceLastSort >= 2 &&
+        userMaterialChars >= ENOUGH_MATERIAL_TO_SORT;
 
       if (shouldOfferSort) {
         try {
@@ -1649,10 +1677,24 @@ export async function registerRoutes(
       }
 
       // Generate the next Sift reply with the sort_result now in the thread.
+      // The user-facing text below is what the model treats as the latest user
+      // message. We pass a structured directive so the post-sort branch of the
+      // DEEPEN prompt fires reliably: name the elevated signal, one provisional
+      // sentence on why it may carry consequence, one concrete next-step
+      // question. The flat list also remains for context.
       const turnsWithSort = [...priorTurns, sortResultTurn];
+      const hasSignal = !result.skipped && result.matters.length > 0;
       const latestUserText = result.skipped
         ? ""
-        : `I sorted these as matters: ${result.matters.join("; ") || "(none)"}. Noise: ${result.noise.join("; ") || "(none)"}. Unsure: ${result.unsure.join("; ") || "(none)"}.`;
+        : hasSignal
+          ? [
+              `I just finished a Signal / Noise sort.`,
+              `Matters (signal): ${result.matters.join("; ")}`,
+              `Noise: ${result.noise.join("; ") || "(none)"}`,
+              `Unsure: ${result.unsure.join("; ") || "(none)"}`,
+              `Take the matters list as my elevated signal right now. In your reply: name it back to me using my words, say in one provisional sentence why it may carry consequence, and ask one concrete next-step question. Do not name the noise. If unsure is non-empty, you may briefly acknowledge it as still unresolved.`,
+            ].join(" \n")
+          : `I just finished a Signal / Noise sort but did not place anything as matters. Noise: ${result.noise.join("; ") || "(none)"}. Unsure: ${result.unsure.join("; ") || "(none)"}. Treat this as a thread that has not yet found its signal — ask one quiet question that helps me locate what may actually matter.`;
 
       const message = await runDeepening({
         originalInput: sift.input,

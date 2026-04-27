@@ -1,14 +1,24 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Loader2, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { track } from "@/lib/track";
 import type {
   SortPromptPayload,
   SortResponse,
   ThreadTurn,
   Bookmark,
 } from "@shared/schema";
+
+// Quiet, low-contrast feedback shown for ~1.4s after a card is placed.
+// These are deliberately provisional — they teach pattern recognition
+// without lecturing. Match the brief's tone rules.
+const RATIONALES: Record<"matters" | "noise" | "unsure", string> = {
+  matters: "This seems to carry consequence.",
+  noise: "This feels loud, but not clarifying.",
+  unsure: "Unclear can still be honest.",
+};
 
 // SortPractice
 //
@@ -61,6 +71,22 @@ export function SortPractice({
   // Brief fade between cards so the change is felt, not jarring.
   const [transitioning, setTransitioning] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  // The bin the user just picked, surfaced as a quiet rationale line for ~1.4s.
+  // Cleared when the next card arrives or when undo wipes the placement.
+  const [lastBin, setLastBin] = useState<Bin | null>(null);
+
+  // Fire "shown" once when the practice mounts.
+  useEffect(() => {
+    track("sn.shown", { count: items.length });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Auto-clear the rationale line so it doesn't linger past the moment.
+  useEffect(() => {
+    if (!lastBin) return;
+    const id = window.setTimeout(() => setLastBin(null), 1400);
+    return () => window.clearTimeout(id);
+  }, [lastBin, cursor]);
 
   const matters = useMemo(
     () => items.filter((it) => assignments[it] === "matters"),
@@ -84,6 +110,8 @@ export function SortPractice({
     if (!current || transitioning) return;
     const item = current;
     setAssignments((prev) => ({ ...prev, [item]: bin }));
+    setLastBin(bin);
+    track(`sn.card_placed.${bin}` as const, { phrase: item });
     // Subtle transition to the next card.
     setTransitioning(true);
     window.setTimeout(() => {
@@ -101,6 +129,7 @@ export function SortPractice({
       delete next[prevItem];
       return next;
     });
+    setLastBin(null);
     setTransitioning(true);
     window.setTimeout(() => {
       setCursor(prevIndex);
@@ -129,6 +158,12 @@ export function SortPractice({
         onCare();
         return;
       }
+      track(skipped ? "sn.skipped" : "sn.completed", {
+        matters: matters.length,
+        noise: noise.length,
+        unsure: unsure.length,
+      });
+      if (!skipped) track("sn.next_step_generated");
       onComplete({
         turns: data.turns,
         bookmark: data.bookmark,
@@ -214,10 +249,22 @@ export function SortPractice({
           aria-live="polite"
         >
           <p
-            className="font-serif text-lg md:text-xl leading-snug text-foreground/95 mb-5 min-h-[2.5rem]"
+            className="font-serif text-lg md:text-xl leading-snug text-foreground/95 mb-3 min-h-[2.5rem]"
             data-testid={`sort-card-text-${slug(current)}`}
           >
             {current}
+          </p>
+          {/* Quiet rationale line. Always-rendered with reserved height so the
+              choice buttons never jump. Fades in when a placement just happened. */}
+          <p
+            className={[
+              "text-xs italic text-muted-foreground/80 mb-4 min-h-[1.25rem] transition-opacity duration-500",
+              lastBin ? "opacity-100" : "opacity-0",
+            ].join(" ")}
+            aria-live="polite"
+            data-testid="sort-rationale"
+          >
+            {lastBin ? RATIONALES[lastBin] : "\u00A0"}
           </p>
           <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-2">
             <ChoiceButton
@@ -290,11 +337,20 @@ export function SortPractice({
               items={noise}
             />
             {unsure.length > 0 && (
-              <SummaryRow
-                label="Not sure yet"
-                tone="unsure"
-                items={unsure}
-              />
+              <div>
+                <SummaryRow
+                  label="Not sure yet"
+                  tone="unsure"
+                  items={unsure}
+                />
+                <p
+                  className="mt-2 text-xs italic text-muted-foreground/80"
+                  data-testid="text-unsure-caption"
+                >
+                  Unclear can still be honest. These can come back later, no
+                  pressure to decide now.
+                </p>
+              </div>
             )}
           </div>
           <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-border/60">
