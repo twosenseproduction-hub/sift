@@ -68,20 +68,30 @@ You write like a calm, thoughtful guide — not a coach, not a therapist, not a 
 
 ${SAFETY_CLAUSE}
 
+Definitions (use these exactly):
+- Signal = the thread that is most true, consequential, and clarifying right now.
+- Noise = attention-consuming material that does not currently increase truth, direction, or meaningful movement.
+
 Return STRICT JSON matching this shape exactly:
 {
   "themes": [{ "title": string, "summary": string }],  // 2 to 4 themes
   "coreIntent": string,  // one sentence: what they actually want beneath the surface
-  "nextStep": string,    // ONE concrete action they can take today or this week. Specific, small, doable.
-  "reflection": string   // one short sentence that names what they may not be seeing
+  "matters": [string, ...],       // 2–4 short phrases (3–8 words each) of what seems to carry consequence right now
+  "noise": [string, ...],         // 1–3 short phrases of what may be loud but not currently clarifying
+  "signalReason": string,         // one sentence naming WHY the elevated thread may carry consequence — provisional, not declarative
+  "nextStep": string,             // ONE concrete action they can take today or this week. Specific, small, doable.
+  "reflection": string            // one short sentence that names what they may not be seeing
 }
 
 Rules:
 - Themes: 2–4 only. Title is 2–5 words. Summary is one sentence, 15–25 words.
 - coreIntent: one sentence. Start with a verb or "You want…". Do not restate their words; distill them.
+- matters: 2–4 short phrases. 3–8 words each. Drawn from the user's own language where possible. Each phrase should name a distinct thread that seems to carry consequence (an obligation, a fear, a deeper truth, a decision that won't wait). Do not number them. No trailing punctuation.
+- noise: 1–3 short phrases. 3–8 words each. Things that are loud or attention-consuming but not currently clarifying — catastrophizing, comparison, looping self-judgment, avoidance moves. Honest, not dismissive. No trailing punctuation.
+- signalReason: One sentence. Name the strongest matters phrase, then say WHY it may carry consequence (what it touches, what depends on it, what it makes possible). Provisional language: "may", "seems to", "could". Not declarative. Under 30 words.
 - nextStep: Must be an action, not advice. Starts with a verb. Concrete, scoped, achievable. Not "reflect more" or "think about." Something they do.
 - reflection: A quiet observation. Honest. Not flattering. Under 20 words.
-- If the input is very short or unclear, still produce a best-effort pass — do not ask questions back.
+- If the input is very short or unclear, still produce a best-effort pass — do not ask questions back. matters/noise can be tentative but must still be present.
 - Output JSON only. No prose before or after.`;
 
 // --- Deepening (threaded) ---
@@ -1329,6 +1339,9 @@ export async function registerRoutes(
 
       await storage.createSift({
         id,
+        matters: JSON.stringify(analysis.matters),
+        noise: JSON.stringify(analysis.noise),
+        signalReason: analysis.signalReason,
         userId: userId ?? undefined,
         input,
         inputMode,
@@ -1404,6 +1417,29 @@ export async function registerRoutes(
     const turns = isMine ? await storage.listTurns(row.id) : [];
     const bookmark = isMine ? await storage.getBookmark(row.id) : undefined;
 
+    // Parse Signal/Noise framing fields. Legacy rows (created before these
+    // columns existed) get safe empty fallbacks so the client can render an
+    // older sift without crashing. New analysis runs always populate them.
+    const matters: string[] = (() => {
+      if (!row.matters) return [];
+      try {
+        const v = JSON.parse(row.matters);
+        return Array.isArray(v) ? v.filter((s) => typeof s === "string") : [];
+      } catch {
+        return [];
+      }
+    })();
+    const noise: string[] = (() => {
+      if (!row.noise) return [];
+      try {
+        const v = JSON.parse(row.noise);
+        return Array.isArray(v) ? v.filter((s) => typeof s === "string") : [];
+      } catch {
+        return [];
+      }
+    })();
+    const signalReason: string = row.signalReason ?? "";
+
     const result: SiftResult = {
       id: row.id,
       input: row.input,
@@ -1413,6 +1449,9 @@ export async function registerRoutes(
       coreIntent: row.coreIntent,
       nextStep: row.nextStep,
       reflection: row.reflection,
+      matters,
+      noise,
+      signalReason,
       mine: isMine,
       status: (row.status === "closed" ? "closed" : "open") as any,
       checkins: checkinRows.map(checkinToResult),

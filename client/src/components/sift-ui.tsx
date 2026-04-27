@@ -511,23 +511,39 @@ export function Result({
       : "";
 
   const copyText = async () => {
-    const body = [
+    const hasNewFraming = (view.matters?.length ?? 0) > 0;
+    const lines = [
       `Sift — ${new Date(view.createdAt).toLocaleString()}`,
-      "",
-      "Themes:",
-      ...view.themes.map((t, i) => `${i + 1}. ${t.title} — ${t.summary}`),
       "",
       `What this may be pointing to:`,
       view.coreIntent,
       "",
-      `Next step:`,
-      view.nextStep,
-      "",
-      `Reflection:`,
-      view.reflection,
-      "",
-      shareUrl,
-    ].join("\n");
+    ];
+    if (hasNewFraming) {
+      lines.push(
+        "What seems to matter most right now:",
+        ...view.matters.map((m, i) => `${i + 1}. ${m}`),
+        "",
+      );
+      if ((view.noise?.length ?? 0) > 0) {
+        lines.push(
+          "What may be noise right now:",
+          ...view.noise.map((n) => `— ${n}`),
+          "",
+        );
+      }
+      if (view.signalReason) {
+        lines.push("Why this may be the signal:", view.signalReason, "");
+      }
+    } else {
+      lines.push(
+        "Themes:",
+        ...view.themes.map((t, i) => `${i + 1}. ${t.title} — ${t.summary}`),
+        "",
+      );
+    }
+    lines.push(`Next step:`, view.nextStep, "", `Reflection:`, view.reflection, "", shareUrl);
+    const body = lines.join("\n");
     try {
       await navigator.clipboard.writeText(body);
       setCopiedText(true);
@@ -644,31 +660,94 @@ export function Result({
           )}
         </section>
 
-        {/* Themes */}
-        <section data-testid="section-themes">
-          <Label>Themes underneath</Label>
-          <ul className="mt-4 divide-y divide-border/70 border-y border-border/70">
-            {view.themes.map((t, i) => (
-              <li
-                key={i}
-                className="py-4 md:py-5 flex gap-4 md:gap-6"
-                data-testid={`theme-${i}`}
-              >
-                <span className="font-mono text-xs text-muted-foreground pt-1 w-6">
-                  {String(i + 1).padStart(2, "0")}
-                </span>
-                <div className="flex-1">
-                  <h3 className="font-serif text-lg md:text-xl text-foreground">
-                    {t.title}
-                  </h3>
-                  <p className="text-sm md:text-[15px] text-muted-foreground mt-1.5 leading-relaxed">
-                    {t.summary}
-                  </p>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </section>
+        {/* Signal/Noise framing — the new first-result UI. Renders when the
+            analyze pass returned matters/noise (always for new sifts). Legacy
+            sifts created before these fields existed fall back to the
+            "Themes underneath" section below. */}
+        {(view.matters?.length ?? 0) > 0 ? (
+          <>
+            <section data-testid="section-matters">
+              <Label>What seems to matter most right now</Label>
+              <ul className="mt-4 divide-y divide-border/70 border-y border-border/70">
+                {view.matters.map((m, i) => (
+                  <li
+                    key={i}
+                    className="py-3.5 md:py-4 flex gap-4 md:gap-6"
+                    data-testid={`matters-${i}`}
+                  >
+                    <span className="font-mono text-xs text-muted-foreground pt-1 w-6">
+                      {String(i + 1).padStart(2, "0")}
+                    </span>
+                    <p className="flex-1 font-serif text-lg md:text-xl text-foreground leading-snug">
+                      {m}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            </section>
+
+            {(view.noise?.length ?? 0) > 0 && (
+              <section data-testid="section-noise">
+                <Label>What may be noise right now</Label>
+                <ul className="mt-4 space-y-2.5">
+                  {view.noise.map((n, i) => (
+                    <li
+                      key={i}
+                      className="text-sm md:text-[15px] text-muted-foreground/85 leading-relaxed flex gap-3"
+                      data-testid={`noise-${i}`}
+                    >
+                      <span
+                        aria-hidden="true"
+                        className="text-muted-foreground/50 select-none"
+                      >
+                        —
+                      </span>
+                      <span className="flex-1">{n}</span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+
+            {view.signalReason && (
+              <section data-testid="section-signal-reason">
+                <Label>Why this may be the signal</Label>
+                <p
+                  className="mt-3 font-serif text-lg md:text-xl text-foreground leading-relaxed"
+                  data-testid="text-signal-reason"
+                >
+                  {view.signalReason}
+                </p>
+              </section>
+            )}
+          </>
+        ) : (
+          /* Legacy fallback — themes view for sifts created before matters/noise existed. */
+          <section data-testid="section-themes">
+            <Label>Themes underneath</Label>
+            <ul className="mt-4 divide-y divide-border/70 border-y border-border/70">
+              {view.themes.map((t, i) => (
+                <li
+                  key={i}
+                  className="py-4 md:py-5 flex gap-4 md:gap-6"
+                  data-testid={`theme-${i}`}
+                >
+                  <span className="font-mono text-xs text-muted-foreground pt-1 w-6">
+                    {String(i + 1).padStart(2, "0")}
+                  </span>
+                  <div className="flex-1">
+                    <h3 className="font-serif text-lg md:text-xl text-foreground">
+                      {t.title}
+                    </h3>
+                    <p className="text-sm md:text-[15px] text-muted-foreground mt-1.5 leading-relaxed">
+                      {t.summary}
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
 
         {/* Next step */}
         <section data-testid="section-next">

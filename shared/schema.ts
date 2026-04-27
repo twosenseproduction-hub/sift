@@ -43,6 +43,14 @@ export const sifts = sqliteTable("sifts", {
   coreIntent: text("core_intent").notNull(),
   nextStep: text("next_step").notNull(),
   reflection: text("reflection").notNull(),
+  // First-result Signal/Noise framing — populated by the analyze pass on
+  // first sift. JSON-serialized string arrays. signalReason is a single
+  // sentence naming why the elevated thread may carry consequence.
+  // All three are nullable for backward compatibility with rows created
+  // before this field existed.
+  matters: text("matters"), // JSON string[] | null
+  noise: text("noise"), // JSON string[] | null
+  signalReason: text("signal_reason"), // string | null
   // Thread status: 'open' = still active, 'closed' = done for now.
   // Defaults to 'open' at insert time.
   status: text("status").notNull().default("open"),
@@ -87,6 +95,17 @@ export const analysisSchema = z.object({
   coreIntent: z.string(),
   nextStep: z.string(),
   reflection: z.string(),
+  // Signal/Noise framing for the first-result UI.
+  //   matters       — 2–4 short phrases (3–8 words) of what seems to carry
+  //                   consequence right now, drawn from the user's own input.
+  //   noise         — 1–3 short phrases of attention-consuming material that
+  //                   does not currently increase truth, direction, or
+  //                   meaningful movement.
+  //   signalReason  — one sentence naming WHY the elevated thread may carry
+  //                   consequence — provisional, not declarative.
+  matters: z.array(z.string()).min(2).max(4),
+  noise: z.array(z.string()).min(1).max(3),
+  signalReason: z.string(),
 });
 export type Analysis = z.infer<typeof analysisSchema>;
 

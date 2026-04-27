@@ -116,6 +116,18 @@ if (!siftCols.some((c) => c.name === "status")) {
   );
   sqlite.exec(`UPDATE sifts SET status = 'open' WHERE status IS NULL;`);
 }
+// Safe migration: add Signal/Noise first-result framing columns. All three
+// are nullable so legacy rows continue to load — the GET sift handler
+// degrades gracefully when these are NULL.
+if (!siftCols.some((c) => c.name === "matters")) {
+  sqlite.exec(`ALTER TABLE sifts ADD COLUMN matters TEXT;`);
+}
+if (!siftCols.some((c) => c.name === "noise")) {
+  sqlite.exec(`ALTER TABLE sifts ADD COLUMN noise TEXT;`);
+}
+if (!siftCols.some((c) => c.name === "signal_reason")) {
+  sqlite.exec(`ALTER TABLE sifts ADD COLUMN signal_reason TEXT;`);
+}
 
 // Safe migration: add contact + consent columns to users if missing. Existing
 // rows get NULL email/phone and 0 for both consent flags (= never opted in).
