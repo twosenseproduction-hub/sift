@@ -20,6 +20,16 @@ const RATIONALES: Record<"matters" | "noise" | "unsure", string> = {
   unsure: "Unclear can still be honest.",
 };
 
+// A printed-margin-note legend kept always visible beneath the choice
+// buttons. Editorial footnote register, not a feature callout. The phrasing
+// here intentionally diverges from the per-placement RATIONALES so the
+// legend reads like a quiet reference rather than echoing the feedback line.
+const LEGEND: Record<"matters" | "noise" | "unsure", string> = {
+  matters: "changes something if faced",
+  noise: "loud, but not clarifying",
+  unsure: "unclear is still honest",
+};
+
 // SortPractice
 //
 // A dedicated Signal / Noise practice moment inserted into the deepening
@@ -292,6 +302,23 @@ export function SortPractice({
               Not sure yet
             </ChoiceButton>
           </div>
+          {/* A quiet legend — printed-margin note, not a callout. Always
+              visible beneath the buttons so users do not have to remember
+              the distinction from memory. Stays tertiary to the card and
+              the buttons themselves. */}
+          <p
+            className="mt-3 text-[11px] leading-relaxed text-muted-foreground/70"
+            data-testid="sort-legend"
+          >
+            <span className="text-muted-foreground/85">What matters</span>
+            <span className="text-muted-foreground/60"> — {LEGEND.matters}</span>
+            <span aria-hidden="true" className="px-2 text-muted-foreground/40">·</span>
+            <span className="text-muted-foreground/85">Noise</span>
+            <span className="text-muted-foreground/60"> — {LEGEND.noise}</span>
+            <span aria-hidden="true" className="px-2 text-muted-foreground/40">·</span>
+            <span className="text-muted-foreground/85">Not sure yet</span>
+            <span className="text-muted-foreground/60"> — {LEGEND.unsure}</span>
+          </p>
           <div className="mt-4 flex items-center justify-between">
             <button
               type="button"
