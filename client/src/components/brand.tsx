@@ -95,7 +95,7 @@ export function Header() {
               }
             }}
           >
-            <Logo size={32} />
+            <Logo size={48} />
           </a>
         </Link>
 
