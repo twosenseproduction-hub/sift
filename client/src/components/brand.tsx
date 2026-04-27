@@ -30,7 +30,7 @@ export function Logo({ size = 28 }: { size?: number }) {
   return (
     <>
       <img
-        src="/sift-logo-colored-new.png"
+        src="/sift-logo-colored.png"
         alt="Sift"
         height={size}
         style={{ height: size, width: "auto" }}
@@ -38,7 +38,7 @@ export function Logo({ size = 28 }: { size?: number }) {
         draggable={false}
       />
       <img
-        src="/sift-logo-new.png"
+        src="/sift-logo-light.png"
         alt="Sift"
         height={size}
         style={{ height: size, width: "auto" }}
@@ -95,7 +95,7 @@ export function Header() {
               }
             }}
           >
-            <Logo size={48} />
+            <Logo size={32} />
           </a>
         </Link>
 
