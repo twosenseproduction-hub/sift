@@ -86,6 +86,64 @@ function Blob({
   );
 }
 
+// ONE continuous aurora background — covers full scroll height behind all sections.
+function NoiseBlob({
+  top,
+  right,
+  bottom,
+  left,
+  color,
+  size = 300,
+  duration = 16,
+  opacity = 0.14,
+}: {
+  top?: string;
+  right?: string;
+  bottom?: string;
+  left?: string;
+  color: string;
+  size?: number;
+  duration?: number;
+  opacity?: number;
+}) {
+  return (
+    <div
+      aria-hidden="true"
+      className="pointer-events-none absolute inset-0"
+    >
+      <div
+        className="absolute rounded-full blur-[70px]"
+        style={{
+          top,
+          right,
+          bottom,
+          left,
+          height: size,
+          width: size,
+          background: color,
+          opacity,
+          animation: `float ${duration}s ease-in-out infinite`,
+        }}
+      />
+    </div>
+  );
+}
+
+function AuroraBackground() {
+  return (
+    <>
+      <NoiseBlob top="-120px" right="-80px" color="hsl(var(--primary) / 0.14)" size={420} duration={14} opacity={0.14} />
+      <NoiseBlob bottom="-80px" left="-60px" color="hsl(36 35% 70% / 0.32)" size={320} duration={18} opacity={0.32} />
+      <NoiseBlob top="30%" left="12%" color="hsl(180 18% 50% / 0.14)" size={240} duration={22} opacity={0.14} />
+      <NoiseBlob top="15%" left="55%" color="hsl(36 35% 70% / 0.18)" size={180} duration={20} opacity={0.18} />
+      <NoiseBlob top="60%" right="8%" color="hsl(var(--primary) / 0.12)" size={260} duration={17} opacity={0.12} />
+      <NoiseBlob bottom="20%" left="40%" color="hsl(180 18% 50% / 0.10)" size={200} duration={24} opacity={0.10} />
+      <NoiseBlob top="75%" right="25%" color="hsl(36 35% 70% / 0.20)" size={220} duration={19} opacity={0.20} />
+      <NoiseBlob top="45%" right="35%" color="hsl(var(--primary) / 0.10)" size={280} duration={21} opacity={0.10} />
+    </>
+  );
+}
+
 // Section wrapper: full-height, vignette overlay, content centered. The
 // vignette is what makes the page feel composed of distinct rooms
 // rather than one continuous scroll.
@@ -854,6 +912,7 @@ export default function Landing() {
         }}
       />
 
+      <AuroraBackground />
       <LandingHeader />
 
       <main className="relative z-[1]">
