@@ -9,8 +9,8 @@ type Phase = "entry" | "cards" | "result";
 const PHASES: Phase[] = ["entry", "cards", "result"];
 
 // ─── Timing ────────────────────────────────────────────────
-const T = { entry: 0, cards: 3200, result: 7000 };
-const TOTAL = 9000;
+const T = { entry: 0, cards: 3200, result: 9000 };
+const TOTAL = 11000;
 
 function currentPhase(elapsed: number): Phase {
   if (elapsed < T.cards)  return "entry";
