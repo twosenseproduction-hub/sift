@@ -10,7 +10,8 @@ const PHASES: Phase[] = ["entry", "cards", "result"];
 
 // ─── Timing ────────────────────────────────────────────────
 const T = { entry: 0, cards: 3200, result: 9000 };
-const TOTAL = 11000;
+const TOTAL = 19000;
+
 
 function currentPhase(elapsed: number): Phase {
   if (elapsed < T.cards)  return "entry";
