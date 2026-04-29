@@ -15,6 +15,19 @@ import {
   type SortResultPayload,
   type Feedback,
   type FeedbackStage,
+  type Project,
+  type Decision,
+  type Person,
+  type ThreadLink,
+  type SiftMode,
+  type EntrySignal,
+  type UpdateThreadRequest,
+  projects,
+  decisions,
+  persons,
+  threadLinks,
+  siftModeSchema,
+  entrySignalSchema,
   type FeedbackSentiment,
   type FeedbackStats,
   type AdminReviewFeedback,
@@ -181,6 +194,12 @@ export interface IStorage {
     userId: number,
     params: UpdateUserContactParams,
   ): Promise<User | undefined>;
+  // V1 thread
+  updateThread(id: string, userId: number, patch: UpdateThreadRequest): Promise<SiftListItem | undefined>;
+  listThreads(userId: number): Promise<SiftListItem[]>;
+  getThread(id: string): Promise<Sift | undefined>;
+  countFrontBurner(userId: number): Promise<number>;
+
   // Checkins
   createCheckin(row: Omit<Checkin, "id" | "createdAt">): Promise<Checkin>;
   listCheckins(siftId: string): Promise<Checkin[]>;
@@ -369,6 +388,80 @@ export class DatabaseStorage implements IStorage {
       .where(eq(users.id, userId))
       .returning()
       .get();
+  }
+
+  async listThreads(userId: number): Promise<SiftListItem[]> {
+    const rows = db
+      .select()
+      .from(sifts)
+      .where(eq(sifts.userId, userId))
+      .orderBy(desc(sifts.createdAt))
+      .all();
+    return rows.map((r) => ({
+      id: r.id,
+      createdAt: r.createdAt,
+      coreIntent: r.coreIntent,
+      nextStep: r.nextStep,
+      status: ((r.status as string) === "closed" ? "closed" : "open") as SiftStatus,
+      mode: (r.mode as SiftMode | null) ?? null,
+      threadState: ((r.threadState as string) || "open") as "open"|"closed"|"archived",
+      frontBurnerRank: r.frontBurnerRank ?? null,
+      currentMove: r.currentMove ?? null,
+    }));
+  }
+
+  async getThread(id: string): Promise<Sift | undefined> {
+    return db.select().from(sifts).where(eq(sifts.id, id))).get();
+  }
+
+  async updateThread(id: string, userId: number, patch: UpdateThreadRequest): Promise<SiftListItem | undefined> {
+    const set: Record<string, unknown> = {};
+    if (patch.threadState !== undefined) set.threadState = patch.threadState;
+    if (patch.frontBurnerRank !== undefined) set.frontBurnerRank = patch.frontBurnerRank;
+    if (patch.currentMove !== undefined) set.currentMove = patch.currentMove;
+    if (patch.closureCondition !== undefined) set.closureCondition = patch.closureCondition;
+    if (Object.keys(set).length === 0) return undefined;
+    const row = db
+      .update(sifts)
+      .set(set)
+      .where(and(eq(sifts.id, id), eq(sifts.userId, userId)))
+      .returning({
+        id: sifts.id,
+        createdAt: sifts.createdAt,
+        coreIntent: sifts.coreIntent,
+        nextStep: sifts.nextStep,
+        status: sifts.status,
+        mode: sifts.mode,
+        threadState: sifts.threadState,
+        frontBurnerRank: sifts.frontBurnerRank,
+        currentMove: sifts.currentMove,
+      })
+      .get();
+    if (!row) return undefined;
+    return {
+      id: row.id,
+      createdAt: row.createdAt,
+      coreIntent: row.coreIntent,
+      nextStep: row.nextStep,
+      status: ((row.status as string) === "closed" ? "closed" : "open") as SiftStatus,
+      mode: (row.mode as SiftMode | null) ?? null,
+      threadState: ((row.threadState as string) || "open") as "open"|"closed"|"archived",
+      frontBurnerRank: row.frontBurnerRank ?? null,
+      currentMove: row.currentMove ?? null,
+    };
+  }
+
+  async countFrontBurner(userId: number): Promise<number> {
+    const row = db
+      .select({ n: sql<number>`COUNT(*)` })
+      .from(sifts)
+      .where(and(
+        eq(sifts.userId, userId),
+        eq(sifts.threadState, "open"),
+        sql`front_burner_rank IS NOT NULL`,
+      ))
+      .get();
+    return row?.n ?? 0;
   }
 
   async createCheckin(row: Omit<Checkin, "id" | "createdAt">): Promise<Checkin> {

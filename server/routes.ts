@@ -1307,6 +1307,37 @@ export async function registerRoutes(
 
   // --- Sifts ---
 
+// V1: detect mode + entry signal from user input at creation time
+function routeThread(input: string): { mode: 'personal'|'operator', entrySignal: string } {
+  const L = input.toLowerCase();
+  // Explicit operator markers
+  if (/\b(project|deadline|launch|ship|revenue|customer|mvp|pitch|investor|roadmap)\b/.test(L) &&
+      /\b(team|busy|overwhelmed|stuck|behind|paralyzed|scattered)\b/.test(L)) {
+    return { mode: 'operator', entrySignal: 'explicit_project' };
+  }
+  if (/\b(decision|choosing|deciding|option a|option b|vs \.|versus |either .+ or|should i|which one)\b/.test(L)) {
+    return { mode: 'operator', entrySignal: 'decision_language' };
+  }
+  if (/\b(partner|client|boss|cofounder|investor|team member|board|collaborator|spouse|member)\b/.test(L) &&
+      /\b(frustrat|tension|friction|misalign|trust|accountability|expectations|communication)\b/.test(L)) {
+    return { mode: 'operator', entrySignal: 'stakeholder' };
+  }
+  // Structural work markers (organizing, clarifying, restructuring)
+  if (/\b(clarify|structure|organize|restructure|simplify|priority|prioritize|streamline)\b/.test(L)) {
+    return { mode: 'operator', entrySignal: 'structural_work' };
+  }
+  // Explicit personal markers
+  if (/\b(i feel|i'm feeling|emotion|heart|alone|afraid|scared|worried|anxious|guilt|shame|regret|grieving|attached to|upset|angry|sad|lonely)\b/.test(L)) {
+    return { mode: 'personal', entrySignal: 'explicit_request' };
+  }
+  if (/\b(relationship|partner|spouse|friend|mother|father|family|mom|dad|brother|sister|couple|kids|children)\b/.test(L) &&
+      /\b(confused|hurt|conflict|distance|resent|trying to forgive|communication|trust|intimacy)\b/.test(L)) {
+    return { mode: 'personal', entrySignal: 'none' };
+  }
+  // Default: personal
+  return { mode: 'personal', entrySignal: 'none' };
+}
+
   app.post("/api/sift", async (req, res) => {
     const parsed = analyzeRequestSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -1337,6 +1368,7 @@ export async function registerRoutes(
 
       const id = newId();
 
+      const { mode, entrySignal } = routeThread(input);
       await storage.createSift({
         id,
         matters: JSON.stringify(analysis.matters),
@@ -1349,7 +1381,27 @@ export async function registerRoutes(
         coreIntent: analysis.coreIntent,
         nextStep: analysis.nextStep,
         reflection: analysis.reflection,
+        mode,
+        modeLocked: 1,
+        entrySignal,
+        threadState: 'open',
+        frontBurnerRank: null,
+        currentMove: null,
+        closureCondition: null,
       } as any);
+      const result: SiftResult = {
+        id,
+        input,
+        inputMode,
+        createdAt: Date.now(),
+        ...analysis,
+        mine: !!userId,
+        checkins: [],
+        mode,
+        threadState: 'open' as const,
+        frontBurnerRank: null,
+        currentMove: null,
+      };
 
       const result: SiftResult = {
         id,
@@ -1402,6 +1454,57 @@ export async function registerRoutes(
     );
     if (!updated) return res.status(404).json({ error: "Not found" });
     res.json({ sift: updated });
+  });
+
+  // List my threads (all open, closed, archived — like /api/sifts but with thread fields)
+  app.get("/api/threads", requireAuth, async (req, res) => {
+    const userId = (req as any).userId as number;
+    const threads = await storage.listThreads(userId);
+    res.json({ threads });
+  });
+
+  // Get a single thread by id (owner or public)
+  app.get("/api/threads/:id", async (req, res) => {
+    const thread = await storage.getThread(String(req.params.id));
+    if (!thread) return res.status(404).json({ error: "Not found" });
+    // Attach turns + bookmark if owned
+    const userId = readToken(req);
+    let turns: any[] = [];
+    let bookmark: any = null;
+    if (userId && thread.userId === userId) {
+      const { listTurns, getBookmark } = await import("./storage");
+      turns = await listTurns(String(req.params.id));
+      bookmark = (await getBookmark(String(req.params.id))) ?? undefined;
+    }
+    res.json({
+      thread: {
+        id: thread.id,
+        createdAt: thread.createdAt,
+        input: thread.input,
+        inputMode: thread.inputMode,
+        coreIntent: thread.coreIntent,
+        nextStep: thread.nextStep,
+        reflection: thread.reflection,
+        status: thread.status === "closed" ? "closed" : "open",
+        mode: (thread.mode as 'personal'|'operator'|null) ?? 'personal',
+        modeLocked: !!(thread.modeLocked),
+        entrySignal: (thread.entrySignal as string|null) ?? 'none',
+        threadState: ((thread.threadState as string)||"open") as 'open'|'closed'|'archived',
+        frontBurnerRank: thread.frontBurnerRank ?? null,
+        currentMove: thread.currentMove ?? null,
+        closureCondition: thread.closureCondition ?? null,
+        turns,
+        bookmark,
+      },
+    });
+  });
+
+  // Update thread fields (state, bucket, current_move, closure_condition)
+  app.patch("/api/threads/:id", requireAuth, async (req, res) => {
+    const userId = (req as any).userId as number;
+    const updated = await storage.updateThread(String(req.params.id), userId, req.body as any);
+    if (!updated) return res.status(404).json({ error: "Not found" });
+    res.json({ thread: updated });
   });
 
   // Fetch a shared sift (public-by-link)

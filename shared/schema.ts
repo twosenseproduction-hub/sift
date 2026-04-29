@@ -54,7 +54,17 @@ export const sifts = sqliteTable("sifts", {
   // Thread status: 'open' = still active, 'closed' = done for now.
   // Defaults to 'open' at insert time.
   status: text("status").notNull().default("open"),
+
+  // ---- V1 thread fields ----
+  mode: text("mode"), // 'personal' | 'operator'
+  modeLocked: integer("mode_locked").notNull().default(0), // 0|1
+  entrySignal: text("entry_signal"), // 'explicit_project'|'decision_language'|'stakeholder'|'structural_work'|'explicit_request'|'none'
+  threadState: text("thread_state").notNull().default("open"), // 'open'|'closed'|'archived'
+  frontBurnerRank: integer("front_burner_rank"), // 1|2|3|null
+  currentMove: text("current_move"), // string|null
+  closureCondition: text("closure_condition"), // string|null
 });
+
 
 // ---- Checkins ----
 // A Check-in = user returning to a past sift to log outcome + get adjusted guidance
@@ -279,7 +289,92 @@ export type SiftListItem = {
   coreIntent: string;
   nextStep: string;
   status: SiftStatus;
+  // V1 thread fields
+  mode: 'personal' | 'operator' | null;
+  threadState: 'open' | 'closed' | 'archived';
+  frontBurnerRank: number | null;
+  currentMove: string | null;
 };
+
+// ---- V1 enums ----
+export type SiftMode = 'personal' | 'operator';
+export type EntrySignal = 'explicit_project' | 'decision_language' | 'stakeholder' | 'structural_work' | 'explicit_request' | 'none';
+
+export const siftModeSchema = z.enum(['personal', 'operator']);
+export const entrySignalSchema = z.enum([
+  'explicit_project', 'decision_language', 'stakeholder',
+  'structural_work', 'explicit_request', 'none',
+]);
+export const threadStateSchema = z.enum(['open', 'closed', 'archived']);
+
+export const updateThreadSchema = z.object({
+  threadState: threadStateSchema.optional(),
+  frontBurnerRank: z.number().int().min(1).max(3).nullable().optional(),
+  currentMove: z.string().nullable().optional(),
+  closureCondition: z.string().nullable().optional(),
+});
+export type UpdateThreadRequest = z.infer<typeof updateThreadSchema>;
+
+// ---- V1 tables ----
+export const projects = sqliteTable("projects", {
+  id: text("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  title: text("title").notNull(),
+  goal: text("goal"),
+  status: text("status").notNull().default("active"), // 'active'|'paused'|'closed'
+  deadline: integer("deadline"),
+  owner: text("owner"),
+  currentRisk: text("current_risk"),
+  currentMove: text("current_move"),
+  blockers: text("blockers"), // JSON string[]
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+});
+export type Project = typeof projects.$inferSelect;
+
+export const decisions = sqliteTable("decisions", {
+  id: text("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  title: text("title").notNull(),
+  decisionQuestion: text("decision_question"),
+  options: text("options"), // JSON string[]
+  constraints: text("constraints"), // JSON string[]
+  reversibleOrNot: integer("reversible_or_not").notNull().default(1),
+  dueBy: integer("due_by"),
+  recommendedNextMove: text("recommended_next_move"),
+  status: text("status").notNull().default("open"), // 'open'|'decided'|'parked'
+  decidedOption: text("decided_option"),
+  decidedAt: integer("decided_at"),
+  parkReason: text("park_reason"),
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+});
+export type Decision = typeof decisions.$inferSelect;
+
+export const persons = sqliteTable("persons", {
+  id: text("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  name: text("name").notNull(),
+  role: text("role"),
+  relationshipToUser: text("relationship_to_user"),
+  sensitivityLevel: text("sensitivity_level").default("medium"),
+  openLoops: text("open_loops"), // JSON string[]
+  lastMaterialInteraction: integer("last_material_interaction"),
+  interactionSummary: text("interaction_summary"),
+  primaryProject: text("primary_project"),
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+});
+export type Person = typeof persons.$inferSelect;
+
+export const threadLinks = sqliteTable("thread_links", {
+  threadId: text("thread_id").notNull(),
+  objectType: text("object_type").notNull(), // 'project'|'decision'|'person'
+  objectId: text("object_id").notNull(),
+  role: text("role").notNull().default("secondary"), // 'primary'|'secondary'|'referenced'
+});
+export type ThreadLink = typeof threadLinks.$inferSelect;
+
 
 // ---- Thread turns ----
 // A thread turn is one back-and-forth beat inside a sift's deepening flow.
