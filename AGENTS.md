@@ -848,3 +848,16 @@ When the user returns to a thread, education should happen through the re-entry 
 ### Education rule
 
 If education copy makes the interface feel like a framework, methodology, or productivity program, it is too loud. The best micro-education should feel like a quiet handrail, not a lesson.
+
+**7.3 Session closure**
+
+Session closure should feel like a natural pause, not a forced end. It should signal that the user can return later if the thread is still alive, without guilt or pressure.
+
+**Closure behaviors:**
+- When the user indicates they are done for now, close cleanly rather than invite endless continuation.
+- Preserve the current move and last state for re-entry.
+- Offer a short "last time" recap if the user returns.
+- Do not auto-reactivate every semantically similar mention; use reactivation only when continuity would genuinely help.
+
+**Closure rule:**
+Do not treat closure as a failure. Treat it as a pause that preserves the thread for future return.
