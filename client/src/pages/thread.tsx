@@ -174,7 +174,7 @@ export default function ThreadPage() {
                     State
                   </p>
                   <div className="flex gap-2 flex-wrap">
-                    {(["active", "waiting", "closed", "archived"] as const).map((s) => (
+                    {(["open", "closed", "archived"] as const).map((s) => (
                       <button
                         key={s}
                         onClick={() => commitState(s)}
@@ -226,6 +226,21 @@ export default function ThreadPage() {
                     rows={2}
                     className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/40 resize-none"
                     placeholder="What needs to happen next…"
+                  />
+                </div>
+
+                {/* Closure condition */}
+                <div>
+                  <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground/70 mb-2">
+                    When to close this thread
+                  </p>
+                  <textarea
+                    value={localClosure}
+                    onChange={(e) => setLocalClosure(e.target.value)}
+                    onBlur={() => commitClosure(localClosure)}
+                    rows={1}
+                    className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/40 resize-none"
+                    placeholder="What would make this done for now…"
                   />
                 </div>
               </div>
@@ -330,7 +345,7 @@ function TurnCard({ turn }: { turn: any }) {
 function ThreadDot({ state }: { state: ThreadDetail["threadState"] }) {
   const colors: Record<string, string> = {
     open: "bg-primary/70",
-    active: "bg-primary/70",
+    open: "bg-primary/70",
     waiting: "bg-yellow-500/60",
     closed: "bg-muted-foreground/30",
     archived: "bg-muted-foreground/15",

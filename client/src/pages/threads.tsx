@@ -9,7 +9,7 @@ import { ArrowRight, Search, Bookmark } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ThreadListItem } from "@shared/schema";
 
-type Filter = "all" | "active" | "waiting" | "closed" | "archived";
+type Filter = "all" | "open" | "closed" | "archived";
 
 export default function ThreadsPage() {
   const [authOpen, setAuthOpen] = useState(false);
@@ -78,7 +78,7 @@ export default function ThreadsPage() {
 
           {/* Filter row */}
           <div className="flex items-center gap-5 text-sm mb-6 overflow-x-auto pb-1">
-            {(["all", "active", "waiting", "closed", "archived"] as Filter[]).map((f) => {
+            {(["all", "open", "closed", "archived"] as Filter[]).map((f) => {
               const label = f === "all" ? "All" : f.charAt(0).toUpperCase() + f.slice(1);
               const count =
                 f === "all"
@@ -183,7 +183,7 @@ function ThreadRow({
   onPatch: (v: any) => void;
 }) {
   const stateLabel: Record<ThreadListItem["threadState"], string> = {
-    active: "Active",
+    open: "Open / Active",
     waiting: "Waiting",
     closed: "Closed",
     archived: "Archived",
@@ -237,7 +237,7 @@ function ThreadRow({
 
 function ThreadDot({ state }: { state: ThreadListItem["threadState"] }) {
   const colors: Record<string, string> = {
-    active: "bg-primary/70",
+    open: "bg-primary/70",
     waiting: "bg-yellow-500/60",
     closed: "bg-muted-foreground/30",
     archived: "bg-muted-foreground/15",

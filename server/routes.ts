@@ -1486,8 +1486,12 @@ function routeThread(input: string): { mode: 'personal'|'operator', entrySignal:
 
   // Update thread fields (state, bucket, current_move, closure_condition)
   app.patch("/api/threads/:id", requireAuth, async (req, res) => {
+    const parsed = updateThreadSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+    }
     const userId = (req as any).userId as number;
-    const updated = await storage.updateThread(String(req.params.id), userId, req.body as any);
+    const updated = await storage.updateThread(String(req.params.id), userId, parsed.data);
     if (!updated) return res.status(404).json({ error: "Not found" });
     res.json({ thread: updated });
   });
