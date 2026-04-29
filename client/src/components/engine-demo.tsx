@@ -2,16 +2,15 @@ import { useEffect, useRef, useState } from "react";
 
 // ─── Phases ─────────────────────────────────────────────────
 type Phase = "entry" | "cards" | "result";
-// entry: show the original prompt
-// cards: signal/noise cards float in one by one
-// result: settled composition with bins + next step
+// entry  — prompt + Sift button
+// cards  — 4 signal/noise cards float in, one by one
+// result — settled composition: bins fill, next step appears
 
 const PHASES: Phase[] = ["entry", "cards", "result"];
 
 // ─── Timing ────────────────────────────────────────────────
 const T = { entry: 0, cards: 3200, result: 9000 };
 const TOTAL = 19000;
-
 
 function currentPhase(elapsed: number): Phase {
   if (elapsed < T.cards)  return "entry";
@@ -27,41 +26,50 @@ function phaseProg(elapsed: number, start: number, end: number): number {
 const ENTRY_TEXT =
   "I keep telling myself I'm going to do it, but every time I sit down to work I end up doing something else — scrolling, cleaning, something. Then I feel worse.";
 
+// 4 cards matching the real Sift response.
+// Each card: dot color, label, and Sift's assigned bucket (for bin destination).
 const SIGNAL_CARDS = [
   {
     id: "c1",
-    color: "primary" as const,
+    bucket: "matters" as const,
     label: "Matters",
+    dot: "primary" as const,
     text: "The fear of not being good enough is the real thing underneath.",
   },
   {
     id: "c2",
-    color: "primary" as const,
+    bucket: "matters" as const,
     label: "Matters",
+    dot: "primary" as const,
     text: "You already know what you need to do — you just need permission to do it imperfectly.",
   },
   {
     id: "c3",
-    color: "muted" as const,
+    bucket: "noise" as const,
     label: "Noise",
+    dot: "muted" as const,
     text: "The comparison to how fast you think others move.",
   },
   {
     id: "c4",
-    color: "muted" as const,
+    bucket: "noise" as const,
     label: "Noise",
+    dot: "muted" as const,
     text: "The story that trying and failing makes you inadequate.",
   },
 ];
 
-const MATTERS_ITEMS = [
-  "The fear underneath the avoidance.",
-  "What you already know you need to do.",
-];
-const NOISE_ITEMS = [
-  "How fast others seem to move.",
-  "The story that trying and failing makes you inadequate.",
-];
+const BIN_ITEMS = {
+  matters: [
+    "The fear underneath the avoidance.",
+    "What you already know you need to do.",
+  ],
+  noise: [
+    "How fast others seem to move.",
+    "The story that trying and failing makes you inadequate.",
+  ],
+};
+
 const NEXT_STEP =
   "Write one sentence about what you would do if you already believed you were good enough to try.";
 
@@ -132,12 +140,9 @@ export function EngineDemo() {
 
   return (
     <div className="grid items-stretch gap-8 md:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)]">
-      {/* ── Left: demo card ── */}
       <div className="relative overflow-hidden rounded-3xl border border-border/60 bg-card/70 shadow-[var(--shadow-md)] backdrop-blur-md">
         <Card phase={phase} ep={ep} cp={cp} rp={rp} reduced={reduced} />
       </div>
-
-      {/* ── Right: story panel ── */}
       <StoryPanel phase={phase} reduced={reduced} />
     </div>
   );
@@ -151,108 +156,134 @@ function Card({
 }) {
   const H = 520;
 
-  // Completely hide content not in the current phase.
-  // Only one phase is visible at a time — no stacking.
-  return (
-    <div className="relative p-5 sm:p-7" style={{ minHeight: H }}>
-
-      {/* ── ENTRY ── */}
-      {phase === "entry" && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center px-5">
-          {/* Prompt card */}
-          <div className="mb-6 w-full max-w-[46ch] rounded-2xl border border-border/40 bg-background/60 px-4 py-3">
-            <p className="text-[13px] leading-[1.6] text-foreground/70">
-              {ENTRY_TEXT}
-            </p>
-          </div>
-          {/* Sift button */}
-          <div className="rounded-full bg-primary px-5 py-2.5 text-xs font-semibold text-primary-foreground shadow-sm">
-            Sift
-          </div>
-        </div>
-      )}
-
-      {/* ── CARDS ── */}
-      {phase === "cards" && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center px-5">
-          {SIGNAL_CARDS.map((card, i) => {
-            const delay    = i * 180;
-            const prog     = reduced ? 1 : Math.min(1, Math.max(0, (cp * (T.result - T.cards) - delay) / 500));
-            const stripe   = card.color === "primary"
-              ? "border-primary/40 bg-primary/[0.06]"
-              : "border-muted-foreground/20 bg-muted/15";
-            const dotColor = card.color === "primary"
-              ? "bg-primary"
-              : "bg-muted-foreground/50";
-            return (
-              <div
-                key={card.id}
-                className={`mb-2 w-full max-w-[46ch] rounded-xl border px-4 py-2.5 backdrop-blur-sm ${stripe}`}
-                style={{
-                  opacity: prog,
-                  transform: `translateY(${(1 - prog) * 10}px)`,
-                  transition: `opacity 500ms ease-out ${delay}ms, transform 500ms ease-out ${delay}ms`,
-                }}
-              >
-                <div className="mb-1.5 flex items-center gap-2">
-                  <span className={`h-1.5 w-1.5 rounded-full ${dotColor}`} />
-                  <span
-                    className="text-[10px] font-medium uppercase tracking-[0.18em]"
-                    style={{
-                      color: card.color === "primary"
-                        ? "hsl(var(--primary))"
-                        : "hsl(var(--muted-foreground))",
-                    }}
-                  >
-                    {card.label}
-                  </span>
-                </div>
-                <p className="text-[12.5px] leading-snug text-foreground/80">
-                  {card.text}
-                </p>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* ── RESULT ── */}
-      {phase === "result" && (
+  // ── ENTRY ──────────────────────────────────────────────
+  if (phase === "entry") {
+    return (
+      <div className="absolute inset-0 flex flex-col items-center justify-center px-5">
         <div
-          className="absolute inset-0 flex flex-col items-center justify-center gap-2.5 px-5"
-          style={{
-            opacity: rp,
-            transform: `scale(${0.98 + rp * 0.02})`,
-            transition: "opacity 600ms ease-out, transform 600ms ease-out",
-          }}
+          className="mb-6 w-full max-w-[46ch] rounded-2xl border border-border/40 bg-background/60 px-4 py-3"
+          style={{ opacity: reduced ? 1 : ep, transition: "opacity 600ms ease-out" }}
         >
-          {/* What Sift heard */}
-          <div className="w-full max-w-[44ch] rounded-2xl border border-border/50 bg-background/40 px-4 py-3 backdrop-blur-sm">
-            <div className="mb-1 text-[10px] font-medium uppercase tracking-[0.2em] text-primary/70">
-              What Sift heard
-            </div>
-            <p className="text-[13px] leading-[1.6] text-foreground/85">
-              {SIGNAL_CARDS[0].text}
-            </p>
-          </div>
-
-          {/* Bins */}
-          <div className="grid w-full max-w-[44ch] grid-cols-2 gap-2.5">
-            <ResultBin label="Matters" tone="primary" items={MATTERS_ITEMS} />
-            <ResultBin label="Noise"   tone="muted"   items={NOISE_ITEMS} />
-          </div>
-
-          {/* One next step */}
-          <div className="w-full max-w-[44ch] rounded-xl border border-primary/25 bg-primary/[0.05] px-4 py-2.5">
-            <div className="mb-1 text-[10px] font-medium uppercase tracking-[0.2em] text-primary/70">
-              One next step
-            </div>
-            <p className="text-[12.5px] leading-snug text-foreground/90">
-              {NEXT_STEP}
-            </p>
-          </div>
+          <p className="text-[13px] leading-[1.6] text-foreground/70">
+            {ENTRY_TEXT}
+          </p>
         </div>
-      )}
+        <div
+          className="rounded-full bg-primary px-5 py-2.5 text-xs font-semibold text-primary-foreground shadow-sm"
+          style={{ opacity: reduced ? 1 : ep, transition: "opacity 400ms ease-out 200ms" }}
+        >
+          Sift
+        </div>
+      </div>
+    );
+  }
+
+  // ── CARDS ─────────────────────────────────────────────
+  if (phase === "cards") {
+    return (
+      <div className="absolute inset-0 flex flex-col items-center justify-center px-5">
+        {SIGNAL_CARDS.map((card, i) => {
+          const delay    = i * 180;
+          const dur      = 500;
+          const cardProg = reduced
+            ? 1
+            : Math.min(1, Math.max(0, (cp * (T.result - T.cards) - delay) / dur));
+
+          const dotColor = card.dot === "primary"
+            ? "bg-primary"
+            : "bg-muted-foreground/45";
+          const stripe = card.dot === "primary"
+            ? "border-primary/35 bg-primary/[0.05]"
+            : "border-muted-foreground/20 bg-muted/15";
+          const labelColor = card.dot === "primary"
+            ? "text-primary"
+            : "text-muted-foreground/80";
+
+          return (
+            <div
+              key={card.id}
+              className={`mb-2 w-full max-w-[46ch] rounded-xl border px-4 py-2.5 backdrop-blur-sm ${stripe}`}
+              style={{
+                opacity: cardProg,
+                transform: `translateY(${(1 - cardProg) * 12}px)`,
+                transition: `opacity ${dur}ms ease-out ${delay}ms, transform ${dur}ms ease-out ${delay}ms`,
+              }}
+            >
+              {/* Label row */}
+              <div className="mb-1.5 flex items-center gap-2">
+                <span className={`h-1.5 w-1.5 rounded-full ${dotColor}`} />
+                <span className={`text-[10px] font-medium uppercase tracking-[0.18em] ${labelColor}`}>
+                  {card.label}
+                </span>
+                {/* Clickable pills */}
+                <div className="ml-auto flex gap-1">
+                  {(["Matters", "Noise", "?"] as const).map((lbl) => {
+                    const isActive = lbl === card.label;
+                    const pillStripe = lbl === "Matters"
+                      ? "border-primary/45 text-primary bg-primary/[0.07]"
+                      : lbl === "Noise"
+                      ? "border-muted-foreground/30 text-muted-foreground/80 bg-muted/15"
+                      : "border-border text-muted-foreground/60 bg-transparent";
+                    return (
+                      <button
+                        key={lbl}
+                        className={`rounded-full border px-2 py-0.5 text-[10px] font-medium transition-colors ${pillStripe}`}
+                        style={{ cursor: "pointer" }}
+                      >
+                        {lbl}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              {/* Card text */}
+              <p className="text-[12.5px] leading-snug text-foreground/80">
+                {card.text}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  // ── RESULT ─────────────────────────────────────────────
+  // Bins fill with chips that flew in from the cards phase,
+  // then the "What Sift heard" + next step appear on top.
+  return (
+    <div
+      className="absolute inset-0 flex flex-col items-center justify-center gap-2.5 px-5"
+      style={{
+        opacity: rp,
+        transform: `scale(${0.98 + rp * 0.02})`,
+        transition: "opacity 700ms ease-out, transform 700ms ease-out",
+      }}
+    >
+      {/* What Sift heard */}
+      <div className="w-full max-w-[44ch] rounded-2xl border border-border/50 bg-background/40 px-4 py-3 backdrop-blur-sm">
+        <div className="mb-1 text-[10px] font-medium uppercase tracking-[0.2em] text-primary/70">
+          What Sift heard
+        </div>
+        <p className="text-[13px] leading-[1.6] text-foreground/85">
+          {SIGNAL_CARDS[0].text}
+        </p>
+      </div>
+
+      {/* Bins */}
+      <div className="grid w-full max-w-[44ch] grid-cols-2 gap-2.5">
+        <ResultBin label="Matters" tone="primary" items={BIN_ITEMS.matters} />
+        <ResultBin label="Noise"   tone="muted"   items={BIN_ITEMS.noise} />
+      </div>
+
+      {/* One next step */}
+      <div className="w-full max-w-[44ch] rounded-xl border border-primary/25 bg-primary/[0.05] px-4 py-2.5">
+        <div className="mb-1 text-[10px] font-medium uppercase tracking-[0.2em] text-primary/70">
+          One next step
+        </div>
+        <p className="text-[12.5px] leading-snug text-foreground/90">
+          {NEXT_STEP}
+        </p>
+      </div>
     </div>
   );
 }
