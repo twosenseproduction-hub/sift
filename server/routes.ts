@@ -1390,22 +1390,7 @@ function routeThread(input: string): { mode: 'personal'|'operator', entrySignal:
         closureCondition: null,
       } as any);
       const result: SiftResult = {
-        id,
-        input,
-        inputMode,
-        createdAt: Date.now(),
-        ...analysis,
-        mine: !!userId,
-        checkins: [],
-        mode,
-        threadState: 'open' as const,
-        frontBurnerRank: null,
-        currentMove: null,
-      };
-
-      const result: SiftResult = {
-        id,
-        input,
+        id,        input,
         inputMode,
         createdAt: Date.now(),
         ...analysis,

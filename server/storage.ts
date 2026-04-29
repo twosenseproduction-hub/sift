@@ -411,7 +411,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getThread(id: string): Promise<Sift | undefined> {
-    return db.select().from(sifts).where(eq(sifts.id, id))).get();
+    return db.select().from(sifts).where(eq(sifts.id, id)).get();
   }
 
   async updateThread(id: string, userId: number, patch: UpdateThreadRequest): Promise<SiftListItem | undefined> {
