@@ -1123,6 +1123,14 @@ export default function Landing() {
                         I understand what this actually is now.
                       </div>
                     </div>
+                    <div className="rounded-2xl border border-border/60 bg-muted/40 p-5">
+                      <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+                        What Sift is not
+                      </div>
+                      <div className="leading-7 text-foreground/70">
+                        Sift is not a cure for noise. It&rsquo;s practice in hearing what&rsquo;s actually there.
+                      </div>
+                    </div>
                   </div>
                 </div>
               </Reveal>
