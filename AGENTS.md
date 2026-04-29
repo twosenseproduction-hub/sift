@@ -783,3 +783,68 @@ Success condition: The user understands Sift as a rhythm of return, discernment,
 3. One next step is enough.
 4. Return only if the thread is still alive.
 5. Done is allowed.
+
+## 7.2 Micro-education
+
+Micro-education in Sift should be ambient, sparse, and skippable. The product's philosophy is restraint, so explanation should never overpower the experience or make the UI feel instructional.
+
+### Pattern 1 — Inline helper copy
+
+Use tiny, low-pressure lines directly near the action.
+
+**Examples:**
+- "Messy is fine."
+- "Paste something old."
+- "One live thing is enough."
+- "You do not need to explain it perfectly."
+
+**Use for:** Empty composer state · First-time entry · Moments of hesitation
+
+### Pattern 2 — Soft definitional subtext
+
+Use one-line explanations under key labels rather than popups when possible.
+
+**Examples:**
+- What matters now — what deserves attention right now.
+- What may be noise now — what may be making this heavier than it is.
+- One next step — one move small enough to take.
+
+**Use for:** First few sessions · New label introduction · Operator mode (where terminology may be less self-evident)
+
+### Pattern 3 — Optional tooltip / "Why this"
+
+Use only when the user seeks clarity about why Sift sorted something a certain way.
+
+**Examples:**
+- "Why this may matter: this appears to shape the rest."
+- "Why this may be noise: this seems loud, but not governing."
+- "Why this next step: it reduces ambiguity without forcing a final answer."
+
+**Use for:** Confidence-building · Preventing "black box" feel · Higher-stakes decisions
+
+### Pattern 4 — Lightweight legend
+
+A small legend can help on early sessions, but should be removable and never permanent clutter.
+
+**Suggested legend:**
+- Hearing = the underlying tension.
+- Matters = what deserves attention now.
+- Noise = what may be distorting the read.
+- Next step = one concrete move.
+
+**Use for:** Session 1–3 only · Hidden or collapsed after familiarity
+
+### Pattern 5 — Contextual re-entry education
+
+When the user returns to a thread, education should happen through the re-entry prompt itself.
+
+**Examples:**
+- "Still alive, or done for now?"
+- "Has the shape changed, or is this the same thread?"
+- "What moved since last time?"
+
+**This teaches:** threads are living · threads can evolve · threads can close
+
+### Education rule
+
+If education copy makes the interface feel like a framework, methodology, or productivity program, it is too loud. The best micro-education should feel like a quiet handrail, not a lesson.
