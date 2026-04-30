@@ -142,6 +142,37 @@ if (!siftCols.some((c) => c.name === "signal_reason")) {
   sqlite.exec(`ALTER TABLE sifts ADD COLUMN signal_reason TEXT;`);
 }
 
+// Safe migration: add thread/operator columns. All nullable (or with safe
+// defaults) so legacy rows continue to load. Added in Phase 1 of the
+// Personal/Operator routing work — must be present before POST /api/sift
+// can succeed.
+if (!siftCols.some((c) => c.name === "mode")) {
+  sqlite.exec(`ALTER TABLE sifts ADD COLUMN mode TEXT;`);
+}
+if (!siftCols.some((c) => c.name === "mode_locked")) {
+  sqlite.exec(
+    `ALTER TABLE sifts ADD COLUMN mode_locked INTEGER NOT NULL DEFAULT 0;`
+  );
+}
+if (!siftCols.some((c) => c.name === "entry_signal")) {
+  sqlite.exec(`ALTER TABLE sifts ADD COLUMN entry_signal TEXT;`);
+}
+if (!siftCols.some((c) => c.name === "thread_state")) {
+  sqlite.exec(
+    `ALTER TABLE sifts ADD COLUMN thread_state TEXT NOT NULL DEFAULT 'open';`
+  );
+  sqlite.exec(`UPDATE sifts SET thread_state = 'open' WHERE thread_state IS NULL;`);
+}
+if (!siftCols.some((c) => c.name === "front_burner_rank")) {
+  sqlite.exec(`ALTER TABLE sifts ADD COLUMN front_burner_rank INTEGER;`);
+}
+if (!siftCols.some((c) => c.name === "current_move")) {
+  sqlite.exec(`ALTER TABLE sifts ADD COLUMN current_move TEXT;`);
+}
+if (!siftCols.some((c) => c.name === "closure_condition")) {
+  sqlite.exec(`ALTER TABLE sifts ADD COLUMN closure_condition TEXT;`);
+}
+
 // Safe migration: add contact + consent columns to users if missing. Existing
 // rows get NULL email/phone and 0 for both consent flags (= never opted in).
 const userCols = sqlite
