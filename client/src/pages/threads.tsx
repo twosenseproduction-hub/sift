@@ -17,7 +17,7 @@ export default function ThreadsPage() {
   const [search, setSearch] = useState("");
   const { data: meData } = useMe();
   const me = meData?.me;
-  const { data: threads, isLoading, isError } = useThreads();
+  const { data: threads, isLoading, isError } = useThreads({ enabled: !!me });
   const patch = usePatchThread();
 
   const filtered = (threads ?? []).filter((t) => {
@@ -237,7 +237,6 @@ function ThreadRow({
 
 function ThreadDot({ state }: { state: ThreadListItem["threadState"] }) {
   const colors: Record<string, string> = {
-    open: "bg-primary/70",
     waiting: "bg-yellow-500/60",
     closed: "bg-muted-foreground/30",
     archived: "bg-muted-foreground/15",

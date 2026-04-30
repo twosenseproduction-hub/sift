@@ -3,13 +3,14 @@ import { apiRequest, queryClient } from "./queryClient";
 import { useMutation, useQuery } from "@tanstack/react-query";
 
 // GET /api/threads — all active threads for the signed-in user
-export function useThreads() {
+export function useThreads(options?: { enabled?: boolean }) {
   return useQuery<ThreadListItem[]>({
     queryKey: ["/api/threads"],
     queryFn: async () => {
       const res = await apiRequest("GET", "/api/threads");
       return (await res.json()).threads;
     },
+    enabled: options?.enabled ?? true,
   });
 }
 

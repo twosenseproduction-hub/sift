@@ -1049,6 +1049,13 @@ export async function registerRoutes(
     });
   });
 
+  // Live schema introspection — admin only. Used to verify migrations
+  // ran on the production volume (Fly's SSH tunnel can be flaky).
+  app.get("/api/admin/schema", requireAdmin, async (_req, res) => {
+    const cols = rawDb.prepare(`PRAGMA table_info(sifts);`).all();
+    res.json({ table: "sifts", columns: cols });
+  });
+
   // --- Feedback ---
   //
   // POST /api/feedback creates a feedback row. Open to both signed-in and

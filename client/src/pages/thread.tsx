@@ -345,7 +345,6 @@ function TurnCard({ turn }: { turn: any }) {
 function ThreadDot({ state }: { state: ThreadDetail["threadState"] }) {
   const colors: Record<string, string> = {
     open: "bg-primary/70",
-    open: "bg-primary/70",
     waiting: "bg-yellow-500/60",
     closed: "bg-muted-foreground/30",
     archived: "bg-muted-foreground/15",
