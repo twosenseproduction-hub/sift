@@ -172,6 +172,11 @@ if (!siftCols.some((c) => c.name === "current_move")) {
 if (!siftCols.some((c) => c.name === "closure_condition")) {
   sqlite.exec(`ALTER TABLE sifts ADD COLUMN closure_condition TEXT;`);
 }
+// Phase 3: add artifact_type for Operator artifact discriminated union.
+// Nullable; legacy rows and Personal sifts stay NULL.
+if (!siftCols.some((c) => c.name === "artifact_type")) {
+  sqlite.exec(`ALTER TABLE sifts ADD COLUMN artifact_type TEXT;`);
+}
 
 // Safe migration: add contact + consent columns to users if missing. Existing
 // rows get NULL email/phone and 0 for both consent flags (= never opted in).

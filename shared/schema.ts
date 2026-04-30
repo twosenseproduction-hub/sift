@@ -63,6 +63,10 @@ export const sifts = sqliteTable("sifts", {
   frontBurnerRank: integer("front_burner_rank"), // 1|2|3|null
   currentMove: text("current_move"), // string|null
   closureCondition: text("closure_condition"), // string|null
+  // Phase 3: which Operator artifact this sift represents. Null for
+  // Personal sifts (analysisSchema path), and for legacy rows created
+  // before Phase 3.
+  artifactType: text("artifact_type"), // 'operator_card'|'decision_memo'|'project_brief'|'stakeholder_brief'|null
 });
 
 
@@ -118,6 +122,116 @@ export const analysisSchema = z.object({
   signalReason: z.string(),
 });
 export type Analysis = z.infer<typeof analysisSchema>;
+
+// ────────────────────────────────────────────────────────────────────
+// Operator artifacts (Phase 3)
+// ────────────────────────────────────────────────────────────────────
+//
+// Operator-mode sifts return ONE of four discriminated artifact shapes.
+// All share a common envelope; specialized variants add fields. The model
+// picks the artifact type by content (priority: stakeholder_brief >
+// decision_memo > project_brief > operator_card; default operator_card).
+//
+// Personal-mode sifts continue to use analysisSchema unchanged.
+
+// reEntry — a compact, three-field recap surfaced when the user returns
+// to a thread later. `state` is presentational ("waiting" is rendered
+// in UI but stored as thread_state="open" on the row in Phase 3).
+export const reEntrySchema = z.object({
+  title: z.string().min(1).max(80),
+  state: z.enum(["live", "paused", "waiting"]),
+  lastMove: z.string().min(1),
+});
+export type ReEntry = z.infer<typeof reEntrySchema>;
+
+// frontBurnerRelevance — model recommendation only. Never auto-promotes.
+// score is 0–5 against the front-burner checklist; reason is one sentence.
+export const frontBurnerRelevanceSchema = z.object({
+  score: z.number().int().min(0).max(5),
+  reason: z.string().min(1),
+});
+export type FrontBurnerRelevance = z.infer<typeof frontBurnerRelevanceSchema>;
+
+// Common envelope shared by all four artifact variants.
+const operatorEnvelopeShape = {
+  coreIntent: z.string().min(1),
+  whatImHearing: z.string().min(1),
+  whatMattersNow: z.array(z.string()).min(2).max(4),
+  // Operator may legitimately have nothing loud — empty array is valid.
+  whatMayBeNoise: z.array(z.string()).max(3),
+  currentMove: z.string().min(1),
+  frontBurnerRelevance: frontBurnerRelevanceSchema,
+  reEntry: reEntrySchema,
+} as const;
+
+// 1. operator_card — default. No specialized fields.
+export const operatorCardSchema = z.object({
+  artifactType: z.literal("operator_card"),
+  ...operatorEnvelopeShape,
+});
+
+// 2. decision_memo — forced choice between named options.
+export const decisionMemoSchema = z.object({
+  artifactType: z.literal("decision_memo"),
+  ...operatorEnvelopeShape,
+  decisionQuestion: z.string().min(1),
+  options: z
+    .array(
+      z.object({
+        label: z.string().min(1),
+        summary: z.string().min(1),
+      }),
+    )
+    .min(2)
+    .max(4),
+  whyHard: z.string().min(1),
+  whatToRevisit: z.string().min(1),
+});
+
+// 3. project_brief — bounded deliverable, mixed strategy/execution/risk.
+export const projectBriefSchema = z.object({
+  artifactType: z.literal("project_brief"),
+  ...operatorEnvelopeShape,
+  objective: z.string().min(1),
+  currentReality: z.string().min(1),
+  risks: z.array(z.string()).min(1).max(3),
+  notTheProblem: z.string().min(1),
+  dependencies: z.array(z.string()).max(3),
+});
+
+// 4. stakeholder_brief — specific person is the load-bearing factor.
+export const stakeholderBriefSchema = z.object({
+  artifactType: z.literal("stakeholder_brief"),
+  ...operatorEnvelopeShape,
+  personName: z.string().min(1),
+  relationshipContext: z.string().min(1),
+  dynamicShape: z.string().min(1),
+  userPosition: z.string().min(1),
+  theirPosition: z.string().min(1),
+  directThing: z.string().min(1),
+});
+
+// Discriminated union covering all four variants. Use this for the
+// runOperatorAnalysis() return type and on the wire between server/UI.
+export const operatorArtifactSchema = z.discriminatedUnion("artifactType", [
+  operatorCardSchema,
+  decisionMemoSchema,
+  projectBriefSchema,
+  stakeholderBriefSchema,
+]);
+export type OperatorArtifact = z.infer<typeof operatorArtifactSchema>;
+
+// Literal enum of valid artifactType values. Used for the
+// sifts.artifact_type column and any narrowing on the client.
+export const operatorArtifactTypeSchema = z.enum([
+  "operator_card",
+  "decision_memo",
+  "project_brief",
+  "stakeholder_brief",
+]);
+export type OperatorArtifactType = z.infer<typeof operatorArtifactTypeSchema>;
+
+// ────────────────────────────────────────────────────────────────────
 
 export type SiftResult = Analysis & {
   id: string;
