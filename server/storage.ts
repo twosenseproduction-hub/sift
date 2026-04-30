@@ -178,6 +178,14 @@ if (!siftCols.some((c) => c.name === "artifact_type")) {
   sqlite.exec(`ALTER TABLE sifts ADD COLUMN artifact_type TEXT;`);
 }
 
+// Phase 4: add operator_artifact for the full Operator artifact payload.
+// Nullable; only populated on successful runOperatorAnalysis in Operator
+// mode. All existing Personal-compatible columns remain written as normal
+// via runAnalysis, so this column is purely additive and backward-safe.
+if (!siftCols.some((c) => c.name === "operator_artifact")) {
+  sqlite.exec(`ALTER TABLE sifts ADD COLUMN operator_artifact TEXT;`);
+}
+
 // Safe migration: add contact + consent columns to users if missing. Existing
 // rows get NULL email/phone and 0 for both consent flags (= never opted in).
 const userCols = sqlite

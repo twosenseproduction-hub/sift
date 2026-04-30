@@ -1555,6 +1555,24 @@ function routeThread(input: string): { mode: 'personal'|'operator', entrySignal:
       const id = newId();
 
       const { mode, entrySignal } = routeThread(input);
+      // Step 4: persist Operator artifact fields when runOperatorAnalysis succeeds.
+      // The Personal-compatible columns (themes, coreIntent, nextStep, reflection,
+      // matters, noise, signalReason) are always written via runAnalysis below —
+      // this shadow step only adds operator_artifact + derived fields on top.
+      let artifactType: string | undefined;
+      let operatorArtifact: string | undefined;
+      let currentMoveOverride: string | undefined;
+      if (mode === "operator") {
+        try {
+          const op = await runOperatorAnalysis(input);
+          artifactType = op.artifactType;
+          operatorArtifact = JSON.stringify(op);
+          currentMoveOverride = op.currentMove;
+          console.debug("[operator] artifact persisted:", op.artifactType);
+        } catch (err: unknown) {
+          console.warn("[operator] runOperatorAnalysis failed, persisting Personal-only result", err);
+        }
+      }
       await storage.createSift({
         id,
         matters: JSON.stringify(analysis.matters),
@@ -1572,8 +1590,10 @@ function routeThread(input: string): { mode: 'personal'|'operator', entrySignal:
         entrySignal,
         threadState: 'open',
         frontBurnerRank: null,
-        currentMove: null,
+        currentMove: currentMoveOverride ?? null,
         closureCondition: null,
+        artifactType: artifactType ?? null,
+        operatorArtifact: operatorArtifact ?? null,
       } as any);
       const result: SiftResult = {
         id,        input,

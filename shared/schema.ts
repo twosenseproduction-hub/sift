@@ -67,6 +67,9 @@ export const sifts = sqliteTable("sifts", {
   // Personal sifts (analysisSchema path), and for legacy rows created
   // before Phase 3.
   artifactType: text("artifact_type"), // 'operator_card'|'decision_memo'|'project_brief'|'stakeholder_brief'|null
+  // Phase 4: full serialized Operator artifact JSON. Only populated when
+  // runOperatorAnalysis succeeds in Operator mode; null otherwise.
+  operatorArtifact: text("operator_artifact"),
 });
 
 
