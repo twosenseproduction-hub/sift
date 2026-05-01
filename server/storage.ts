@@ -383,6 +383,12 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
+  // Phase 4: update currentMove on a sift row. Persists the evolving operator
+  // deepening frame across turns so re-entry shows the accurate current move.
+  async updateSiftCurrentMove(id: string, currentMove: string): Promise<void> {
+    db.update(sifts).set({ currentMove }).where(eq(sifts.id, id)).run();
+  }
+
   async createUser(params: CreateUserParams): Promise<User> {
     return db
       .insert(users)
