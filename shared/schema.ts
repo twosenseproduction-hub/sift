@@ -558,6 +558,10 @@ export const siftTurnMessageSchema = z.object({
   matters: z.array(z.string()).max(4).optional(),
   noise: z.array(z.string()).max(3).optional(),
   mini: z.string().optional(),
+  // Phase 4: operator deepening may return an updated currentMove so the
+  // sift row stays accurate across turns. Strictly optional — backward-
+  // compatible with every existing message.
+  operatorCurrentMove: z.string().optional(),
 });
 export type SiftTurnMessage = z.infer<typeof siftTurnMessageSchema>;
 
