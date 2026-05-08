@@ -315,6 +315,63 @@ async function runBreakdown(nextStep: string): Promise<{ microSteps: string[] }>
   return { microSteps: result.microSteps.map(String) };
 }
 
+// Auth utilities — token management and passphrase hashing
+const JWT_SECRET = process.env.JWT_SECRET || "sift-dev-secret-change-in-production";
+const JWT_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+// In-memory token store (sufficient for single-instance; swap for Redis in multi-instance)
+const validTokens = new Map<string, number>(); // token -> userId
+
+function issueToken(userId: number): string {
+  const payload = `${userId}:${Date.now()}`;
+  const sig = crypto.createHmac("sha256", JWT_SECRET).update(payload).digest("hex");
+  const token = Buffer.from(`${payload}:${sig}`).toString("base64url");
+  validTokens.set(token, userId);
+  return token;
+}
+
+function readToken(req: Request): number | null {
+  const h = req.headers.authorization;
+  if (!h?.startsWith("Bearer ")) return null;
+  const token = h.slice(7).trim();
+  const userId = validTokens.get(token);
+  if (!userId) return null;
+  return userId;
+}
+
+function revokeToken(token: string): void {
+  validTokens.delete(token);
+}
+
+// Passphrase hashing using scrypt (memory-hard, suitable for passwords)
+function hashPassphrase(passphrase: string): string {
+  const salt = crypto.randomBytes(16);
+  const hash = crypto.scryptSync(passphrase, salt, 64, {
+    N: 2 ** 17,
+    r: 8,
+    p: 1,
+    maxmem: 128 * 1024 * 1024,
+  });
+  return Buffer.concat([salt, hash]).toString("hex");
+}
+
+function verifyPassphrase(passphrase: string, storedHash: string): boolean {
+  try {
+    const buf = Buffer.from(storedHash, "hex");
+    const salt = buf.slice(0, 16);
+    const hash = buf.slice(16);
+    const computed = crypto.scryptSync(passphrase, salt, 64, {
+      N: 2 ** 17,
+      r: 8,
+      p: 1,
+      maxmem: 128 * 1024 * 1024,
+    });
+    return crypto.timingSafeEqual(hash, computed);
+  } catch {
+    return false;
+  }
+}
+
 function requireAuth(req: Request, res: Response, next: NextFunction) {
   const userId = readToken(req);
   if (!userId) {
