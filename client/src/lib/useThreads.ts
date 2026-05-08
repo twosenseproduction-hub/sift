@@ -1,16 +1,19 @@
-import type { ThreadListItem, ThreadDetail } from "@shared/schema";
+import type {
+  ThreadListItem,
+  ThreadDetail,
+  BreakdownResponse,
+} from "@shared/schema";
 import { apiRequest, queryClient } from "./queryClient";
 import { useMutation, useQuery } from "@tanstack/react-query";
 
 // GET /api/threads — all active threads for the signed-in user
-export function useThreads(options?: { enabled?: boolean }) {
+export function useThreads() {
   return useQuery<ThreadListItem[]>({
     queryKey: ["/api/threads"],
     queryFn: async () => {
       const res = await apiRequest("GET", "/api/threads");
       return (await res.json()).threads;
     },
-    enabled: options?.enabled ?? true,
   });
 }
 
@@ -50,6 +53,15 @@ export function usePatchThread() {
     onSuccess: (vars) => {
       queryClient.invalidateQueries({ queryKey: ["/api/threads"] });
       queryClient.invalidateQueries({ queryKey: ["/api/threads", vars.id] });
+    },
+  });
+}
+
+export function useBreakdown() {
+  return useMutation({
+    mutationFn: async ({ siftId, nextStep }: { siftId: string; nextStep: string }): Promise<BreakdownResponse> => {
+      const res = await apiRequest("POST", `/api/sift/${siftId}/breakdown`, { nextStep });
+      return res.json();
     },
   });
 }

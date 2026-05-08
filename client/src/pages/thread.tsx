@@ -9,6 +9,7 @@ import { DeepeningThread } from "@/components/deepening-thread";
 import { BookmarkCard } from "@/components/bookmark-card";
 import { AuthDialog } from "@/components/auth-dialog";
 import { cn } from "@/lib/utils";
+import { readResume } from "@/lib/resume";
 import type { ThreadDetail } from "@shared/schema";
 
 // Thread detail page — /thread/:id
@@ -102,6 +103,14 @@ export default function ThreadPage() {
     patch.mutate({ id: thread.id, frontBurnerRank: r });
   };
 
+  // True when there is a non-stale draft for this thread. When present,
+  // the BookmarkCard is suppressed so the composer is the primary
+  // re-entry surface with no interstitial prompts.
+  const hasDraft = (() => {
+    const resume = readResume();
+    return !!(resume && resume.siftId === id && resume.draftText?.trim());
+  })();
+
   return (
     <div className="min-h-screen flex flex-col">
       <Header />
@@ -174,7 +183,7 @@ export default function ThreadPage() {
                     State
                   </p>
                   <div className="flex gap-2 flex-wrap">
-                    {(["open", "closed", "archived"] as const).map((s) => (
+                    {(["active", "waiting", "closed", "archived"] as const).map((s) => (
                       <button
                         key={s}
                         onClick={() => commitState(s)}
@@ -228,33 +237,20 @@ export default function ThreadPage() {
                     placeholder="What needs to happen next…"
                   />
                 </div>
-
-                {/* Closure condition */}
-                <div>
-                  <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground/70 mb-2">
-                    When to close this thread
-                  </p>
-                  <textarea
-                    value={localClosure}
-                    onChange={(e) => setLocalClosure(e.target.value)}
-                    onBlur={() => commitClosure(localClosure)}
-                    rows={1}
-                    className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/40 resize-none"
-                    placeholder="What would make this done for now…"
-                  />
-                </div>
               </div>
             )}
           </div>
 
-          {/* Bookmark / re-entry card */}
-          {thread.bookmark && (
+          {/* Bookmark / re-entry card — hidden when a draft is pending,
+              since the DeepeningThread composer takes over as primary re-entry. */}
+          {thread.bookmark && !hasDraft && (
             <div className="mb-10">
               <BookmarkCard
                 bookmark={thread.bookmark}
                 defaultOpen={false}
                 onKeepProcessing={() => {}}
                 onCloseLoop={undefined}
+                siftId={thread.id}
               />
             </div>
           )}
@@ -285,6 +281,7 @@ export default function ThreadPage() {
                 initialBookmark={thread.bookmark ?? undefined}
                 onCare={() => {}}
                 onBookmarkUpdate={() => {}}
+                autoFocus={hasDraft}
               />
             </div>
           ) : (
@@ -345,6 +342,7 @@ function TurnCard({ turn }: { turn: any }) {
 function ThreadDot({ state }: { state: ThreadDetail["threadState"] }) {
   const colors: Record<string, string> = {
     open: "bg-primary/70",
+    active: "bg-primary/70",
     waiting: "bg-yellow-500/60",
     closed: "bg-muted-foreground/30",
     archived: "bg-muted-foreground/15",

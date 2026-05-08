@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import type { ResumeEntry } from "@/lib/resume";
+import { readResume, clearResume } from "@/lib/resume";
 import { Header, Footnote } from "@/components/brand";
 import { Composer, Result } from "@/components/sift-ui";
 import { AuthDialog } from "@/components/auth-dialog";

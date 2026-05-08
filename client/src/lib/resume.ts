@@ -1,29 +1,15 @@
-// Resume state — "pick up where you left off"
-//
-// Smallest clean implementation of a recovery hint. We persist just enough to
-// route the user back into a thread that was in progress: the sift id, an
-// "in progress" flag, and the last-touched timestamp. Bookmark content itself
-// is NOT duplicated here — the server is the source of truth for /s/:id.
-//
-// Storage: localStorage key "sift.resume". This is one of the narrowly-scoped
-// overrides of the no-storage rule (same pattern as sift.authToken and
-// sift.contactPromptDismissed) — persistence across a full page reload is
-// required for this feature to exist.
-//
-// Expiry: if a resume entry is older than 7 days we treat it as stale and
-// ignore it. This keeps the card from showing up weeks later out of nowhere.
+import { useState, useEffect } from "react";
+
+type ResumeEntry = {
+  siftId: string;
+  lastCheckpointAt?: number;
+  lastSortAt?: number;
+  draftText?: string;
+  updatedAt: number;
+};
 
 const KEY = "sift.resume";
 const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
-
-export interface ResumeState {
-  siftId: string;
-  updatedAt: number; // epoch ms
-  // Optional breadcrumbs — purely cosmetic for the recovery card. The
-  // authoritative data lives on the server.
-  lastCheckpointAt?: number;
-  lastSortAt?: number;
-}
 
 function safeWindow(): Window | null {
   try {
@@ -33,19 +19,18 @@ function safeWindow(): Window | null {
   }
 }
 
-export function readResume(): ResumeState | null {
+export function readResume(): ResumeEntry | null {
   const w = safeWindow();
   if (!w) return null;
   try {
     const raw = w.localStorage?.getItem(KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as ResumeState;
+    const parsed = JSON.parse(raw) as ResumeEntry;
     if (!parsed || typeof parsed.siftId !== "string" || !parsed.siftId) {
       return null;
     }
     if (typeof parsed.updatedAt !== "number") return null;
     if (Date.now() - parsed.updatedAt > MAX_AGE_MS) {
-      // Stale — clear silently so we don't keep surfacing an old thread.
       w.localStorage?.removeItem(KEY);
       return null;
     }
@@ -55,22 +40,33 @@ export function readResume(): ResumeState | null {
   }
 }
 
-export function writeResume(partial: Partial<ResumeState> & { siftId: string }) {
+export function writeResume(entry: {
+  siftId: string;
+  lastCheckpointAt?: number;
+  lastSortAt?: number;
+  draftText?: string;
+}) {
   const w = safeWindow();
   if (!w) return;
   try {
     const prior = readResume();
-    const merged: ResumeState = {
-      ...(prior && prior.siftId === partial.siftId ? prior : { siftId: partial.siftId, updatedAt: 0 }),
-      ...partial,
+    const merged: ResumeEntry = {
+      ...(prior && prior.siftId === entry.siftId ? prior : { siftId: entry.siftId, updatedAt: 0 }),
+      ...entry,
       updatedAt: Date.now(),
     };
     w.localStorage?.setItem(KEY, JSON.stringify(merged));
-    // Let listeners (Home) react without waiting for a remount or focus event.
     w.dispatchEvent(new CustomEvent("sift:resume-updated"));
   } catch {
     /* swallow — resume is best-effort */
   }
+}
+
+export function getResumeDraft(siftId: string): string | null {
+  const resume = readResume();
+  if (!resume) return null;
+  if (resume.siftId !== siftId) return null;
+  return resume.draftText ?? null;
 }
 
 export function clearResume() {
@@ -84,25 +80,23 @@ export function clearResume() {
   }
 }
 
-// React hook — reads the current resume state and keeps in sync with
-// write/clear events from anywhere in the app, plus cross-tab storage events.
-import { useEffect, useState } from "react";
+// DEPRECATED — kept for source compatibility during transition.
+// The old interface had optional lastCheckpointAt/lastSortAt on the shape
+// but no draftText. New call sites should use writeResume({ siftId, ... })
+// with explicit draftText instead.
+export function writeResumeLegacy(partial: { siftId: string; lastCheckpointAt?: number; lastSortAt?: number }) {
+  writeResume(partial);
+}
 
-export function useResume(): ResumeState | null {
-  const [state, setState] = useState<ResumeState | null>(() => readResume());
-
+// useResume — React hook that wraps readResume and subscribes to resume-change
+// events so the UI re-renders reactively when localStorage is updated.
+export function useResume(): ResumeEntry | null {
+  const [resume, setResume] = useState<ResumeEntry | null>(null);
   useEffect(() => {
-    const sync = () => setState(readResume());
-    window.addEventListener("sift:resume-updated", sync);
-    window.addEventListener("storage", (e) => {
-      if (e.key === null || e.key === KEY) sync();
-    });
-    window.addEventListener("focus", sync);
-    return () => {
-      window.removeEventListener("sift:resume-updated", sync);
-      window.removeEventListener("focus", sync);
-    };
+    setResume(readResume());
+    const onUpdate = () => setResume(readResume());
+    window.addEventListener("sift:resume-updated", onUpdate);
+    return () => window.removeEventListener("sift:resume-updated", onUpdate);
   }, []);
-
-  return state;
+  return resume;
 }

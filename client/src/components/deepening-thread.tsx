@@ -5,7 +5,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { SortPractice } from "@/components/sort-practice";
-import { writeResume, clearResume } from "@/lib/resume";
+import { writeResume, clearResume, getResumeDraft } from "@/lib/resume";
 import type {
   ThreadTurn,
   Bookmark,
@@ -39,6 +39,9 @@ interface DeepeningThreadProps {
   // Called whenever we receive a new bookmark from the server so the parent
   // can persist it to the cache (e.g. update the Shared page bookmark card).
   onBookmarkUpdate?: (bookmark: Bookmark) => void;
+  // When true, the composer textarea is auto-focused on mount if a draft
+  // was restored. Used by the thread page when resuming a mid-typing session.
+  autoFocus?: boolean;
 }
 
 export function DeepeningThread({
@@ -48,6 +51,7 @@ export function DeepeningThread({
   onCare,
   onClosed,
   onBookmarkUpdate,
+  autoFocus = false,
 }: DeepeningThreadProps) {
   const [turns, setTurns] = useState<ThreadTurn[]>(initialTurns);
   const [text, setText] = useState("");
@@ -57,6 +61,7 @@ export function DeepeningThread({
   const [closedReflection, setClosedReflection] = useState<string | null>(null);
   const { toast } = useToast();
   const endRef = useRef<HTMLDivElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   // Keep a ref of the latest bookmark so we don't trigger "converged" twice.
   const lastBookmarkRef = useRef<Bookmark | undefined>(initialBookmark);
@@ -71,6 +76,20 @@ export function DeepeningThread({
       endRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
     }
   }, [turns.length, closedReflection]);
+
+  // Restore a pending draft from localStorage on mount.
+  useEffect(() => {
+    const savedDraft = getResumeDraft(siftId);
+    if (savedDraft && savedDraft.trim()) {
+      setText(savedDraft);
+      if (autoFocus) {
+        // Defer until after the DOM has painted the composer.
+        requestAnimationFrame(() => {
+          textareaRef.current?.focus();
+        });
+      }
+    }
+  }, [siftId, autoFocus]);
 
   // If a closure turn already exists in initialTurns (returning to a closed
   // thread that somehow still entered deepening), surface its reflection.
@@ -118,6 +137,7 @@ export function DeepeningThread({
       writeResume({
         siftId,
         lastCheckpointAt: data.bookmark ? Date.now() : undefined,
+        draftText: "",
       });
       // If the server handed us a sort_prompt, the UI will pick it up via the
       // openSort memo. No extra action needed here.
@@ -176,7 +196,16 @@ export function DeepeningThread({
       siftId,
       lastSortAt: Date.now(),
       lastCheckpointAt: args.bookmark ? Date.now() : undefined,
+      draftText: "",
     });
+  }
+
+  function handleTextChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
+    const value = e.target.value;
+    setText(value);
+    // Save draft on every keystroke so mid-typing navigation or reload
+    // restores exactly where the user was.
+    writeResume({ siftId, draftText: value });
   }
 
   const closed = closedReflection !== null;
@@ -278,8 +307,9 @@ export function DeepeningThread({
       {!closed && !openSort && (
         <div className="pt-2" data-testid="composer-deepen">
           <Textarea
+            ref={(el) => (textareaRef.current = el)}
             value={text}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => handleTextChange(e)}
             onKeyDown={(e) => {
               // Cmd/Ctrl+Enter submits, matching the main composer.
               if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {

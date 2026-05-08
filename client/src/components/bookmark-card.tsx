@@ -1,7 +1,10 @@
 import { useState } from "react";
 import { Bookmark as BookmarkIcon, ChevronDown, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import type { Bookmark } from "@shared/schema";
+import { cn } from "@/lib/utils";
+import type { Bookmark, BreakdownResponse } from "@shared/schema";
+import { apiRequest } from "@/lib/queryClient";
+import type React from "react";
 
 // Compact re-entry card. Starts collapsed — shows just "Where you left this
 // thread" + a calm one-liner derived from the latest checkpoint. Tapping the
@@ -21,6 +24,8 @@ interface BookmarkCardProps {
   onCloseLoop?: () => void;
   // When rendered at the top of a thread page we want it open by default.
   defaultOpen?: boolean;
+  // Sift ID for the breakdown API call
+  siftId?: string;
 }
 
 export function BookmarkCard({
@@ -28,9 +33,30 @@ export function BookmarkCard({
   onKeepProcessing,
   onCloseLoop,
   defaultOpen = false,
+  siftId,
 }: BookmarkCardProps) {
   const [open, setOpen] = useState(defaultOpen);
+  const [breakdownLoading, setBreakdownLoading] = useState(false);
+  const [breakdownSteps, setBreakdownSteps] = useState<string[] | null>(null);
+  const [breakdownError, setBreakdownError] = useState(false);
   const p = bookmark.payload;
+
+  const handleBreakdown = async () => {
+    if (breakdownSteps || breakdownLoading) return;
+    setBreakdownLoading(true);
+    setBreakdownError(false);
+    try {
+      const res = await apiRequest("POST", `/api/sift/${siftId}/breakdown`, {
+        nextStep: p.nextStep,
+      });
+      const data: BreakdownResponse = await res.json();
+      setBreakdownSteps(data.microSteps);
+    } catch {
+      setBreakdownError(true);
+    } finally {
+      setBreakdownLoading(false);
+    }
+  };
 
   return (
     <section
@@ -129,6 +155,58 @@ export function BookmarkCard({
             <p className="text-[15px] leading-relaxed text-foreground/90">
               {p.nextStep}
             </p>
+            {/* Break down button */}
+            {siftId && (
+              <div className="mt-3">
+                <button
+                  type="button"
+                  onClick={handleBreakdown}
+                  disabled={breakdownLoading}
+                  className={cn(
+                    "text-[11px] text-primary/60 hover:text-primary transition-colors disabled:opacity-40",
+                    breakdownLoading && "animate-pulse"
+                  )}
+                  data-testid="button-breakdown"
+                >
+                  {breakdownLoading
+                    ? "Breaking it down…"
+                    : breakdownSteps
+                    ? "Break down again"
+                    : "Break it down"}
+                </button>
+
+                {/* Micro-steps box */}
+                {breakdownSteps && (
+                  <div
+                    className="mt-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-4 fade-in"
+                    data-testid="panel-micro-steps"
+                  >
+                    <p className="text-[10px] font-medium uppercase tracking-widest text-primary/70 mb-2">
+                      Smaller version
+                    </p>
+                    <ol className="space-y-1.5">
+                      {breakdownSteps.map((step, i) => (
+                        <li
+                          key={i}
+                          className="text-sm text-foreground/80 flex gap-2"
+                        >
+                          <span className="text-primary/50 mt-[0.15em] tabular-nums select-none">
+                            {i + 1}.
+                          </span>
+                          <span>{step}</span>
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+                )}
+
+                {breakdownError && (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Could not break it down right now.
+                  </p>
+                )}
+              </div>
+            )}
           </Section>
 
           <div className="pt-2 flex flex-wrap items-center gap-3">

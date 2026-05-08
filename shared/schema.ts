@@ -413,6 +413,27 @@ export type SiftListItem = {
   currentMove: string | null;
 };
 
+// Thread detail — full shape returned by GET /api/threads/:id
+export type ThreadDetail = {
+  id: string;
+  createdAt: number;
+  input: string;
+  inputMode: 'text' | 'voice';
+  coreIntent: string;
+  nextStep: string;
+  reflection: string;
+  status: SiftStatus;
+  mode: 'personal' | 'operator';
+  modeLocked: boolean;
+  entrySignal: string;
+  threadState: 'open' | 'closed' | 'archived';
+  frontBurnerRank: number | null;
+  currentMove: string | null;
+  closureCondition: string | null;
+  turns: ThreadTurn[];
+  bookmark?: Bookmark;
+};
+
 // ---- V1 enums ----
 export type SiftMode = 'personal' | 'operator';
 export type EntrySignal = 'explicit_project' | 'decision_language' | 'stakeholder' | 'structural_work' | 'explicit_request' | 'none';
@@ -673,6 +694,16 @@ export type SortResponse =
       bookmark?: Bookmark;
       converged?: boolean;
     };
+
+// ---- Breakdown (micro-steps) ----
+export const breakdownRequestSchema = z.object({
+  nextStep: z.string().min(1).max(1000),
+});
+export type BreakdownRequest = z.infer<typeof breakdownRequestSchema>;
+
+export type BreakdownResponse = {
+  microSteps: string[];
+};
 
 export type CloseResponse =
   | { type: "care" }

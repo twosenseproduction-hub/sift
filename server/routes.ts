@@ -9,7 +9,6 @@ import { screenForCrisis, screenOutputForCrisis } from "./crisis-screen";
 import {
   analyzeRequestSchema,
   analysisSchema,
-  operatorArtifactSchema,
   feedbackRequestSchema,
   feedbackStageSchema,
   feedbackSentimentSchema,
@@ -25,8 +24,8 @@ import {
   siftTurnMessageSchema,
   sortPromptPayloadSchema,
   sortRequestSchema,
+  breakdownRequestSchema,
   type Analysis,
-  type OperatorArtifact,
   type CheckinAnalysis,
   type CheckinResult,
   type SiftResult,
@@ -95,141 +94,6 @@ Rules:
 - reflection: A quiet observation. Honest. Not flattering. Under 20 words.
 - If the input is very short or unclear, still produce a best-effort pass — do not ask questions back. matters/noise can be tentative but must still be present.
 - Output JSON only. No prose before or after.`;
-
-// --- Operator analysis (Phase 3) ---
-//
-// OPERATOR fires only when routeThread() classifies the input as Operator
-// mode. The model picks ONE of four artifact types and returns a strict JSON
-// payload that conforms to operatorArtifactSchema. This prompt is isolated:
-// the Personal-mode SYSTEM_PROMPT path is unchanged, and runOperatorAnalysis
-// is not yet wired into POST /api/sift.
-const OPERATOR_SYSTEM_PROMPT = `You are Sift in Operator Mode.
-
-Operator Mode serves people inside active responsibility — founders, builders, decision-makers, parents managing live load. They came with something real: a project, a decision, a person, a structural pressure. Your job is to sift it down to a clean, actionable read so they can move.
-
-You write like a calm internal operator, a chief of staff, a disciplined advisor. Not a therapist. Not a coach. Not a hype man. No exclamation points. No emojis. No corporate language. No "great question," "let's dive in," or generic encouragement.
-
-VOICE RULES (Operator-specific, non-negotiable):
-- Situation-led, not "you"-led. Open with the pattern, the bottleneck, the missing decision, or the load-bearing dynamic. "You" appears only when it adds clarity without sounding accusatory.
-  Good: "What this keeps running into is a load-bearing decision that has not been made yet."
-  Good: "The pressure here is coming from unresolved sequencing, not lack of effort."
-  Avoid: "You need to," "You have to," "You should just."
-- Short sentences (8–25 words, 1–2 clauses). Plain, physical, concrete language. No therapy metaphors ("shadow work," "parts," "inner child"). No productivity metaphors ("unlock," "optimize," "10x," "rocket fuel").
-- Direct, not tentative. Use "perhaps" sparingly. Sift is willing to name the actual constraint.
-- "Shape" is permitted as a brand word. "Throughput," "front burner," "current move," "load-bearing" are permitted. "Crushing it," "leveling up," "deep work" are not.
-
-${SAFETY_CLAUSE}
-
-ARTIFACT SELECTION (priority order — pick the FIRST match):
-1. stakeholder_brief — A specific named person is the load-bearing factor. Friction with a cofounder, client, investor, partner, board member, or team member is what's actually shaping the situation. The decision and the work are downstream of how this relationship resolves.
-2. decision_memo — The thread centers on a forced choice between named options. The user is circling, the cost of indecision is rising, and there are at least two real paths in play.
-3. project_brief — A bounded named deliverable or outcome ("ship the pricing page," "launch the cohort," "redo onboarding") needs compression. Strategy, execution, and emotion are mixed together.
-4. operator_card — Default. Use when the situation is still forming, the user needs a quick sort, or none of the above apply cleanly. NEVER force a higher-tier artifact when the input does not actually carry it.
-
-EVERY ARTIFACT INCLUDES THIS ENVELOPE (non-negotiable fields):
-- artifactType: one of "operator_card" | "decision_memo" | "project_brief" | "stakeholder_brief"
-- coreIntent: one sentence. What they actually want beneath the surface. Start with a verb.
-- whatImHearing: one sentence. The Operator-level mirror — name the pattern or load-bearing dynamic. No advice.
-- whatMattersNow: 2–4 short phrases (3–8 words each). The central factors right now. Drawn from the user's language where possible. No trailing punctuation.
-- whatMayBeNoise: 0–3 short phrases (3–8 words each). What sounds urgent but isn't central, or what feels heavy but isn't blocking. Empty array allowed when nothing is actually loud.
-- currentMove: ONE sentence. The single most important action right now, OR the sequencing move that unblocks the rest. Must be doable in 5–30 minutes. Starts with a verb. No "try." No "think about." Never empty.
-- frontBurnerRelevance: { score: 0–5, reason: one sentence }. Score = how many of these are TRUE: (1) materially affects outcomes in ≤2 weeks, (2) user can take a meaningful next move now, (3) delay increases cost or drift, (4) NOT waiting on external person/event, (5) NOT speculative. This is a recommendation. Sift never auto-promotes anything.
-- reEntry: { title: ≤80 chars short label for re-entry surface; state: "live" | "paused" | "waiting"; lastMove: one sentence summarizing where this leaves off }. "live" = ready to move. "paused" = user has the read but is sitting with it. "waiting" = blocked on someone or something external.
-
-VARIANT FIELDS (in addition to the envelope):
-
-operator_card — no extra fields. Use when no specialized shape is warranted.
-
-decision_memo:
-  - decisionQuestion: one sentence stating the choice in plain terms.
-  - options: 2–4 entries, each { label: short name, summary: one sentence on what it means and trades off }.
-  - whyHard: one sentence on what's actually making this hard to resolve.
-  - whatToRevisit: one sentence on what condition or information would reopen this.
-
-project_brief:
-  - objective: one sentence on what "done" looks like.
-  - currentReality: one sentence on where things actually are right now, including what's going sideways.
-  - risks: 1–3 short phrases. The actual risks to the goal.
-  - notTheProblem: one sentence on what the user keeps circling that isn't actually blocking progress.
-  - dependencies: 0–3 short phrases. External blockers or waiting items. Empty array when none.
-
-stakeholder_brief:
-  - personName: the specific person — first name or role label, never a fabricated name.
-  - relationshipContext: one sentence on the relationship (cofounder, client, partner, etc.).
-  - dynamicShape: one sentence on the real tension or alignment underneath the surface behavior.
-  - userPosition: one sentence on what the user actually wants from this.
-  - theirPosition: one sentence on what the other person appears to want or be optimizing for.
-  - directThing: one sentence. The thing that, if said plainly to that person, would most change the dynamic.
-
-OUTPUT JSON SHAPES (exact keys, exact discriminator):
-
-operator_card:
-{
-  "artifactType": "operator_card",
-  "coreIntent": "...",
-  "whatImHearing": "...",
-  "whatMattersNow": ["...", "..."],
-  "whatMayBeNoise": ["..."],
-  "currentMove": "...",
-  "frontBurnerRelevance": { "score": 3, "reason": "..." },
-  "reEntry": { "title": "...", "state": "live", "lastMove": "..." }
-}
-
-decision_memo:
-{
-  "artifactType": "decision_memo",
-  "coreIntent": "...",
-  "whatImHearing": "...",
-  "whatMattersNow": ["...", "..."],
-  "whatMayBeNoise": ["..."],
-  "currentMove": "...",
-  "frontBurnerRelevance": { "score": 4, "reason": "..." },
-  "reEntry": { "title": "...", "state": "live", "lastMove": "..." },
-  "decisionQuestion": "...",
-  "options": [
-    { "label": "...", "summary": "..." },
-    { "label": "...", "summary": "..." }
-  ],
-  "whyHard": "...",
-  "whatToRevisit": "..."
-}
-
-project_brief:
-{
-  "artifactType": "project_brief",
-  "coreIntent": "...",
-  "whatImHearing": "...",
-  "whatMattersNow": ["...", "..."],
-  "whatMayBeNoise": ["..."],
-  "currentMove": "...",
-  "frontBurnerRelevance": { "score": 4, "reason": "..." },
-  "reEntry": { "title": "...", "state": "live", "lastMove": "..." },
-  "objective": "...",
-  "currentReality": "...",
-  "risks": ["...", "..."],
-  "notTheProblem": "...",
-  "dependencies": ["..."]
-}
-
-stakeholder_brief:
-{
-  "artifactType": "stakeholder_brief",
-  "coreIntent": "...",
-  "whatImHearing": "...",
-  "whatMattersNow": ["...", "..."],
-  "whatMayBeNoise": ["..."],
-  "currentMove": "...",
-  "frontBurnerRelevance": { "score": 3, "reason": "..." },
-  "reEntry": { "title": "...", "state": "waiting", "lastMove": "..." },
-  "personName": "...",
-  "relationshipContext": "...",
-  "dynamicShape": "...",
-  "userPosition": "...",
-  "theirPosition": "...",
-  "directThing": "..."
-}
-
-Output JSON only. No prose before or after. No markdown fences.`;
 
 // --- Deepening (threaded) ---
 //
@@ -394,70 +258,36 @@ Rules:
 - "nextStep": ONE action. Starts with a verb. Adjusted based on the outcome — not a restatement.
 - Output JSON only. No prose before or after.`;
 
-function newId(): string {
-  const chars = "abcdefghijkmnopqrstuvwxyz23456789";
-  let s = "";
-  for (let i = 0; i < 8; i++) s += chars[Math.floor(Math.random() * chars.length)];
-  return s;
-}
+// --- Breakdown (micro-steps) ---
+// Fires when the user wants to shrink a daunting next step into 3 trivially
+// small micro-steps that reduce activation energy and build momentum.
+const BREAKDOWN_SYSTEM_PROMPT = `You are Sift breaking down a next step into micro-steps.
 
-// --- Passphrase hashing (scrypt) ---
-function hashPassphrase(passphrase: string): string {
-  const salt = crypto.randomBytes(16).toString("hex");
-  const derived = crypto.scryptSync(passphrase, salt, 64).toString("hex");
-  return `${salt}:${derived}`;
-}
+The user has a next step that still feels too daunting. Your only job is to break it into exactly 3 microscopic actions that make starting feel impossible to fail.
 
-function verifyPassphrase(passphrase: string, stored: string): boolean {
-  const [salt, derived] = stored.split(":");
-  if (!salt || !derived) return false;
-  const test = crypto.scryptSync(passphrase, salt, 64).toString("hex");
-  const a = Buffer.from(derived, "hex");
-  const b = Buffer.from(test, "hex");
-  if (a.length !== b.length) return false;
-  return crypto.timingSafeEqual(a, b);
-}
+Rules — non-negotiable:
+- Return strict JSON in this shape: { "microSteps": ["...", "...", "..."] }
+- Exactly 3 items, no more, no fewer.
+- Each must be a concrete action starting with a verb.
+- Each should take roughly 30 seconds to 3 minutes to start.
+- Keep each under 12 words.
+- No explanation, encouragement, or coaching language.
+- Order from easiest to slightly more committed.
+- Do not number them. No periods at the end.
 
-// --- Bearer-token auth (the deploy proxy strips Set-Cookie, so we can't use cookies) ---
-// Tokens map to userIds in SQLite so sessions survive server restarts/redeploys.
-// Client keeps the token in localStorage and sends it as `Authorization: Bearer <token>`.
-const insertSessionStmt = rawDb.prepare(
-  `INSERT INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)`,
-);
-const readSessionStmt = rawDb.prepare(
-  `SELECT user_id AS userId FROM sessions WHERE token = ?`,
-);
-const deleteSessionStmt = rawDb.prepare(
-  `DELETE FROM sessions WHERE token = ?`,
-);
+${SAFETY_CLAUSE}
 
-function issueToken(userId: number): string {
-  const token = crypto.randomBytes(32).toString("hex");
-  insertSessionStmt.run(token, userId, Date.now());
-  return token;
-}
+Output JSON only. No prose before or after.`;
 
-function readToken(req: Request): number | null {
-  const h = req.headers.authorization;
-  if (!h || !h.startsWith("Bearer ")) return null;
-  const token = h.slice(7).trim();
-  const row = readSessionStmt.get(token) as { userId: number } | undefined;
-  return row ? row.userId : null;
-}
-
-function revokeToken(token: string): void {
-  deleteSessionStmt.run(token);
-}
-
-async function runAnalysis(input: string): Promise<Analysis> {
+async function runBreakdown(nextStep: string): Promise<{ microSteps: string[] }> {
   const msg = await client.messages.create({
     model: MODEL,
-    max_tokens: 1024,
-    system: SYSTEM_PROMPT,
+    max_tokens: 256,
+    system: BREAKDOWN_SYSTEM_PROMPT,
     messages: [
       {
         role: "user",
-        content: `Here is what I'm holding right now:\n\n${input}\n\nSift it. Return JSON only.`,
+        content: `Break this down into 3 micro-steps:\n\n${nextStep}`,
       },
     ],
   });
@@ -477,458 +307,12 @@ async function runAnalysis(input: string): Promise<Analysis> {
     if (!match) throw new Error("Model did not return JSON");
     parsed = JSON.parse(match[0]);
   }
-  return analysisSchema.parse(parsed);
-}
 
-// runOperatorAnalysis — Phase 3 helper. Mirrors runAnalysis but uses the
-// Operator system prompt and validates against the operatorArtifactSchema
-// discriminated union. Returns one of four artifact shapes. This helper is
-// intentionally NOT wired into any route yet; it exists so we can validate
-// prompt + parsing in isolation before touching the request path.
-//
-// Failure modes are explicit: model returns non-JSON → throws "Model did not
-// return JSON". Model returns JSON that doesn't match the discriminated
-// union → throws a Zod validation error. Callers decide whether to fall back
-// to runAnalysis() or surface the failure. Nothing is persisted to the DB
-// from inside this function.
-async function runOperatorAnalysis(input: string): Promise<OperatorArtifact> {
-  const msg = await client.messages.create({
-    model: MODEL,
-    max_tokens: 1024,
-    system: OPERATOR_SYSTEM_PROMPT,
-    messages: [
-      {
-        role: "user",
-        content: `Here is what I'm holding right now:\n\n${input}\n\nRoute it as Operator. Pick the right artifact type and return JSON only.`,
-      },
-    ],
-  });
-
-  const textBlock = msg.content.find((b: any) => b.type === "text") as any;
-  const raw = (textBlock?.text ?? "").trim();
-  const cleaned = raw
-    .replace(/^```(?:json)?\s*/i, "")
-    .replace(/\s*```\s*$/i, "")
-    .trim();
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(cleaned);
-  } catch (e) {
-    const match = cleaned.match(/\{[\s\S]*\}/);
-    if (!match) throw new Error("Model did not return JSON");
-    parsed = JSON.parse(match[0]);
+  const result = parsed as { microSteps: unknown };
+  if (!Array.isArray(result.microSteps) || result.microSteps.length !== 3) {
+    throw new Error("Model returned wrong shape");
   }
-  return operatorArtifactSchema.parse(parsed);
-}
-
-// --- Deepening helpers ---
-
-// Compact JSON extractor used by all three LLM modes below.
-function extractJson(raw: string): any {
-  const cleaned = raw
-    .trim()
-    .replace(/^```(?:json)?\s*/i, "")
-    .replace(/\s*```\s*$/i, "")
-    .trim();
-  try {
-    return JSON.parse(cleaned);
-  } catch {
-    const m = cleaned.match(/\{[\s\S]*\}/);
-    if (!m) throw new Error("Model did not return JSON");
-    return JSON.parse(m[0]);
-  }
-}
-
-// Render the full thread into a compact user-role transcript for the model.
-function renderThreadForModel(args: {
-  originalInput: string;
-  coreIntent: string;
-  firstNextStep: string;
-  turns: ThreadTurn[];
-  latestUserText?: string;
-}): string {
-  const lines: string[] = [];
-  lines.push(`Original input:\n${args.originalInput}`);
-  lines.push("");
-  lines.push(`Original coreIntent: ${args.coreIntent}`);
-  lines.push(`Original next step: ${args.firstNextStep}`);
-  lines.push("");
-  lines.push("Thread so far (oldest first):");
-  if (args.turns.length === 0) {
-    lines.push("  (no turns yet)");
-  } else {
-    for (const t of args.turns) {
-      if (t.role === "user" && t.kind === "message") {
-        lines.push(`USER: ${t.text}`);
-      } else if (t.role === "sift" && t.kind === "message") {
-        const m = t.message;
-        const parts: string[] = [];
-        if (m.mirror) parts.push(`mirror=${m.mirror}`);
-        if (m.question) parts.push(`question=${m.question}`);
-        if (m.matters?.length) parts.push(`matters=[${m.matters.join(" | ")}]`);
-        if (m.noise?.length) parts.push(`noise=[${m.noise.join(" | ")}]`);
-        if (m.mini) parts.push(`mini=${m.mini}`);
-        lines.push(`SIFT: ${parts.join("; ")}`);
-      } else if (t.role === "sift" && t.kind === "checkpoint") {
-        const c = t.checkpoint;
-        lines.push(
-          `SIFT (checkpoint): pointing=${c.pointing}; matters=[${c.matters.join(
-            " | ",
-          )}]; noise=[${c.noise.join(
-            " | ",
-          )}]; lastLanded=${c.lastLanded}; nextStep=${c.nextStep}`,
-        );
-      } else if (t.role === "sift" && t.kind === "closure") {
-        lines.push(`SIFT (closure): ${t.reflection}`);
-      } else if (t.role === "sift" && t.kind === "sort_prompt") {
-        lines.push(
-          `SIFT (sort_prompt): offered phrases for sorting: [${t.sortPrompt.items.join(
-            " | ",
-          )}]`,
-        );
-      } else if (t.role === "user" && t.kind === "sort_result") {
-        if (t.sortResult.skipped) {
-          lines.push(`USER (sort_result): skipped the sort.`);
-        } else {
-          lines.push(
-            `USER (sort_result): matters=[${t.sortResult.matters.join(
-              " | ",
-            )}]; noise=[${t.sortResult.noise.join(
-              " | ",
-            )}]; unsure=[${t.sortResult.unsure.join(" | ")}]`,
-          );
-        }
-      }
-    }
-  }
-  if (args.latestUserText) {
-    lines.push("");
-    lines.push(`Latest user reply:\n${args.latestUserText}`);
-  }
-  return lines.join("\n");
-}
-
-// Generate the 6–8 thread-derived phrases for the sort activity. Items are
-// deduplicated post-hoc and capped to 8. We fall back to a minimal set only
-// if the model returns something unusable — never to generic words.
-async function runSortItems(args: {
-  originalInput: string;
-  coreIntent: string;
-  firstNextStep: string;
-  turns: ThreadTurn[];
-}): Promise<SortPromptPayload> {
-  const userBlock =
-    renderThreadForModel(args) +
-    "\n\nProduce the Signal / Noise practice items. Return JSON only.";
-  const msg = await client.messages.create({
-    model: MODEL,
-    max_tokens: 512,
-    system: SORT_ITEMS_SYSTEM_PROMPT,
-    messages: [{ role: "user", content: userBlock }],
-  });
-  const textBlock = msg.content.find((b: any) => b.type === "text") as any;
-  const parsed = extractJson((textBlock?.text ?? "").trim());
-  const validated = sortPromptPayloadSchema.parse(parsed);
-  // Dedupe and trim to keep the practice pane visually calm.
-  const seen = new Set<string>();
-  const unique: string[] = [];
-  for (const raw of validated.items) {
-    const item = raw.trim().replace(/[.“”"]+$/g, "");
-    const key = item.toLowerCase();
-    if (!item || seen.has(key)) continue;
-    seen.add(key);
-    unique.push(item);
-    if (unique.length >= 8) break;
-  }
-  return {
-    intro: validated.intro.trim(),
-    items: unique.length >= 4 ? unique : validated.items,
-  };
-}
-
-// Output screen on the sort prompt. Runs the same crisis output screen over
-// the flattened intro + items text for defense in depth.
-function screenSortPromptForCrisis(p: SortPromptPayload): boolean {
-  return screenOutputForCrisis({ intro: p.intro, items: p.items });
-}
-
-async function runDeepening(args: {
-  originalInput: string;
-  coreIntent: string;
-  firstNextStep: string;
-  turns: ThreadTurn[];
-  latestUserText: string;
-}): Promise<SiftTurnMessage> {
-  const userBlock =
-    renderThreadForModel(args) +
-    "\n\nRespond as Sift in Deepening Mode. Return JSON only.";
-  const msg = await client.messages.create({
-    model: MODEL,
-    max_tokens: 512,
-    system: DEEPEN_SYSTEM_PROMPT,
-    messages: [{ role: "user", content: userBlock }],
-  });
-  const textBlock = msg.content.find((b: any) => b.type === "text") as any;
-  const parsed = extractJson((textBlock?.text ?? "").trim());
-  const message = siftTurnMessageSchema.parse(parsed);
-  // Ensure at least one field was populated; if the model returned {} coerce
-  // into a gentle fallback rather than crashing the route.
-  if (
-    !message.mirror &&
-    !message.question &&
-    !message.matters?.length &&
-    !message.noise?.length &&
-    !message.mini
-  ) {
-    return { question: "Say a little more about that." };
-  }
-  return message;
-}
-
-async function runCheckpoint(args: {
-  originalInput: string;
-  coreIntent: string;
-  firstNextStep: string;
-  turns: ThreadTurn[];
-}): Promise<BookmarkPayload> {
-  const userBlock =
-    renderThreadForModel(args) +
-    "\n\nProduce a Checkpoint. Return JSON only.";
-  const msg = await client.messages.create({
-    model: MODEL,
-    max_tokens: 1024,
-    system: CHECKPOINT_SYSTEM_PROMPT,
-    messages: [{ role: "user", content: userBlock }],
-  });
-  const textBlock = msg.content.find((b: any) => b.type === "text") as any;
-  const parsed = extractJson((textBlock?.text ?? "").trim());
-  return bookmarkPayloadSchema.parse(parsed);
-}
-
-async function runClosure(args: {
-  originalInput: string;
-  coreIntent: string;
-  firstNextStep: string;
-  turns: ThreadTurn[];
-}): Promise<string> {
-  const userBlock =
-    renderThreadForModel(args) +
-    "\n\nClose the loop. Return JSON only.";
-  const msg = await client.messages.create({
-    model: MODEL,
-    max_tokens: 300,
-    system: CLOSE_SYSTEM_PROMPT,
-    messages: [{ role: "user", content: userBlock }],
-  });
-  const textBlock = msg.content.find((b: any) => b.type === "text") as any;
-  const parsed = extractJson((textBlock?.text ?? "").trim());
-  const reflection = typeof parsed?.reflection === "string" ? parsed.reflection.trim() : "";
-  if (!reflection) return "You stayed with something long enough to notice where it wanted to rest.";
-  return reflection;
-}
-
-// Convergence: does the newest checkpoint repeat the previous one? We take a
-// small token-set intersection over matters + nextStep normalized to words of
-// length >= 3. If the Jaccard ratio is high, we flag the thread as converged.
-function tokenize(s: string): Set<string> {
-  return new Set(
-    s
-      .toLowerCase()
-      .replace(/[^a-z0-9\s]/g, " ")
-      .split(/\s+/)
-      .filter((w) => w.length >= 3),
-  );
-}
-function detectConvergence(
-  prev: BookmarkPayload | undefined,
-  next: BookmarkPayload,
-): boolean {
-  if (!prev) return false;
-  const prevBag = tokenize(
-    [...prev.matters, prev.nextStep, prev.lastLanded].join(" "),
-  );
-  const nextBag = tokenize(
-    [...next.matters, next.nextStep, next.lastLanded].join(" "),
-  );
-  if (prevBag.size === 0 || nextBag.size === 0) return false;
-  let overlap = 0;
-  nextBag.forEach((w) => {
-    if (prevBag.has(w)) overlap++;
-  });
-  // Union size = prev + next - overlap (avoids spreading a Set into an array).
-  const union = prevBag.size + nextBag.size - overlap;
-  if (union === 0) return false;
-  const jaccard = overlap / union;
-  return jaccard >= 0.55;
-}
-
-// --- Sort cadence helpers ---
-//
-// A sort is "open" when the most recent sort turn is a sort_prompt with no
-// sort_result that follows it. We look backward through the thread so the
-// lookup is O(turns).
-function findOpenSortPrompt(
-  turns: ThreadTurn[],
-): Extract<ThreadTurn, { role: "sift"; kind: "sort_prompt" }> | null {
-  for (let i = turns.length - 1; i >= 0; i--) {
-    const t = turns[i];
-    if (t.role === "user" && t.kind === "sort_result") return null;
-    if (t.role === "sift" && t.kind === "sort_prompt") return t;
-  }
-  return null;
-}
-
-// How many user message turns have happened since the last sort_result. Used
-// so two sort pauses don't stack inside the same few turns.
-function countUserMessagesSinceLastSort(turns: ThreadTurn[]): number {
-  let count = 0;
-  for (let i = turns.length - 1; i >= 0; i--) {
-    const t = turns[i];
-    if (t.role === "user" && t.kind === "sort_result") return count;
-    if (t.role === "user" && t.kind === "message") count++;
-  }
-  // No prior sort at all — treat everything as "since last sort".
-  return count;
-}
-
-// Merge the user's sort into an existing bookmark column. Priority:
-//   1. Everything the user placed into THIS column — in their order.
-//   2. Prior entries that were NOT moved to the opposite column by the user.
-//      (If they put a phrase into noise, don't keep it in matters.)
-function mergePreservingUserSort(
-  prior: string[],
-  userThisColumn: string[],
-  userOtherColumn: string[],
-  cap: number,
-): string[] {
-  const lower = (s: string) => s.trim().toLowerCase();
-  const opposed = new Set(userOtherColumn.map(lower));
-  const chosen = new Set(userThisColumn.map(lower));
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const item of userThisColumn) {
-    const k = lower(item);
-    if (seen.has(k)) continue;
-    seen.add(k);
-    out.push(item);
-  }
-  for (const item of prior) {
-    const k = lower(item);
-    if (seen.has(k)) continue;
-    if (opposed.has(k)) continue; // user moved it to the other side
-    if (chosen.has(k)) continue; // already covered
-    seen.add(k);
-    out.push(item);
-  }
-  return out.slice(0, cap);
-}
-
-// Shared checkpoint emitter — used by both /deepen and /sort. Appends the
-// checkpoint turn into `newTurns` on success, upserts the bookmark, and
-// returns the bookmark + convergence flag. On error or crisis trip, returns
-// null (caller proceeds without a checkpoint).
-async function tryEmitCheckpoint(args: {
-  sift: Sift;
-  turnsForModel: ThreadTurn[];
-  newTurns: ThreadTurn[];
-}): Promise<{ bookmark: Bookmark; converged: boolean } | null> {
-  try {
-    const checkpointPayload = await runCheckpoint({
-      originalInput: args.sift.input,
-      coreIntent: args.sift.coreIntent,
-      firstNextStep: args.sift.nextStep,
-      turns: args.turnsForModel,
-    });
-    if (
-      screenOutputForCrisis({
-        pointing: checkpointPayload.pointing,
-        unfolded: checkpointPayload.unfolded,
-        matters: checkpointPayload.matters,
-        noise: checkpointPayload.noise,
-        lastLanded: checkpointPayload.lastLanded,
-        nextStep: checkpointPayload.nextStep,
-      })
-    ) {
-      console.warn("[crisis-screen] checkpoint output tripped — discarding");
-      return null;
-    }
-    const prev = await storage.getBookmark(args.sift.id);
-    const converged = detectConvergence(prev?.payload, checkpointPayload);
-    const bm = await storage.upsertBookmark(args.sift.id, checkpointPayload);
-    const checkpointTurn = await storage.appendTurn({
-      siftId: args.sift.id,
-      role: "sift",
-      kind: "checkpoint",
-      payload: JSON.stringify(checkpointPayload),
-    });
-    args.newTurns.push(checkpointTurn);
-    return { bookmark: bm, converged };
-  } catch (err) {
-    console.warn("[deepen] checkpoint failed:", err);
-    return null;
-  }
-}
-
-// Signal screen over a deepening message — a targeted subset of the stored
-// analysis screen. We stringify the message payload and run the same output
-// screener against it for defense in depth.
-function screenDeepenForCrisis(m: SiftTurnMessage): boolean {
-  return screenOutputForCrisis({
-    mirror: m.mirror ?? "",
-    question: m.question ?? "",
-    mini: m.mini ?? "",
-    matters: m.matters ?? [],
-    noise: m.noise ?? [],
-  });
-}
-
-async function runCheckinAnalysis(
-  originalInput: string,
-  originalNextStep: string,
-  status: string,
-  note: string
-): Promise<CheckinAnalysis> {
-  const statusLabel =
-    status === "did_it"
-      ? "I did it."
-      : status === "did_not"
-      ? "I didn't do it."
-      : "I'm still working on it.";
-
-  const userBlock = `Original sift input:
-${originalInput}
-
-Original next step you gave me:
-${originalNextStep}
-
-Status: ${statusLabel}${note ? `\n\nWhat actually happened:\n${note}` : ""}
-
-Sift what this outcome reveals. Return JSON only.`;
-
-  const msg = await client.messages.create({
-    model: MODEL,
-    max_tokens: 1024,
-    system: CHECKIN_SYSTEM_PROMPT,
-    messages: [{ role: "user", content: userBlock }],
-  });
-
-  const textBlock = msg.content.find((b: any) => b.type === "text") as any;
-  const raw = (textBlock?.text ?? "").trim();
-  const cleaned = raw
-    .replace(/^```(?:json)?\s*/i, "")
-    .replace(/\s*```\s*$/i, "")
-    .trim();
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(cleaned);
-  } catch (e) {
-    const match = cleaned.match(/\{[\s\S]*\}/);
-    if (!match) throw new Error("Model did not return JSON");
-    parsed = JSON.parse(match[0]);
-  }
-  return checkinAnalysisSchema.parse(parsed);
+  return { microSteps: result.microSteps.map(String) };
 }
 
 function requireAuth(req: Request, res: Response, next: NextFunction) {
@@ -1226,13 +610,6 @@ export async function registerRoutes(
         lastSiftAt: r.lastSiftAt,
       })),
     });
-  });
-
-  // Live schema introspection — admin only. Used to verify migrations
-  // ran on the production volume (Fly's SSH tunnel can be flaky).
-  app.get("/api/admin/schema", requireAdmin, async (_req, res) => {
-    const cols = rawDb.prepare(`PRAGMA table_info(sifts);`).all();
-    res.json({ table: "sifts", columns: cols });
   });
 
   // --- Feedback ---
@@ -1555,24 +932,6 @@ function routeThread(input: string): { mode: 'personal'|'operator', entrySignal:
       const id = newId();
 
       const { mode, entrySignal } = routeThread(input);
-      // Step 4: persist Operator artifact fields when runOperatorAnalysis succeeds.
-      // The Personal-compatible columns (themes, coreIntent, nextStep, reflection,
-      // matters, noise, signalReason) are always written via runAnalysis below —
-      // this shadow step only adds operator_artifact + derived fields on top.
-      let artifactType: string | undefined;
-      let operatorArtifact: string | undefined;
-      let currentMoveOverride: string | undefined;
-      if (mode === "operator") {
-        try {
-          const op = await runOperatorAnalysis(input);
-          artifactType = op.artifactType;
-          operatorArtifact = JSON.stringify(op);
-          currentMoveOverride = op.currentMove;
-          console.debug("[operator] artifact persisted:", op.artifactType);
-        } catch (err: unknown) {
-          console.warn("[operator] runOperatorAnalysis failed, persisting Personal-only result", err);
-        }
-      }
       await storage.createSift({
         id,
         matters: JSON.stringify(analysis.matters),
@@ -1590,10 +949,8 @@ function routeThread(input: string): { mode: 'personal'|'operator', entrySignal:
         entrySignal,
         threadState: 'open',
         frontBurnerRank: null,
-        currentMove: currentMoveOverride ?? null,
+        currentMove: null,
         closureCondition: null,
-        artifactType: artifactType ?? null,
-        operatorArtifact: operatorArtifact ?? null,
       } as any);
       const result: SiftResult = {
         id,        input,
@@ -1692,12 +1049,8 @@ function routeThread(input: string): { mode: 'personal'|'operator', entrySignal:
 
   // Update thread fields (state, bucket, current_move, closure_condition)
   app.patch("/api/threads/:id", requireAuth, async (req, res) => {
-    const parsed = updateThreadSchema.safeParse(req.body);
-    if (!parsed.success) {
-      return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
-    }
     const userId = (req as any).userId as number;
-    const updated = await storage.updateThread(String(req.params.id), userId, parsed.data);
+    const updated = await storage.updateThread(String(req.params.id), userId, req.body as any);
     if (!updated) return res.status(404).json({ error: "Not found" });
     res.json({ thread: updated });
   });
@@ -2189,6 +1542,24 @@ function routeThread(input: string): { mode: 'personal'|'operator', entrySignal:
       console.error("checkin error", err);
       res.status(500).json({
         error: "Could not process check-in right now.",
+        detail: err?.message ?? String(err),
+      });
+    }
+  });
+
+  // POST /api/sift/:id/breakdown — break a next step into 3 micro-steps
+  app.post("/api/sift/:id/breakdown", async (req, res) => {
+    const parsed = breakdownRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid input" });
+    }
+    try {
+      const result = await runBreakdown(parsed.data.nextStep);
+      return res.json(result);
+    } catch (err: any) {
+      console.error("breakdown error", err);
+      return res.status(500).json({
+        error: "Could not break that down right now.",
         detail: err?.message ?? String(err),
       });
     }
