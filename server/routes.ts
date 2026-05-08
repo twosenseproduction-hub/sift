@@ -316,6 +316,417 @@ async function runBreakdown(nextStep: string): Promise<{ microSteps: string[] }>
 }
 
 // Auth utilities — token management and passphrase hashing
+// --- Core LLM helpers (ported from stable/v1.0) ---
+// These were present in stable/v1.0 but missing from the current routes.ts,
+// causing ReferenceError at runtime on every API call that needs them.
+
+async function runAnalysis(input: string): Promise<Analysis> {
+  const msg = await client.messages.create({
+    model: MODEL,
+    max_tokens: 1024,
+    system: SYSTEM_PROMPT,
+    messages: [
+      {
+        role: "user",
+        content: `Here is what I'm holding right now:\n\n${input}\n\nSift it. Return JSON only.`,
+      },
+    ],
+  });
+
+  const textBlock = msg.content.find((b: any) => b.type === "text") as any;
+  const raw = (textBlock?.text ?? "").trim();
+  const cleaned = raw
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```\s*$/i, "")
+    .trim();
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch (e) {
+    const match = cleaned.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error("Model did not return JSON");
+    parsed = JSON.parse(match[0]);
+  }
+  return analysisSchema.parse(parsed);
+}
+
+// Compact JSON extractor used by all deepening-mode LLM calls.
+function extractJson(raw: string): any {
+  const cleaned = raw
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```\s*$/i, "")
+    .trim();
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    const m = cleaned.match(/\{[\s\S]*\}/);
+    if (!m) throw new Error("Model did not return JSON");
+    return JSON.parse(m[0]);
+  }
+}
+
+// Render the full thread into a compact user-role transcript for the model.
+function renderThreadForModel(args: {
+  originalInput: string;
+  coreIntent: string;
+  firstNextStep: string;
+  turns: ThreadTurn[];
+  latestUserText?: string;
+}): string {
+  const lines: string[] = [];
+  lines.push(`Original input:\n${args.originalInput}`);
+  lines.push("");
+  lines.push(`Original coreIntent: ${args.coreIntent}`);
+  lines.push(`Original next step: ${args.firstNextStep}`);
+  lines.push("");
+  lines.push("Thread so far (oldest first):");
+  if (args.turns.length === 0) {
+    lines.push("  (no turns yet)");
+  } else {
+    for (const t of args.turns) {
+      if (t.role === "user" && t.kind === "message") {
+        lines.push(`USER: ${t.text}`);
+      } else if (t.role === "sift" && t.kind === "message") {
+        const m = t.message;
+        const parts: string[] = [];
+        if (m.mirror) parts.push(`mirror=${m.mirror}`);
+        if (m.question) parts.push(`question=${m.question}`);
+        if (m.matters?.length) parts.push(`matters=[${m.matters.join(" | ")}]`);
+        if (m.noise?.length) parts.push(`noise=[${m.noise.join(" | ")}]`);
+        if (m.mini) parts.push(`mini=${m.mini}`);
+        lines.push(`SIFT: ${parts.join("; ")}`);
+      } else if (t.role === "sift" && t.kind === "checkpoint") {
+        const c = t.checkpoint;
+        lines.push(
+          `SIFT (checkpoint): pointing=${c.pointing}; matters=[${c.matters.join(" | ")}]; noise=[${c.noise.join(" | ")}]; lastLanded=${c.lastLanded}; nextStep=${c.nextStep}`,
+        );
+      } else if (t.role === "sift" && t.kind === "closure") {
+        lines.push(`SIFT (closure): ${t.reflection}`);
+      } else if (t.role === "sift" && t.kind === "sort_prompt") {
+        lines.push(
+          `SIFT (sort_prompt): offered phrases for sorting: [${t.sortPrompt.items.join(" | ")}]`,
+        );
+      } else if (t.role === "user" && t.kind === "sort_result") {
+        if (t.sortResult.skipped) {
+          lines.push(`USER (sort_result): skipped the sort.`);
+        } else {
+          lines.push(
+            `USER (sort_result): matters=[${t.sortResult.matters.join(" | ")}]; noise=[${t.sortResult.noise.join(" | ")}]; unsure=[${t.sortResult.unsure.join(" | ")}]`,
+          );
+        }
+      }
+    }
+  }
+  if (args.latestUserText) {
+    lines.push("");
+    lines.push(`Latest user reply:\n${args.latestUserText}`);
+  }
+  return lines.join("\n");
+}
+
+// Generate the 6-8 thread-derived phrases for the sort activity.
+async function runSortItems(args: {
+  originalInput: string;
+  coreIntent: string;
+  firstNextStep: string;
+  turns: ThreadTurn[];
+}): Promise<SortPromptPayload> {
+  const userBlock =
+    renderThreadForModel(args) +
+    "\n\nProduce the Signal / Noise practice items. Return JSON only.";
+  const msg = await client.messages.create({
+    model: MODEL,
+    max_tokens: 512,
+    system: SORT_ITEMS_SYSTEM_PROMPT,
+    messages: [{ role: "user", content: userBlock }],
+  });
+  const textBlock = msg.content.find((b: any) => b.type === "text") as any;
+  const parsed = extractJson((textBlock?.text ?? "").trim());
+  const validated = sortPromptPayloadSchema.parse(parsed);
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  for (const raw of validated.items) {
+    const item = raw.trim().replace(/[.""]+$/g, "");
+    const key = item.toLowerCase();
+    if (!item || seen.has(key)) continue;
+    seen.add(key);
+    unique.push(item);
+    if (unique.length >= 8) break;
+  }
+  return {
+    intro: validated.intro.trim(),
+    items: unique.length >= 4 ? unique : validated.items,
+  };
+}
+
+function screenSortPromptForCrisis(p: SortPromptPayload): boolean {
+  return screenOutputForCrisis({ intro: p.intro, items: p.items });
+}
+
+async function runDeepening(args: {
+  originalInput: string;
+  coreIntent: string;
+  firstNextStep: string;
+  turns: ThreadTurn[];
+  latestUserText: string;
+}): Promise<SiftTurnMessage> {
+  const userBlock =
+    renderThreadForModel(args) +
+    "\n\nRespond as Sift in Deepening Mode. Return JSON only.";
+  const msg = await client.messages.create({
+    model: MODEL,
+    max_tokens: 512,
+    system: DEEPEN_SYSTEM_PROMPT,
+    messages: [{ role: "user", content: userBlock }],
+  });
+  const textBlock = msg.content.find((b: any) => b.type === "text") as any;
+  const parsed = extractJson((textBlock?.text ?? "").trim());
+  const message = siftTurnMessageSchema.parse(parsed);
+  if (
+    !message.mirror &&
+    !message.question &&
+    !message.matters?.length &&
+    !message.noise?.length &&
+    !message.mini
+  ) {
+    return { question: "Say a little more about that." };
+  }
+  return message;
+}
+
+async function runCheckpoint(args: {
+  originalInput: string;
+  coreIntent: string;
+  firstNextStep: string;
+  turns: ThreadTurn[];
+}): Promise<BookmarkPayload> {
+  const userBlock =
+    renderThreadForModel(args) + "\n\nProduce a Checkpoint. Return JSON only.";
+  const msg = await client.messages.create({
+    model: MODEL,
+    max_tokens: 1024,
+    system: CHECKPOINT_SYSTEM_PROMPT,
+    messages: [{ role: "user", content: userBlock }],
+  });
+  const textBlock = msg.content.find((b: any) => b.type === "text") as any;
+  const parsed = extractJson((textBlock?.text ?? "").trim());
+  return bookmarkPayloadSchema.parse(parsed);
+}
+
+async function runClosure(args: {
+  originalInput: string;
+  coreIntent: string;
+  firstNextStep: string;
+  turns: ThreadTurn[];
+}): Promise<string> {
+  const userBlock =
+    renderThreadForModel(args) + "\n\nClose the loop. Return JSON only.";
+  const msg = await client.messages.create({
+    model: MODEL,
+    max_tokens: 300,
+    system: CLOSE_SYSTEM_PROMPT,
+    messages: [{ role: "user", content: userBlock }],
+  });
+  const textBlock = msg.content.find((b: any) => b.type === "text") as any;
+  const parsed = extractJson((textBlock?.text ?? "").trim());
+  const reflection =
+    typeof parsed?.reflection === "string" ? parsed.reflection.trim() : "";
+  if (!reflection)
+    return "You stayed with something long enough to notice where it wanted to rest.";
+  return reflection;
+}
+
+// Convergence detection using Jaccard similarity over tokenized matters + nextStep.
+function tokenize(s: string): Set<string> {
+  return new Set(
+    s
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .split(/\s+/)
+      .filter((w) => w.length >= 3),
+  );
+}
+function detectConvergence(
+  prev: BookmarkPayload | undefined,
+  next: BookmarkPayload,
+): boolean {
+  if (!prev) return false;
+  const prevBag = tokenize(
+    [...prev.matters, prev.nextStep, prev.lastLanded].join(" "),
+  );
+  const nextBag = tokenize(
+    [...next.matters, next.nextStep, next.lastLanded].join(" "),
+  );
+  if (prevBag.size === 0 || nextBag.size === 0) return false;
+  let overlap = 0;
+  nextBag.forEach((w) => {
+    if (prevBag.has(w)) overlap++;
+  });
+  const union = prevBag.size + nextBag.size - overlap;
+  if (union === 0) return false;
+  const jaccard = overlap / union;
+  return jaccard >= 0.55;
+}
+
+// A sort is "open" when the most recent sort_prompt has no sort_result after it.
+function findOpenSortPrompt(
+  turns: ThreadTurn[],
+): Extract<ThreadTurn, { role: "sift"; kind: "sort_prompt" }> | null {
+  for (let i = turns.length - 1; i >= 0; i--) {
+    const t = turns[i];
+    if (t.role === "user" && t.kind === "sort_result") return null;
+    if (t.role === "sift" && t.kind === "sort_prompt") return t;
+  }
+  return null;
+}
+
+// How many user message turns have happened since the last sort_result.
+function countUserMessagesSinceLastSort(turns: ThreadTurn[]): number {
+  let count = 0;
+  for (let i = turns.length - 1; i >= 0; i--) {
+    const t = turns[i];
+    if (t.role === "user" && t.kind === "sort_result") return count;
+    if (t.role === "user" && t.kind === "message") count++;
+  }
+  return count;
+}
+
+// Merge user's sort into an existing bookmark column, preserving their placements.
+function mergePreservingUserSort(
+  prior: string[],
+  userThisColumn: string[],
+  userOtherColumn: string[],
+  cap: number,
+): string[] {
+  const lower = (s: string) => s.trim().toLowerCase();
+  const opposed = new Set(userOtherColumn.map(lower));
+  const chosen = new Set(userThisColumn.map(lower));
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const item of userThisColumn) {
+    const k = lower(item);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(item);
+  }
+  for (const item of prior) {
+    const k = lower(item);
+    if (seen.has(k)) continue;
+    if (opposed.has(k)) continue;
+    if (chosen.has(k)) continue;
+    seen.add(k);
+    out.push(item);
+  }
+  return out.slice(0, cap);
+}
+
+// Shared checkpoint emitter — used by both /deepen and /sort.
+async function tryEmitCheckpoint(args: {
+  sift: Sift;
+  turnsForModel: ThreadTurn[];
+  newTurns: ThreadTurn[];
+}): Promise<{ bookmark: Bookmark; converged: boolean } | null> {
+  try {
+    const checkpointPayload = await runCheckpoint({
+      originalInput: args.sift.input,
+      coreIntent: args.sift.coreIntent,
+      firstNextStep: args.sift.nextStep,
+      turns: args.turnsForModel,
+    });
+    if (
+      screenOutputForCrisis({
+        pointing: checkpointPayload.pointing,
+        unfolded: checkpointPayload.unfolded,
+        matters: checkpointPayload.matters,
+        noise: checkpointPayload.noise,
+        lastLanded: checkpointPayload.lastLanded,
+        nextStep: checkpointPayload.nextStep,
+      })
+    ) {
+      console.warn("[crisis-screen] checkpoint output tripped — discarding");
+      return null;
+    }
+    const prev = await storage.getBookmark(args.sift.id);
+    const converged = detectConvergence(prev?.payload, checkpointPayload);
+    const bm = await storage.upsertBookmark(args.sift.id, checkpointPayload);
+    const checkpointTurn = await storage.appendTurn({
+      siftId: args.sift.id,
+      role: "sift",
+      kind: "checkpoint",
+      payload: JSON.stringify(checkpointPayload),
+    });
+    args.newTurns.push(checkpointTurn);
+    return { bookmark: bm, converged };
+  } catch (err) {
+    console.warn("[deepen] checkpoint failed:", err);
+    return null;
+  }
+}
+
+function screenDeepenForCrisis(m: SiftTurnMessage): boolean {
+  return screenOutputForCrisis({
+    mirror: m.mirror ?? "",
+    question: m.question ?? "",
+    mini: m.mini ?? "",
+    matters: m.matters ?? [],
+    noise: m.noise ?? [],
+  });
+}
+
+// Check-in analysis — separate prompt and schema from initial sift.
+async function runCheckinAnalysis(
+  originalInput: string,
+  originalNextStep: string,
+  status: string,
+  note: string,
+): Promise<CheckinAnalysis> {
+  const statusLabel =
+    status === "did_it"
+      ? "I did it."
+      : status === "did_not"
+      ? "I didn't do it."
+      : "I'm still working on it.";
+
+  const userBlock = `Original sift input:
+${originalInput}
+
+Original next step you gave me:
+${originalNextStep}
+
+Status: ${statusLabel}${note ? `\n\nWhat actually happened:\n${note}` : ""}
+
+Sift what this outcome reveals. Return JSON only.`;
+
+  const msg = await client.messages.create({
+    model: MODEL,
+    max_tokens: 1024,
+    system: CHECKIN_SYSTEM_PROMPT,
+    messages: [{ role: "user", content: userBlock }],
+  });
+
+  const textBlock = msg.content.find((b: any) => b.type === "text") as any;
+  const raw = (textBlock?.text ?? "").trim();
+  const cleaned = raw
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```\s*$/i, "")
+    .trim();
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch (e) {
+    const match = cleaned.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error("Model did not return JSON");
+    parsed = JSON.parse(match[0]);
+  }
+  return checkinAnalysisSchema.parse(parsed);
+}
+
+// --- End LLM helpers ---
+
+// Auth utilities — token management and passphrase hashing
 const JWT_SECRET = process.env.JWT_SECRET || "sift-dev-secret-change-in-production";
 const JWT_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
