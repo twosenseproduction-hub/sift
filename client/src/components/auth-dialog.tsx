@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { useLogin, useSignup } from "@/lib/auth";
+import { useLogin, useSignup, useRequestPasswordReset } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 
 interface Props {
@@ -13,25 +13,31 @@ interface Props {
   initialMode?: "signin" | "signup";
 }
 
+type AuthMode = "signin" | "signup" | "forgot";
+
 export function AuthDialog({ open, onOpenChange, initialMode = "signup" }: Props) {
-  const [mode, setMode] = useState<"signin" | "signup">(initialMode);
+  const [mode, setMode] = useState<AuthMode>(initialMode === "signin" ? "signin" : "signup");
   const [handle, setHandle] = useState("");
   const [passphrase, setPassphrase] = useState("");
   const [contact, setContact] = useState("");
   const [consentUpdates, setConsentUpdates] = useState(false);
   const [consentReflections, setConsentReflections] = useState(false);
+  // Forgot-mode state
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetSent, setResetSent] = useState(false);
   const login = useLogin();
   const signup = useSignup();
+  const requestReset = useRequestPasswordReset();
   const { toast } = useToast();
 
-  const loading = login.isPending || signup.isPending;
+  const loading = login.isPending || signup.isPending || requestReset.isPending;
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       if (mode === "signin") {
         await login.mutateAsync({ handle: handle.trim(), passphrase });
-      } else {
+      } else if (mode === "signup") {
         await signup.mutateAsync({
           handle: handle.trim(),
           passphrase,
@@ -41,11 +47,7 @@ export function AuthDialog({ open, onOpenChange, initialMode = "signup" }: Props
         });
       }
       onOpenChange(false);
-      setPassphrase("");
-      setHandle("");
-      setContact("");
-      setConsentUpdates(false);
-      setConsentReflections(false);
+      resetForm();
     } catch (err: any) {
       const msg = err?.message?.replace(/^\d+:\s*/, "") ?? "Something went wrong.";
       let parsed = msg;
@@ -56,6 +58,97 @@ export function AuthDialog({ open, onOpenChange, initialMode = "signup" }: Props
       toast({ title: mode === "signin" ? "Can't sign in" : "Can't sign up", description: parsed });
     }
   };
+
+  const submitReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await requestReset.mutateAsync({ email: resetEmail.trim() });
+      setResetSent(true);
+    } catch (err: any) {
+      const msg = err?.message?.replace(/^\d+:\s*/, "") ?? "Something went wrong.";
+      toast({ title: "Can't send reset link", description: msg });
+    }
+  };
+
+  const resetForm = () => {
+    setPassphrase("");
+    setHandle("");
+    setContact("");
+    setConsentUpdates(false);
+    setConsentReflections(false);
+    setResetEmail("");
+    setResetSent(false);
+  };
+
+  const switchMode = (m: AuthMode) => {
+    setMode(m);
+    resetForm();
+  };
+
+  // Forgot passphrase view
+  if (mode === "forgot") {
+    return (
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-serif text-2xl">Forgot passphrase</DialogTitle>
+            <DialogDescription className="text-muted-foreground">
+              {resetSent
+                ? "If we found an account for that email, we sent a reset link."
+                : "Enter your email and we'll send a reset link."}
+            </DialogDescription>
+          </DialogHeader>
+
+          {resetSent ? (
+            <div className="space-y-4 pt-2">
+              <p className="text-sm text-muted-foreground">
+                Check your inbox. The link arrives within a few minutes.
+                If you don't see it, check your spam folder.
+              </p>
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => switchMode("signin")}
+              >
+                Back to sign in
+              </Button>
+            </div>
+          ) : (
+            <form onSubmit={submitReset} className="space-y-4 pt-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="resetEmail" className="text-xs uppercase tracking-widest text-muted-foreground">
+                  Email
+                </Label>
+                <Input
+                  id="resetEmail"
+                  type="email"
+                  value={resetEmail}
+                  onChange={(e) => setResetEmail(e.target.value)}
+                  autoComplete="email"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  placeholder="you@example.com"
+                  required
+                  disabled={loading}
+                />
+              </div>
+              <Button type="submit" className="w-full" disabled={loading}>
+                {loading ? "…" : "Send reset link"}
+              </Button>
+              <button
+                type="button"
+                onClick={() => switchMode("signin")}
+                className="w-full text-sm text-muted-foreground hover:text-foreground underline-offset-4 hover:underline transition-colors"
+              >
+                Back to sign in
+              </button>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -92,7 +185,18 @@ export function AuthDialog({ open, onOpenChange, initialMode = "signup" }: Props
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="passphrase" className="text-xs uppercase tracking-widest text-muted-foreground">Passphrase</Label>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="passphrase" className="text-xs uppercase tracking-widest text-muted-foreground">Passphrase</Label>
+              {mode === "signin" && (
+                <button
+                  type="button"
+                  onClick={() => switchMode("forgot")}
+                  className="text-xs text-muted-foreground hover:text-foreground underline-offset-4 hover:underline transition-colors"
+                >
+                  Forgot passphrase?
+                </button>
+              )}
+            </div>
             <Input
               id="passphrase"
               data-testid="input-passphrase"

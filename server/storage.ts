@@ -164,6 +164,45 @@ if (!userCols.some((c) => c.name === "consent_reflections")) {
   );
 }
 
+// Safe migration: add UNIQUE constraint on users.email if not already enforced.
+// The column may already exist; we only add the constraint if there are duplicate
+// NULL values (SQLite allows multiple NULLs in a UNIQUE column, so this is safe).
+if (!userCols.some((c) => c.name === "email")) {
+  // email column doesn't exist yet — this case is already handled above.
+} else {
+  // Check if email column already has a unique index.
+  const emailIndexes = sqlite
+    .prepare(`PRAGMA index_list(users);`)
+    .all() as Array<{ name: string; sql: string | null }>;
+  const hasEmailUnique = emailIndexes.some(
+    (idx) => idx.sql && idx.sql.includes("email") && idx.sql.includes("UNIQUE")
+  );
+  if (!hasEmailUnique) {
+    // Create unique index on email (allows multiple NULLs, ignores existing duplicates safely)
+    try {
+      sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email);`);
+    } catch {
+      // Index may fail if there are duplicate non-NULL emails — migration is not critical
+      // since the application code also checks duplicates at insert time.
+    }
+  }
+}
+
+// Safe migration: add password_resets table for self-service passphrase reset.
+// Created at module init so it persists across server restarts.
+sqlite.exec(`
+  CREATE TABLE IF NOT EXISTS password_resets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    token TEXT NOT NULL UNIQUE,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL,
+    used_at INTEGER
+  );
+  CREATE INDEX IF NOT EXISTS idx_password_resets_token ON password_resets(token);
+  CREATE INDEX IF NOT EXISTS idx_password_resets_user ON password_resets(user_id);
+`);
+
 sqlite.exec(
   `CREATE INDEX IF NOT EXISTS idx_sifts_user_created
      ON sifts(user_id, created_at DESC);`
@@ -174,6 +213,16 @@ export const db = drizzle(sqlite);
 // Expose the raw sqlite handle for non-ORM use cases (session lookups on the
 // hot auth path, where a prepared statement is cheaper than Drizzle overhead).
 export const rawDb = sqlite;
+
+// Password reset types (no schema table — raw SQL only)
+export interface PasswordReset {
+  id: number;
+  userId: number;
+  token: string;
+  createdAt: number;
+  expiresAt: number;
+  usedAt: number | null;
+}
 
 export interface IStorage {
   // Sifts
@@ -190,10 +239,16 @@ export interface IStorage {
   createUser(params: CreateUserParams): Promise<User>;
   getUserByHandle(handle: string): Promise<User | undefined>;
   getUserById(id: number): Promise<User | undefined>;
+  getUserByEmail(email: string): Promise<User | undefined>;
   updateUserContact(
     userId: number,
     params: UpdateUserContactParams,
   ): Promise<User | undefined>;
+  updateUserPassphrase(userId: number, passphraseHash: string): Promise<void>;
+  // Password reset
+  createPasswordReset(row: { userId: number; token: string; expiresAt: number }): Promise<void>;
+  getPasswordResetByToken(token: string): Promise<PasswordReset | undefined>;
+  markPasswordResetUsed(token: string): Promise<void>;
   // V1 thread
   updateThread(id: string, userId: number, patch: UpdateThreadRequest): Promise<SiftListItem | undefined>;
   listThreads(userId: number): Promise<SiftListItem[]>;
@@ -363,6 +418,10 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(users).where(eq(users.id, id)).get();
   }
 
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    return db.select().from(users).where(eq(users.email, email.toLowerCase())).get();
+  }
+
   async updateUserContact(
     userId: number,
     params: UpdateUserContactParams,
@@ -388,6 +447,32 @@ export class DatabaseStorage implements IStorage {
       .where(eq(users.id, userId))
       .returning()
       .get();
+  }
+
+  async updateUserPassphrase(userId: number, passphraseHash: string): Promise<void> {
+    db.update(users).set({ passphraseHash }).where(eq(users.id, userId)).run();
+  }
+
+  async createPasswordReset(row: { userId: number; token: string; expiresAt: number }): Promise<void> {
+    rawDb.prepare(
+      `INSERT INTO password_resets (user_id, token, created_at, expires_at)
+       VALUES (?, ?, ?, ?)`
+    ).run(row.userId, row.token, Date.now(), row.expiresAt);
+  }
+
+  async getPasswordResetByToken(token: string): Promise<PasswordReset | undefined> {
+    const row = rawDb.prepare(
+      `SELECT id, user_id AS userId, token, created_at AS createdAt,
+              expires_at AS expiresAt, used_at AS usedAt
+       FROM password_resets WHERE token = ?`
+    ).get(token) as PasswordReset | undefined;
+    return row;
+  }
+
+  async markPasswordResetUsed(token: string): Promise<void> {
+    rawDb.prepare(
+      `UPDATE password_resets SET used_at = ? WHERE token = ?`
+    ).run(Date.now(), token);
   }
 
   async listThreads(userId: number): Promise<SiftListItem[]> {

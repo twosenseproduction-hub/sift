@@ -14,6 +14,7 @@ import AdminPage from "@/pages/admin";
 import AdminFeedbackPage from "@/pages/admin-feedback";
 import Landing from "@/pages/landing";
 import Pricing from "@/pages/pricing";
+import ResetPasswordPage from "@/pages/reset-password";
 import { ThemeProvider } from "@/lib/theme";
 
 function AppRouter() {
@@ -28,6 +29,7 @@ function AppRouter() {
       <Route path="/pricing" component={Pricing} />
       <Route path="/admin" component={AdminPage} />
       <Route path="/admin/feedback" component={AdminFeedbackPage} />
+      <Route path="/reset" component={ResetPasswordPage} />
       <Route component={NotFound} />
     </Switch>
   );

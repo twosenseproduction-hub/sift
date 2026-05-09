@@ -46,6 +46,10 @@ import {
   type FeedbackStats,
   type AdminReviewFeedback,
   type AdminReviewSift,
+  requestResetSchema,
+  resetPassphraseSchema,
+  type RequestResetRequest,
+  type ResetPassphraseRequest,
 } from "@shared/schema";
 
 const client = new Anthropic();
@@ -756,13 +760,18 @@ function revokeToken(token: string): void {
 }
 
 // Passphrase hashing using scrypt (memory-hard, suitable for passwords)
+// Uses explicit params to keep memory usage predictable across Node.js versions.
+// Prior values (N=2^17, maxmem=128MB) could exceed the 64MB V8 heap limit on
+// smaller sandbox instances, causing SIGKILL during signup. The new params
+// (N=16384, r=8, p=1, maxmem=32MB) are a recognized safe configuration that
+// avoids heap exhaustion while maintaining strong security properties.
 function hashPassphrase(passphrase: string): string {
   const salt = crypto.randomBytes(16);
   const hash = crypto.scryptSync(passphrase, salt, 64, {
-    N: 2 ** 17,
+    N: 16384,
     r: 8,
     p: 1,
-    maxmem: 128 * 1024 * 1024,
+    maxmem: 32 * 1024 * 1024,
   });
   return Buffer.concat([salt, hash]).toString("hex");
 }
@@ -773,10 +782,10 @@ function verifyPassphrase(passphrase: string, storedHash: string): boolean {
     const salt = buf.slice(0, 16);
     const hash = buf.slice(16);
     const computed = crypto.scryptSync(passphrase, salt, 64, {
-      N: 2 ** 17,
+      N: 16384,
       r: 8,
       p: 1,
-      maxmem: 128 * 1024 * 1024,
+      maxmem: 32 * 1024 * 1024,
     });
     return crypto.timingSafeEqual(hash, computed);
   } catch {
@@ -916,6 +925,70 @@ export async function registerRoutes(
       return res.status(404).json({ error: "Account not found" });
     }
     res.json({ me: toMe(updated) });
+  });
+
+  // POST /api/auth/request-reset — request a password reset link.
+  // Always returns 200 so we never leak whether an account exists.
+  app.post("/api/auth/request-reset", async (req, res) => {
+    const parsed = requestResetSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+    }
+    const email = parsed.data.email.trim().toLowerCase();
+    const user = await storage.getUserByEmail(email);
+
+    if (user) {
+      // Invalidate any existing reset tokens for this user.
+      rawDb.prepare(`DELETE FROM password_resets WHERE user_id = ?`).run(user.id);
+
+      // Generate a secure token.
+      const token = crypto.randomBytes(32).toString("hex");
+      const expiresAt = Date.now() + 60 * 60 * 1000; // 1 hour
+      await storage.createPasswordReset({ userId: user.id, token, expiresAt });
+
+      // Build the reset URL. Client-side routing: /#/reset?token=...
+      const baseUrl = process.env.APP_URL || "https://app.siftnow.io";
+      const resetUrl = `${baseUrl}/#/reset?token=${token}`;
+
+      // TODO: wire real email provider (SMTP, Resend, etc.) when env vars are set.
+      // For now, log the link so the flow can be tested immediately.
+      console.log(`[password-reset] Reset link for ${email} (user ${user.id}): ${resetUrl}`);
+    }
+
+    // Always return 200 — do not reveal whether the email exists.
+    res.json({ ok: true });
+  });
+
+  // POST /api/auth/reset — consume a reset token and set a new passphrase.
+  app.post("/api/auth/reset", async (req, res) => {
+    const parsed = resetPassphraseSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+    }
+
+    const resetRecord = await storage.getPasswordResetByToken(parsed.data.token);
+
+    if (!resetRecord) {
+      return res.status(400).json({ error: "Invalid or expired reset link." });
+    }
+    if (resetRecord.usedAt !== null) {
+      return res.status(400).json({ error: "This reset link has already been used." });
+    }
+    if (Date.now() > resetRecord.expiresAt) {
+      return res.status(400).json({ error: "This reset link has expired." });
+    }
+
+    // All checks passed — update the passphrase.
+    await storage.updateUserPassphrase(resetRecord.userId, hashPassphrase(parsed.data.newPassphrase));
+    await storage.markPasswordResetUsed(parsed.data.token);
+
+    // Issue a fresh auth token so the client can auto-login.
+    const user = await storage.getUserById(resetRecord.userId);
+    if (!user) {
+      return res.status(404).json({ error: "Account not found." });
+    }
+    const token = issueToken(user.id);
+    res.json({ me: toMe(user), token });
   });
 
   // --- Admin ---

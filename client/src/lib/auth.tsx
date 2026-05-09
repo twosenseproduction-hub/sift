@@ -78,3 +78,26 @@ export function useLogout() {
     },
   });
 }
+
+export function useRequestPasswordReset() {
+  return useMutation({
+    mutationFn: async (input: { email: string }) => {
+      const res = await apiRequest("POST", "/api/auth/request-reset", input);
+      return (await res.json()) as { ok: boolean };
+    },
+  });
+}
+
+export function useResetPassword() {
+  return useMutation({
+    mutationFn: async (input: { token: string; newPassphrase: string }) => {
+      const res = await apiRequest("POST", "/api/auth/reset", input);
+      return (await res.json()) as { me: Me; token?: string };
+    },
+    onSuccess: (data) => {
+      if (data.token) setAuthToken(data.token);
+      queryClient.setQueryData(["/api/auth/me"], { me: data.me });
+      queryClient.invalidateQueries({ queryKey: ["/api/sifts"] });
+    },
+  });
+}

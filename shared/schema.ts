@@ -320,7 +320,7 @@ export const handleSchema = z
   .trim()
   .min(2, "Handle must be at least 2 characters")
   .max(24, "Handle must be 24 characters or fewer")
-  .regex(/^[a-z0-9_.-]+$/i, "Letters, numbers, dot, dash, underscore only");
+  .regex(/^[a-z0-9_.\-]+$/i, "Letters, numbers, dot, dash, underscore only");
 
 export const passphraseSchema = z
   .string()
@@ -357,7 +357,7 @@ export const signupSchema = z
   });
 export type SignupRequest = z.infer<typeof signupSchema>;
 
-// Existing users (created before this field existed) get a one-time skippable
+// Existing users (created before contact capture) get a one-time skippable
 // prompt. Same validation as signup but without handle/passphrase.
 export const contactUpdateSchema = z
   .object({
@@ -379,6 +379,18 @@ export type ContactUpdateRequest = z.infer<typeof contactUpdateSchema>;
 // Legacy alias — some callers may still import authSchema. Points at login.
 export const authSchema = loginSchema;
 export type AuthRequest = LoginRequest;
+
+// Password reset schemas
+export const requestResetSchema = z.object({
+  email: z.string().trim().min(1, "Enter your email"),
+});
+export type RequestResetRequest = z.infer<typeof requestResetSchema>;
+
+export const resetPassphraseSchema = z.object({
+  token: z.string().min(1),
+  newPassphrase: passphraseSchema,
+});
+export type ResetPassphraseRequest = z.infer<typeof resetPassphraseSchema>;
 
 // Me payload. `contactMissing` tells the client whether to show the one-time
 // prompt to existing users who signed up before we captured contact info.
