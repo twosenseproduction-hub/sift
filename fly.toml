@@ -14,6 +14,7 @@ primary_region = "sjc"   # San Jose — close to the Bay Area. Change if you pre
   PORT = "8080"
   NODE_ENV = "production"
   DB_PATH = "/data/sift.db"
+  NODE_OPTIONS = "--openssl-legacy-provider"
   # ANTHROPIC_MODEL is optional — the default works against api.anthropic.com.
   # Override only if you want a different Claude variant:
   # ANTHROPIC_MODEL = "claude-sonnet-4-5-20250929"

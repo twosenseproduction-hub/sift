@@ -2,6 +2,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import express from "express";
 import crypto from "crypto";
+import { nanoid as newId } from "nanoid";
 import Anthropic from "@anthropic-ai/sdk";
 import { storage, rawDb } from "./storage";
 import { selectDailyPrompt, type RecentSiftSignal } from "./daily-prompt";
