@@ -22,7 +22,7 @@ import { FeedbackPrompt } from "@/components/feedback-prompt";
 import { Button } from "@/components/ui/button";
 import { useMe } from "@/lib/auth";
 import { useDailyPrompt } from "@/lib/useDailyPrompt";
-import { useResume, clearResume } from "@/lib/resume";
+import { useResume } from "@/lib/resume";
 import { useQuery } from "@tanstack/react-query";
 import { Bookmark, ChevronDown, ArrowRight } from "lucide-react";
 import type { SiftResult, SiftListItem } from "@shared/schema";
