@@ -88,6 +88,8 @@ export const sifts = sqliteTable("sifts", {
   closurePromptShown: integer("closure_prompt_shown").notNull().default(0), // 0|1
   /** JSON string[3] — laughably small micro-tasks for "Break it down" */
   microTasks: text("micro_tasks"),
+  /** Meta-sift: pattern-level analysis across threads (nullable = false) */
+  metaSift: integer("meta_sift"),
 });
 
 // Rolling discernment metrics per user — server-internal only, no public API.
@@ -147,6 +149,8 @@ export const analyzeRequestSchema = z.object({
   skippedFragmentSort: z.boolean().optional(),
   /** Bypass redundancy gate — used after "Something changed" on high-similarity match. */
   forceAnalysis: z.boolean().optional(),
+  /** Pattern-level sift from Garden — extra system prompt + persisted flag */
+  metaSift: z.boolean().optional(),
 });
 export type AnalyzeRequest = z.infer<typeof analyzeRequestSchema>;
 
@@ -345,6 +349,8 @@ export type SiftResult = Analysis & {
   input: string;
   inputMode: "text" | "voice";
   createdAt: number;
+  /** Pattern-level sift (Garden meta-sift) */
+  metaSift?: boolean;
   mine?: boolean; // set on client when viewing own sift
   checkins?: CheckinResult[];
   status?: SiftStatus;
@@ -585,6 +591,8 @@ export type SiftListItem = {
   coreIntent: string;
   nextStep: string;
   status: SiftStatus;
+  /** Pattern-level sift */
+  metaSift?: boolean;
   // V1 thread fields
   mode: 'personal' | 'operator' | null;
   threadState: 'open' | 'closed' | 'archived';
