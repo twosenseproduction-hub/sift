@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { AuthDialog } from "@/components/auth-dialog";
 import { ArrowRight, Search, Bookmark } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ReEntryBlock } from "@/components/sift-ui";
 import type { ThreadListItem } from "@shared/schema";
 
 type Filter = "all" | "open" | "closed" | "archived";
@@ -75,6 +76,8 @@ export default function ThreadsPage() {
               Everything in motion
             </h1>
           </div>
+
+          <ReEntryBlock enabled />
 
           {/* Filter row */}
           <div className="flex items-center gap-5 text-sm mb-6 overflow-x-auto pb-1">

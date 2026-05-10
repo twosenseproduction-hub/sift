@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
 import { Header, Footnote } from "@/components/brand";
-import { Composer, Result } from "@/components/sift-ui";
+import {
+  Composer,
+  Result,
+  RedundancyGateCard,
+  ReEntryBlock,
+} from "@/components/sift-ui";
 import { AuthDialog } from "@/components/auth-dialog";
 import { ContactPromptDialog } from "@/components/contact-prompt-dialog";
 import { ExampleSheet } from "@/components/example-sheet";
@@ -18,12 +23,18 @@ import { CareScreen } from "@/components/care-screen";
 import { DeepeningThread } from "@/components/deepening-thread";
 import { FeedbackPrompt } from "@/components/feedback-prompt";
 import { Button } from "@/components/ui/button";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useMe } from "@/lib/auth";
 import { useDailyPrompt } from "@/lib/useDailyPrompt";
 import { useResume, clearResume } from "@/lib/resume";
 import { useQuery } from "@tanstack/react-query";
 import { Bookmark, ChevronDown, ArrowRight } from "lucide-react";
-import type { SiftResult, SiftListItem } from "@shared/schema";
+import type {
+  SiftResult,
+  SiftListItem,
+  SiftRedundancyGateResult,
+} from "@shared/schema";
+import { isCareResponse, isRedundancyGateResult } from "@shared/schema";
 
 // Hardcoded seed for "Free write from this". Keeps the app voice:
 // reflective, calm, introspective. No prompt gymnastics.
@@ -43,6 +54,8 @@ type Flow = "idle" | "sifting" | "result" | "expanding" | "saved" | "care";
 export default function Home() {
   const [flow, setFlow] = useState<Flow>("idle");
   const [result, setResult] = useState<SiftResult | null>(null);
+  const [redundancyGate, setRedundancyGate] =
+    useState<SiftRedundancyGateResult | null>(null);
   const [authOpen, setAuthOpen] = useState(false);
   const [exampleOpen, setExampleOpen] = useState(false);
   const [todayOpen, setTodayOpen] = useState(false);
@@ -103,6 +116,7 @@ export default function Home() {
   useEffect(() => {
     const onReset = () => {
       setResult(null);
+      setRedundancyGate(null);
       setFlow("idle");
       setCareOriginalInput(null);
     };
@@ -201,9 +215,18 @@ export default function Home() {
                 </div>
               )}
 
+              <ReEntryBlock enabled={!!me && (flow === "idle" || flow === "sifting")} />
+
               <Composer
                 onResult={(r) => {
+                  queryClient.invalidateQueries({ queryKey: ["/api/reentry"] });
+                  setRedundancyGate(null);
                   setResult(r);
+                  setFlow("result");
+                }}
+                onRedundancyGate={(g) => {
+                  setResult(null);
+                  setRedundancyGate(g);
                   setFlow("result");
                 }}
                 onCare={(originalInput) => {
@@ -355,6 +378,54 @@ export default function Home() {
                   </button>
                 </div>
               </div>
+            </div>
+          ) : redundancyGate ? (
+            <div className="pt-8 md:pt-12">
+              <RedundancyGateCard
+                gate={redundancyGate}
+                onSomethingChanged={async () => {
+                  try {
+                    const res = await apiRequest("POST", "/api/sift", {
+                      input: redundancyGate.input,
+                      inputMode: redundancyGate.inputMode,
+                      forceAnalysis: true,
+                    });
+                    const data = (await res.json()) as unknown;
+                    if (isCareResponse(data)) {
+                      setCareOriginalInput(redundancyGate.input);
+                      setRedundancyGate(null);
+                      setFlow("care");
+                      return;
+                    }
+                    if (isRedundancyGateResult(data)) {
+                      setRedundancyGate(data);
+                      return;
+                    }
+                    queryClient.invalidateQueries({ queryKey: ["/api/reentry"] });
+                    queryClient.invalidateQueries({ queryKey: ["/api/sifts"] });
+                    setRedundancyGate(null);
+                    setResult(data as SiftResult);
+                  } catch {
+                    setRedundancyGate(null);
+                    setFlow("idle");
+                  }
+                }}
+                onKnowThis={async () => {
+                  try {
+                    await apiRequest(
+                      "PATCH",
+                      `/api/sift/${encodeURIComponent(
+                        redundancyGate.redundancyGate.priorSiftId,
+                      )}/close-loop`,
+                      {},
+                    );
+                  } catch {
+                    /* still dismiss locally */
+                  }
+                  setRedundancyGate(null);
+                  setFlow("idle");
+                }}
+              />
             </div>
           ) : flow === "care" ? (
             <CareScreen

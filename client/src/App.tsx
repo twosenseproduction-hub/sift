@@ -10,6 +10,7 @@ import Shared from "@/pages/shared";
 import HistoryPage from "@/pages/history";
 import ThreadsPage from "@/pages/threads";
 import ThreadPage from "@/pages/thread";
+import ComparePage from "@/pages/compare";
 import AdminPage from "@/pages/admin";
 import AdminFeedbackPage from "@/pages/admin-feedback";
 import Landing from "@/pages/landing";
@@ -23,6 +24,7 @@ function AppRouter() {
       <Route path="/history" component={HistoryPage} />
       <Route path="/threads" component={ThreadsPage} />
       <Route path="/thread/:id" component={ThreadPage} />
+      <Route path="/compare" component={ComparePage} />
       <Route path="/s/:id" component={Shared} />
       <Route path="/landing" component={Landing} />
       <Route path="/pricing" component={Pricing} />

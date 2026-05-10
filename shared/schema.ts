@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -70,7 +70,38 @@ export const sifts = sqliteTable("sifts", {
   // Phase 4: full serialized Operator artifact JSON. Only populated when
   // runOperatorAnalysis succeeds in Operator mode; null otherwise.
   operatorArtifact: text("operator_artifact"),
+  // Step scope caption — JSON { durationEstimate, stoppingCondition }
+  stepScope: text("step_scope"),
+  // Snapshots before each inline correction (PATCH). JSON array.
+  revisionHistory: text("revision_history"),
+  // First suggested next step at sift creation; unchanged by check-ins.
+  baselineNextStep: text("baseline_next_step"),
+
+  // Training layer (internal analytics + quiet UX cues — never scores in UI)
+  sortAlignment: real("sort_alignment"),
+  recurringSignal: integer("recurring_signal"), // 0|1|null
+  recurringTheme: text("recurring_theme"),
+  redundancyHintLevel: text("redundancy_hint_level"), // 'low' | null (high not persisted)
+  /** Set when low-redundancy sift was created — links to prior sift for re-entry compare */
+  redundancyPriorSiftId: text("redundancy_prior_sift_id"),
+  closedLoop: integer("closed_loop").notNull().default(0), // 0|1
+  closurePromptShown: integer("closure_prompt_shown").notNull().default(0), // 0|1
+  /** JSON string[3] — laughably small micro-tasks for "Break it down" */
+  microTasks: text("micro_tasks"),
 });
+
+// Rolling discernment metrics per user — server-internal only, no public API.
+export const discernmentProfiles = sqliteTable("discernment_profiles", {
+  userId: integer("user_id").primaryKey(),
+  avgSortAlignment: real("avg_sort_alignment"),
+  recurringSignalCount: integer("recurring_signal_count").notNull().default(0),
+  masteryCount: integer("mastery_count").notNull().default(0),
+  threadClosureRate: real("thread_closure_rate"),
+  /** Internal — how often this user used Break Down (tuning signal) */
+  breakdownCount: integer("breakdown_count").notNull().default(0),
+  updatedAt: integer("updated_at").notNull(),
+});
+export type DiscernmentProfileRow = typeof discernmentProfiles.$inferSelect;
 
 
 // ---- Checkins ----
@@ -95,17 +126,68 @@ export type Sift = typeof sifts.$inferSelect;
 
 // ---- API schemas ----
 
+export const stepScopeSchema = z.object({
+  durationEstimate: z.string(),
+  stoppingCondition: z.string(),
+});
+export type StepScope = z.infer<typeof stepScopeSchema>;
+
 export const analyzeRequestSchema = z.object({
   input: z.string().min(1).max(8000),
   inputMode: z.enum(["text", "voice"]).default("text"),
+  /** User sort of short fragments before the main analysis pass. */
+  fragmentSort: z
+    .array(
+      z.object({
+        fragment: z.string(),
+        bucket: z.enum(["matters", "noise", "unsure"]),
+      }),
+    )
+    .optional(),
+  skippedFragmentSort: z.boolean().optional(),
+  /** Bypass redundancy gate — used after "Something changed" on high-similarity match. */
+  forceAnalysis: z.boolean().optional(),
 });
 export type AnalyzeRequest = z.infer<typeof analyzeRequestSchema>;
+
+/** POST /api/sift/fragments — extract short phrases for the pre-sort UI */
+export const siftFragmentsRequestSchema = z.object({
+  input: z.string().min(1).max(8000),
+});
+export type SiftFragmentsRequest = z.infer<typeof siftFragmentsRequestSchema>;
+
+export const siftFragmentsResponseSchema = z.object({
+  fragments: z.array(z.string()).min(4).max(6),
+});
+export type SiftFragmentsResponse = z.infer<typeof siftFragmentsResponseSchema>;
+
+export const fragmentBucketSchema = z.enum(["matters", "noise", "unsure"]);
+export type FragmentBucket = z.infer<typeof fragmentBucketSchema>;
+
+/** PATCH /api/sift/:id/correction */
+export const siftCorrectionRequestSchema = z.object({
+  reframe: z.string().min(1).max(4000),
+});
+export type SiftCorrectionRequest = z.infer<typeof siftCorrectionRequestSchema>;
 
 export const themeSchema = z.object({
   title: z.string(),
   summary: z.string(),
 });
 export type Theme = z.infer<typeof themeSchema>;
+
+export const siftRevisionSnapshotSchema = z.object({
+  at: z.number(),
+  coreIntent: z.string(),
+  nextStep: z.string(),
+  reflection: z.string(),
+  themes: z.array(themeSchema),
+  matters: z.array(z.string()),
+  noise: z.array(z.string()),
+  signalReason: z.string().nullable(),
+  stepScope: stepScopeSchema.nullable(),
+});
+export type SiftRevisionSnapshot = z.infer<typeof siftRevisionSnapshotSchema>;
 
 export const analysisSchema = z.object({
   themes: z.array(themeSchema).min(1).max(5),
@@ -123,6 +205,8 @@ export const analysisSchema = z.object({
   matters: z.array(z.string()).min(2).max(4),
   noise: z.array(z.string()).min(1).max(3),
   signalReason: z.string(),
+  /** New analyses always populate; omitted on legacy rows */
+  stepScope: stepScopeSchema.optional(),
 });
 export type Analysis = z.infer<typeof analysisSchema>;
 
@@ -236,6 +320,26 @@ export type OperatorArtifactType = z.infer<typeof operatorArtifactTypeSchema>;
 
 // ────────────────────────────────────────────────────────────────────
 
+/** Low redundancy — full analysis still ran; quiet caption only */
+export const redundancyHintWireSchema = z.object({
+  level: z.literal("low"),
+  message: z.string(),
+});
+export type RedundancyHintWire = z.infer<typeof redundancyHintWireSchema>;
+
+/** High redundancy — short-circuit; no themes/matters in same payload */
+export const redundancyGateWireSchema = z.object({
+  level: z.literal("high"),
+  priorSiftId: z.string(),
+  priorNextStep: z.string(),
+  message: z.string(),
+  options: z.tuple([
+    z.literal("Something changed"),
+    z.literal("I think I know this"),
+  ]),
+});
+export type RedundancyGateWire = z.infer<typeof redundancyGateWireSchema>;
+
 export type SiftResult = Analysis & {
   id: string;
   input: string;
@@ -246,6 +350,29 @@ export type SiftResult = Analysis & {
   status?: SiftStatus;
   turns?: ThreadTurn[];
   bookmark?: Bookmark;
+  /** Present when at least one correction ran — newest last */
+  revisionHistory?: SiftRevisionSnapshot[];
+  /** First suggested next step at creation; unchanged by check-ins */
+  baselineNextStep?: string;
+  /** Same recurring signal pattern detected across prior sifts — quiet caption */
+  recurringSignal?: boolean;
+  redundancyHint?: RedundancyHintWire;
+  /** When present with level high, client renders gate UI instead of full card */
+  redundancyGate?: RedundancyGateWire;
+  /** Owner-only: discernment profile thresholds met; one-time closure nudge */
+  showClosurePrompt?: boolean;
+  /** Three micro-tasks from Break it down — null until generated */
+  microTasks?: string[] | null;
+};
+
+/** POST /api/sift may return this instead of a full SiftResult when redundancy is high */
+export type SiftRedundancyGateResult = {
+  id?: string;
+  input: string;
+  inputMode: "text" | "voice";
+  createdAt: number;
+  mine?: boolean;
+  redundancyGate: RedundancyGateWire;
 };
 
 // Crisis safeguard — the server short-circuits when an input appears to
@@ -256,6 +383,7 @@ export type CareResponse = { type: "care" };
 
 export type SiftOrCareResult =
   | ({ type?: "sift" } & SiftResult)
+  | SiftRedundancyGateResult
   | CareResponse;
 
 export function isCareResponse(
@@ -268,6 +396,43 @@ export function isCareResponse(
   );
 }
 
+/** POST /api/sift short-circuit — high redundancy gate payload */
+export function isRedundancyGateResult(
+  r: unknown,
+): r is SiftRedundancyGateResult {
+  return (
+    typeof r === "object" &&
+    r !== null &&
+    (r as { redundancyGate?: { level?: string } }).redundancyGate?.level ===
+      "high"
+  );
+}
+
+/** PATCH /api/sift/:id/close — dismiss closure prompt and optionally close thread */
+export const siftClosurePromptPatchSchema = z.object({
+  closurePromptShown: z.literal(true),
+  keepOpen: z.boolean().optional(),
+});
+
+export const siftBreakdownRequestSchema = z.object({
+  nextStep: z.string().min(1).max(4000),
+});
+export type SiftBreakdownRequest = z.infer<typeof siftBreakdownRequestSchema>;
+export type SiftClosurePromptPatchRequest = z.infer<
+  typeof siftClosurePromptPatchSchema
+>;
+
+// ---- Smart re-entry (GET /api/reentry) ----
+export type ReEntryAction =
+  | { type: "checkin"; threadId: string; threadTitle: string }
+  | { type: "compare"; currentSiftId: string; priorSiftId: string }
+  | { type: "revisit"; threadId: string; threadTitle: string };
+
+export type ReEntryResponse = {
+  prompt: string | null;
+  action?: ReEntryAction;
+};
+
 // ---- Check-in schemas ----
 export const checkinStatusSchema = z.enum(["did_it", "did_not", "in_progress"]);
 export type CheckinStatus = z.infer<typeof checkinStatusSchema>;
@@ -278,11 +443,25 @@ export const checkinRequestSchema = z.object({
 });
 export type CheckinRequest = z.infer<typeof checkinRequestSchema>;
 
+/** LLM output only — priorNextStep added when persisting */
+export const checkinModelOutputSchema = z.object({
+  hearing: z.string(),
+  matters: z.array(z.string()).min(1).max(4),
+  noise: z.array(z.string()).min(1).max(3),
+  nextStep: z.string(),
+  changeReason: z.string().optional(),
+});
+export type CheckinModelOutput = z.infer<typeof checkinModelOutputSchema>;
+
 export const checkinAnalysisSchema = z.object({
   hearing: z.string(), // "what I'm hearing" — 2-4 sentences
   matters: z.array(z.string()).min(1).max(4), // "what matters" — 2-3 bullets
   noise: z.array(z.string()).min(1).max(3), // "what's noise" — 1-2 bullets
   nextStep: z.string(), // one refined action
+  /** Why the next step shifted — provisional, one or two sentences */
+  changeReason: z.string().optional(),
+  /** Filled server-side when persisting — step this check-in replaced */
+  priorNextStep: z.string().optional(),
 });
 export type CheckinAnalysis = z.infer<typeof checkinAnalysisSchema>;
 

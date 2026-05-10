@@ -33,6 +33,9 @@ import {
   type AdminReviewFeedback,
   type AdminReviewSift,
   type Theme,
+  type SiftRevisionSnapshot,
+  type DiscernmentProfileRow,
+  discernmentProfiles,
   sifts,
   users,
   checkins,
@@ -185,6 +188,72 @@ if (!siftCols.some((c) => c.name === "artifact_type")) {
 if (!siftCols.some((c) => c.name === "operator_artifact")) {
   sqlite.exec(`ALTER TABLE sifts ADD COLUMN operator_artifact TEXT;`);
 }
+if (!siftCols.some((c) => c.name === "step_scope")) {
+  sqlite.exec(`ALTER TABLE sifts ADD COLUMN step_scope TEXT;`);
+}
+if (!siftCols.some((c) => c.name === "revision_history")) {
+  sqlite.exec(`ALTER TABLE sifts ADD COLUMN revision_history TEXT;`);
+}
+if (!siftCols.some((c) => c.name === "baseline_next_step")) {
+  sqlite.exec(`ALTER TABLE sifts ADD COLUMN baseline_next_step TEXT;`);
+}
+sqlite.exec(
+  `UPDATE sifts SET baseline_next_step = next_step WHERE baseline_next_step IS NULL AND next_step IS NOT NULL`,
+);
+
+// Training layer — additive columns on sifts
+const siftColsTraining = sqlite
+  .prepare(`PRAGMA table_info(sifts);`)
+  .all() as Array<{ name: string }>;
+if (!siftColsTraining.some((c) => c.name === "sort_alignment")) {
+  sqlite.exec(`ALTER TABLE sifts ADD COLUMN sort_alignment REAL;`);
+}
+if (!siftColsTraining.some((c) => c.name === "recurring_signal")) {
+  sqlite.exec(`ALTER TABLE sifts ADD COLUMN recurring_signal INTEGER;`);
+}
+if (!siftColsTraining.some((c) => c.name === "recurring_theme")) {
+  sqlite.exec(`ALTER TABLE sifts ADD COLUMN recurring_theme TEXT;`);
+}
+if (!siftColsTraining.some((c) => c.name === "redundancy_hint_level")) {
+  sqlite.exec(`ALTER TABLE sifts ADD COLUMN redundancy_hint_level TEXT;`);
+}
+if (!siftColsTraining.some((c) => c.name === "closed_loop")) {
+  sqlite.exec(
+    `ALTER TABLE sifts ADD COLUMN closed_loop INTEGER NOT NULL DEFAULT 0;`,
+  );
+}
+if (!siftColsTraining.some((c) => c.name === "closure_prompt_shown")) {
+  sqlite.exec(
+    `ALTER TABLE sifts ADD COLUMN closure_prompt_shown INTEGER NOT NULL DEFAULT 0;`,
+  );
+}
+if (!siftColsTraining.some((c) => c.name === "redundancy_prior_sift_id")) {
+  sqlite.exec(`ALTER TABLE sifts ADD COLUMN redundancy_prior_sift_id TEXT;`);
+}
+if (!siftColsTraining.some((c) => c.name === "micro_tasks")) {
+  sqlite.exec(`ALTER TABLE sifts ADD COLUMN micro_tasks TEXT;`);
+}
+
+sqlite.exec(`
+  CREATE TABLE IF NOT EXISTS discernment_profiles (
+    user_id INTEGER PRIMARY KEY NOT NULL,
+    avg_sort_alignment REAL,
+    recurring_signal_count INTEGER NOT NULL DEFAULT 0,
+    mastery_count INTEGER NOT NULL DEFAULT 0,
+    thread_closure_rate REAL,
+    breakdown_count INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL
+  );
+`);
+
+const discernCols = sqlite
+  .prepare(`PRAGMA table_info(discernment_profiles);`)
+  .all() as Array<{ name: string }>;
+if (!discernCols.some((c) => c.name === "breakdown_count")) {
+  sqlite.exec(
+    `ALTER TABLE discernment_profiles ADD COLUMN breakdown_count INTEGER NOT NULL DEFAULT 0;`,
+  );
+}
 
 // Safe migration: add contact + consent columns to users if missing. Existing
 // rows get NULL email/phone and 0 for both consent flags (= never opted in).
@@ -230,6 +299,77 @@ export interface IStorage {
     userId: number,
     status: SiftStatus,
   ): Promise<SiftListItem | undefined>;
+  /** After check-in — refined next step only */
+  updateSiftNextStep(
+    id: string,
+    userId: number,
+    nextStep: string,
+  ): Promise<boolean>;
+  updateSiftSortAlignment(id: string, score: number | null): Promise<void>;
+  getRecentSifts(
+    userId: number,
+    limit: number,
+    excludeId?: string,
+  ): Promise<Sift[]>;
+  updateSiftRecurringSignal(
+    id: string,
+    detected: boolean,
+    theme: string | null,
+  ): Promise<void>;
+  updateSiftRedundancyHintLevel(
+    id: string,
+    level: "low" | null,
+  ): Promise<void>;
+  updateSiftClosedLoop(
+    id: string,
+    userId: number,
+    closed: boolean,
+  ): Promise<boolean>;
+  patchSiftClosurePrompt(
+    id: string,
+    userId: number,
+    opts: { keepOpen: boolean },
+  ): Promise<boolean>;
+  updateSiftMicroTasks(
+    id: string,
+    userId: number,
+    microTasks: string[],
+  ): Promise<boolean>;
+  getOrCreateDiscernmentProfile(userId: number): Promise<DiscernmentProfileRow>;
+  updateDiscernmentProfile(
+    userId: number,
+    opts?: {
+      recurringSignalDelta?: number;
+      masteryDelta?: number;
+      breakdownDelta?: number;
+    },
+  ): Promise<void>;
+  countThreadClosureStats(userId: number): Promise<{
+    withCheckins: number;
+    closedAmongThose: number;
+  }>;
+  /** Inline correction — same id, new analysis columns + revision append */
+  applySiftCorrection(params: {
+    id: string;
+    userId: number;
+    revisionAppend: SiftRevisionSnapshot;
+    values: {
+      input: string;
+      themes: string;
+      coreIntent: string;
+      nextStep: string;
+      reflection: string;
+      matters: string;
+      noise: string;
+      signalReason: string | null;
+      stepScope: string | null;
+      mode: string | null;
+      entrySignal: string | null;
+      artifactType: string | null;
+      operatorArtifact: string | null;
+      currentMove: string | null;
+    };
+  }): Promise<Sift | undefined>;
   // Users
   createUser(params: CreateUserParams): Promise<User>;
   getUserByHandle(handle: string): Promise<User | undefined>;
@@ -241,6 +381,7 @@ export interface IStorage {
   // V1 thread
   updateThread(id: string, userId: number, patch: UpdateThreadRequest): Promise<SiftListItem | undefined>;
   listThreads(userId: number): Promise<SiftListItem[]>;
+  listUserSiftsFull(userId: number): Promise<Sift[]>;
   getThread(id: string): Promise<Sift | undefined>;
   countFrontBurner(userId: number): Promise<number>;
 
@@ -383,6 +524,292 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
+  async updateSiftNextStep(
+    id: string,
+    userId: number,
+    nextStep: string,
+  ): Promise<boolean> {
+    const r = db
+      .update(sifts)
+      .set({ nextStep })
+      .where(and(eq(sifts.id, id), eq(sifts.userId, userId)))
+      .run();
+    return r.changes > 0;
+  }
+
+  async updateSiftSortAlignment(
+    id: string,
+    score: number | null,
+  ): Promise<void> {
+    db.update(sifts)
+      .set({ sortAlignment: score })
+      .where(eq(sifts.id, id))
+      .run();
+  }
+
+  async getRecentSifts(
+    userId: number,
+    limit: number,
+    excludeId?: string,
+  ): Promise<Sift[]> {
+    const rows = db
+      .select()
+      .from(sifts)
+      .where(eq(sifts.userId, userId))
+      .orderBy(desc(sifts.createdAt))
+      .limit(limit + 40)
+      .all();
+    const out: Sift[] = [];
+    for (const r of rows) {
+      if (excludeId && r.id === excludeId) continue;
+      out.push(r);
+      if (out.length >= limit) break;
+    }
+    return out;
+  }
+
+  async updateSiftRecurringSignal(
+    id: string,
+    detected: boolean,
+    theme: string | null,
+  ): Promise<void> {
+    db.update(sifts)
+      .set({
+        recurringSignal: detected ? 1 : 0,
+        recurringTheme: theme,
+      })
+      .where(eq(sifts.id, id))
+      .run();
+  }
+
+  async updateSiftRedundancyHintLevel(
+    id: string,
+    level: "low" | null,
+  ): Promise<void> {
+    db.update(sifts)
+      .set({ redundancyHintLevel: level })
+      .where(eq(sifts.id, id))
+      .run();
+  }
+
+  async updateSiftClosedLoop(
+    id: string,
+    userId: number,
+    closed: boolean,
+  ): Promise<boolean> {
+    const r = db
+      .update(sifts)
+      .set({ closedLoop: closed ? 1 : 0 })
+      .where(and(eq(sifts.id, id), eq(sifts.userId, userId)))
+      .run();
+    return r.changes > 0;
+  }
+
+  async updateSiftMicroTasks(
+    id: string,
+    userId: number,
+    microTasks: string[],
+  ): Promise<boolean> {
+    const r = db
+      .update(sifts)
+      .set({ microTasks: JSON.stringify(microTasks) })
+      .where(and(eq(sifts.id, id), eq(sifts.userId, userId)))
+      .run();
+    return r.changes > 0;
+  }
+
+  async patchSiftClosurePrompt(
+    id: string,
+    userId: number,
+    opts: { keepOpen: boolean },
+  ): Promise<boolean> {
+    if (opts.keepOpen) {
+      const r = db
+        .update(sifts)
+        .set({ closurePromptShown: 1 })
+        .where(and(eq(sifts.id, id), eq(sifts.userId, userId)))
+        .run();
+      return r.changes > 0;
+    }
+    const r = db
+      .update(sifts)
+      .set({
+        closurePromptShown: 1,
+        threadState: "closed",
+        status: "closed",
+      })
+      .where(and(eq(sifts.id, id), eq(sifts.userId, userId)))
+      .run();
+    return r.changes > 0;
+  }
+
+  async countThreadClosureStats(userId: number): Promise<{
+    withCheckins: number;
+    closedAmongThose: number;
+  }> {
+    const withQ = rawDb
+      .prepare(
+        `SELECT COUNT(DISTINCT s.id) AS n FROM sifts s
+         INNER JOIN checkins c ON c.sift_id = s.id
+         WHERE s.user_id = ?`,
+      )
+      .get(userId) as { n: number } | undefined;
+    const closedQ = rawDb
+      .prepare(
+        `SELECT COUNT(DISTINCT s.id) AS n FROM sifts s
+         INNER JOIN checkins c ON c.sift_id = s.id
+         WHERE s.user_id = ?
+           AND (s.thread_state = 'closed' OR s.status = 'closed')`,
+      )
+      .get(userId) as { n: number } | undefined;
+    return {
+      withCheckins: withQ?.n ?? 0,
+      closedAmongThose: closedQ?.n ?? 0,
+    };
+  }
+
+  async getOrCreateDiscernmentProfile(
+    userId: number,
+  ): Promise<DiscernmentProfileRow> {
+    const existing = db
+      .select()
+      .from(discernmentProfiles)
+      .where(eq(discernmentProfiles.userId, userId))
+      .get();
+    if (existing) return existing;
+    const now = Date.now();
+    db.insert(discernmentProfiles)
+      .values({
+        userId,
+        recurringSignalCount: 0,
+        masteryCount: 0,
+        breakdownCount: 0,
+        updatedAt: now,
+      })
+      .run();
+    return db
+      .select()
+      .from(discernmentProfiles)
+      .where(eq(discernmentProfiles.userId, userId))
+      .get()!;
+  }
+
+  async updateDiscernmentProfile(
+    userId: number,
+    opts?: {
+      recurringSignalDelta?: number;
+      masteryDelta?: number;
+      breakdownDelta?: number;
+    },
+  ): Promise<void> {
+    const row = await this.getOrCreateDiscernmentProfile(userId);
+    let recurring = row.recurringSignalCount;
+    let mastery = row.masteryCount;
+    let breakdown = row.breakdownCount;
+    if (opts?.recurringSignalDelta) {
+      recurring += opts.recurringSignalDelta;
+    }
+    if (opts?.masteryDelta) {
+      mastery += opts.masteryDelta;
+    }
+    if (opts?.breakdownDelta) {
+      breakdown += opts.breakdownDelta;
+    }
+
+    const avgRow = rawDb
+      .prepare(
+        `SELECT AVG(sort_alignment) AS a FROM sifts WHERE user_id = ? AND sort_alignment IS NOT NULL`,
+      )
+      .get(userId) as { a: number | null } | undefined;
+    const avgSortAlignment =
+      avgRow?.a != null && !Number.isNaN(avgRow.a) ? avgRow.a : null;
+
+    const tc = await this.countThreadClosureStats(userId);
+    const threadClosureRate =
+      tc.withCheckins > 0 ? tc.closedAmongThose / tc.withCheckins : null;
+
+    const now = Date.now();
+    db.insert(discernmentProfiles)
+      .values({
+        userId,
+        avgSortAlignment,
+        recurringSignalCount: recurring,
+        masteryCount: mastery,
+        breakdownCount: breakdown,
+        threadClosureRate,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: discernmentProfiles.userId,
+        set: {
+          avgSortAlignment,
+          recurringSignalCount: recurring,
+          masteryCount: mastery,
+          breakdownCount: breakdown,
+          threadClosureRate,
+          updatedAt: now,
+        },
+      })
+      .run();
+  }
+
+  async applySiftCorrection(params: {
+    id: string;
+    userId: number;
+    revisionAppend: SiftRevisionSnapshot;
+    values: {
+      input: string;
+      themes: string;
+      coreIntent: string;
+      nextStep: string;
+      reflection: string;
+      matters: string;
+      noise: string;
+      signalReason: string | null;
+      stepScope: string | null;
+      mode: string | null;
+      entrySignal: string | null;
+      artifactType: string | null;
+      operatorArtifact: string | null;
+      currentMove: string | null;
+    };
+  }): Promise<Sift | undefined> {
+    const row = await this.getSift(params.id);
+    if (!row || row.userId !== params.userId) return undefined;
+    let history: SiftRevisionSnapshot[] = [];
+    if (row.revisionHistory) {
+      try {
+        const p = JSON.parse(row.revisionHistory);
+        if (Array.isArray(p)) history = p as SiftRevisionSnapshot[];
+      } catch {
+        /* ignore malformed */
+      }
+    }
+    history.push(params.revisionAppend);
+    return db
+      .update(sifts)
+      .set({
+        input: params.values.input,
+        themes: params.values.themes,
+        coreIntent: params.values.coreIntent,
+        nextStep: params.values.nextStep,
+        reflection: params.values.reflection,
+        matters: params.values.matters,
+        noise: params.values.noise,
+        signalReason: params.values.signalReason,
+        stepScope: params.values.stepScope,
+        mode: params.values.mode,
+        entrySignal: params.values.entrySignal,
+        artifactType: params.values.artifactType,
+        operatorArtifact: params.values.operatorArtifact,
+        currentMove: params.values.currentMove,
+        revisionHistory: JSON.stringify(history),
+      })
+      .where(and(eq(sifts.id, params.id), eq(sifts.userId, params.userId)))
+      .returning()
+      .get();
+  }
+
   // Phase 4: update currentMove on a sift row. Persists the evolving operator
   // deepening frame across turns so re-entry shows the accurate current move.
   async updateSiftCurrentMove(id: string, currentMove: string): Promise<void> {
@@ -438,6 +865,15 @@ export class DatabaseStorage implements IStorage {
       .where(eq(users.id, userId))
       .returning()
       .get();
+  }
+
+  async listUserSiftsFull(userId: number): Promise<Sift[]> {
+    return db
+      .select()
+      .from(sifts)
+      .where(eq(sifts.userId, userId))
+      .orderBy(desc(sifts.createdAt))
+      .all();
   }
 
   async listThreads(userId: number): Promise<SiftListItem[]> {

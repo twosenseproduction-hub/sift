@@ -1,18 +1,26 @@
 import { useEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Link } from "wouter";
 import { Mic, MicOff, Send, Copy, Link2, RotateCcw, Check, Sparkles, Clock, ArrowRight, Share2 } from "lucide-react";
 import { SharePromptDialog } from "./share-prompt-dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient, getAuthToken } from "@/lib/queryClient";
 import { track } from "@/lib/track";
 import {
   createRecognizer,
   isVoiceSupported,
   type RecognitionHandle,
 } from "@/lib/voice";
-import type { SiftResult, CareResponse } from "@shared/schema";
-import { isCareResponse } from "@shared/schema";
+import type {
+  SiftResult,
+  CareResponse,
+  SiftRedundancyGateResult,
+  ReEntryResponse,
+} from "@shared/schema";
+import type { FragmentBucket } from "@shared/schema";
+import { isCareResponse, isRedundancyGateResult } from "@shared/schema";
 import { ClarifyPrompt } from "./clarify-prompt";
 
 // Deterministic thin-input heuristic. Returns true when the submission is
@@ -42,6 +50,8 @@ function isThinInput(raw: string): boolean {
 
 interface ComposerProps {
   onResult: (r: SiftResult) => void;
+  /** High redundancy short-circuit — no persisted sift; prior sift id for mastery ack */
+  onRedundancyGate?: (r: SiftRedundancyGateResult) => void;
   /**
    * Called when the server screens the submitted input as a crisis signal
    * (suicide, self-harm, harm-to-others). The flagged text is neither
@@ -77,7 +87,15 @@ const SIFTING_SUBLINES = [
   "Making sense of this",
 ];
 
-export function Composer({ onResult, onCare, initialText, prefillToken }: ComposerProps) {
+const FRAGMENT_FETCH_LINE = "Pulling out threads…";
+
+export function Composer({
+  onResult,
+  onRedundancyGate,
+  onCare,
+  initialText,
+  prefillToken,
+}: ComposerProps) {
   // If the caller mounts this composer already holding a non-zero prefillToken
   // (e.g. the continuation composer in the expanding flow, which bumps the
   // token before mount), seed the input on mount. The main composer mounts
@@ -103,6 +121,17 @@ export function Composer({ onResult, onCare, initialText, prefillToken }: Compos
   // analysis path. `clarifyInput` holds the original text while the prompt
   // is shown.
   const [clarifyInput, setClarifyInput] = useState<string | null>(null);
+
+  /** Quick fragment sort before the main analysis pass */
+  const [sortPhase, setSortPhase] = useState<null | {
+    fragments: string[];
+    inputSnapshot: string;
+    classifications: Record<number, FragmentBucket | null>;
+  }>(null);
+  /** Which loading message to show under the composer */
+  const [loadingStage, setLoadingStage] = useState<null | "fragments" | "full">(
+    null,
+  );
 
   useEffect(() => () => recRef.current?.stop(), []);
 
@@ -142,9 +171,9 @@ export function Composer({ onResult, onCare, initialText, prefillToken }: Compos
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefillToken]);
 
-  // Rotate the "Sifting…" subline every 2.2s while loading.
+  // Rotate the "Sifting…" subline every 2.2s while the full analysis runs.
   useEffect(() => {
-    if (!loading) {
+    if (!loading || loadingStage !== "full") {
       setSiftingIdx(0);
       return;
     }
@@ -153,7 +182,7 @@ export function Composer({ onResult, onCare, initialText, prefillToken }: Compos
       2200,
     );
     return () => clearInterval(id);
-  }, [loading]);
+  }, [loading, loadingStage]);
 
   // Rotate placeholder every 3s, but pause while focused or while user has typed something.
   useEffect(() => {
@@ -203,16 +232,40 @@ export function Composer({ onResult, onCare, initialText, prefillToken }: Compos
   // Submit raw text straight to the analysis endpoint. Used both by the
   // initial submission (after the thin-input gate passes) and by the
   // clarification branch (which merges the original input with the answer).
-  const runSift = async (text: string) => {
+  const runSift = async (
+    text: string,
+    fragmentOpts?: {
+      fragmentSort?: { fragment: string; bucket: FragmentBucket }[];
+      skippedFragmentSort?: boolean;
+      forceAnalysis?: boolean;
+    },
+  ) => {
     setLoading(true);
+    setLoadingStage("full");
     try {
-      const res = await apiRequest("POST", "/api/sift", {
+      const body: Record<string, unknown> = {
         input: text,
         inputMode: modeRef.current,
-      });
-      const data = (await res.json()) as SiftResult | CareResponse;
+      };
+      if (fragmentOpts?.forceAnalysis) {
+        body.forceAnalysis = true;
+      }
+      if (fragmentOpts?.skippedFragmentSort) {
+        body.skippedFragmentSort = true;
+      } else if (fragmentOpts?.fragmentSort?.length) {
+        body.fragmentSort = fragmentOpts.fragmentSort;
+      }
+      const res = await apiRequest("POST", "/api/sift", body);
+      const data = (await res.json()) as
+        | SiftResult
+        | CareResponse
+        | SiftRedundancyGateResult;
       if (isCareResponse(data)) {
         if (onCare) onCare(text);
+        return;
+      }
+      if (isRedundancyGateResult(data)) {
+        if (onRedundancyGate) onRedundancyGate(data);
         return;
       }
       queryClient.invalidateQueries({ queryKey: ["/api/sifts"] });
@@ -220,6 +273,7 @@ export function Composer({ onResult, onCare, initialText, prefillToken }: Compos
       setInput("");
       setInterim("");
       setClarifyInput(null);
+      setSortPhase(null);
       modeRef.current = "text";
     } catch (err: any) {
       toast({
@@ -228,6 +282,39 @@ export function Composer({ onResult, onCare, initialText, prefillToken }: Compos
       });
     } finally {
       setLoading(false);
+      setLoadingStage(null);
+    }
+  };
+
+  const beginFragmentSort = async (text: string) => {
+    setLoading(true);
+    setLoadingStage("fragments");
+    try {
+      const res = await apiRequest("POST", "/api/sift/fragments", {
+        input: text,
+      });
+      const data = await res.json();
+      if (isCareResponse(data)) {
+        if (onCare) onCare(text);
+        return;
+      }
+      const fragments = (data as { fragments?: string[] }).fragments ?? [];
+      if (fragments.length < 4) {
+        await runSift(text, { skippedFragmentSort: true });
+        return;
+      }
+      setSortPhase({
+        fragments,
+        inputSnapshot: text,
+        classifications: Object.fromEntries(
+          fragments.map((_, i) => [i, null]),
+        ) as Record<number, FragmentBucket | null>,
+      });
+    } catch {
+      await runSift(text, { skippedFragmentSort: true });
+    } finally {
+      setLoading(false);
+      setLoadingStage(null);
     }
   };
 
@@ -242,7 +329,7 @@ export function Composer({ onResult, onCare, initialText, prefillToken }: Compos
       setClarifyInput(text);
       return;
     }
-    await runSift(text);
+    await beginFragmentSort(text);
   };
 
   const submitClarification = async (answer: string) => {
@@ -251,7 +338,45 @@ export function Composer({ onResult, onCare, initialText, prefillToken }: Compos
     // Merge the original thought with the clarification answer. Labeled so
     // the model sees both passes as one coherent submission.
     const merged = `${base}\n\nOne more angle: ${answer}`;
-    await runSift(merged);
+    await beginFragmentSort(merged);
+  };
+
+  const finishFragmentSort = (skipped: boolean) => {
+    if (!sortPhase) return;
+    const text = sortPhase.inputSnapshot;
+    if (skipped) {
+      setSortPhase(null);
+      void runSift(text, { skippedFragmentSort: true });
+      return;
+    }
+    const fragmentSort = sortPhase.fragments
+      .map((fragment, i) => ({
+        fragment,
+        bucket: sortPhase.classifications[i],
+      }))
+      .filter(
+        (x): x is { fragment: string; bucket: FragmentBucket } =>
+          x.bucket !== null,
+      );
+    if (fragmentSort.length === 0) {
+      toast({
+        title: "Pick one line",
+        description: "Mark at least one fragment, or skip this step.",
+      });
+      return;
+    }
+    setSortPhase(null);
+    void runSift(text, { fragmentSort });
+  };
+
+  const setFragmentBucket = (index: number, bucket: FragmentBucket) => {
+    setSortPhase((sp) => {
+      if (!sp) return sp;
+      return {
+        ...sp,
+        classifications: { ...sp.classifications, [index]: bucket },
+      };
+    });
   };
 
   const handleKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -271,6 +396,79 @@ export function Composer({ onResult, onCare, initialText, prefillToken }: Compos
         onAnswer={submitClarification}
         onCancel={() => setClarifyInput(null)}
       />
+    );
+  }
+
+  if (sortPhase) {
+    return (
+      <div className="relative" data-testid="composer">
+        <div className="rounded-2xl border border-border/70 bg-card/50 p-5 md:p-6 space-y-8">
+          <p className="text-sm text-muted-foreground leading-relaxed">
+            Quick scan — tap what each line feels like.
+          </p>
+          {sortPhase.fragments.map((frag, i) => {
+            const picked = sortPhase.classifications[i];
+            return (
+              <div key={i} className="space-y-3">
+                <p className="text-base md:text-[17px] text-foreground leading-snug">
+                  {frag}
+                </p>
+                <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm">
+                  {(["matters", "noise", "unsure"] as FragmentBucket[]).map(
+                    (b) => (
+                      <button
+                        type="button"
+                        key={b}
+                        data-testid={`fragment-${i}-${b}`}
+                        onClick={() => setFragmentBucket(i, b)}
+                        className={
+                          picked === b
+                            ? "text-foreground underline underline-offset-4 decoration-primary/60"
+                            : "text-muted-foreground/80 hover:text-foreground transition-colors"
+                        }
+                      >
+                        {b === "matters"
+                          ? "Matters"
+                          : b === "noise"
+                          ? "Noise"
+                          : "Not sure"}
+                      </button>
+                    ),
+                  )}
+                </div>
+              </div>
+            );
+          })}
+          <div className="flex flex-wrap items-center gap-5 pt-2 border-t border-border/60">
+            <button
+              type="button"
+              onClick={() => finishFragmentSort(false)}
+              disabled={loading}
+              data-testid="button-fragment-continue"
+              className="text-sm text-foreground/85 hover:text-foreground underline underline-offset-4 decoration-border hover:decoration-foreground transition-colors disabled:opacity-50"
+            >
+              Continue
+            </button>
+            <button
+              type="button"
+              onClick={() => finishFragmentSort(true)}
+              disabled={loading}
+              data-testid="button-fragment-skip"
+              className="text-xs text-muted-foreground/80 hover:text-foreground transition-colors disabled:opacity-50"
+            >
+              Skip sorting
+            </button>
+            <button
+              type="button"
+              onClick={() => setSortPhase(null)}
+              disabled={loading}
+              className="text-xs text-muted-foreground/60 hover:text-foreground transition-colors disabled:opacity-50"
+            >
+              Back
+            </button>
+          </div>
+        </div>
+      </div>
     );
   }
 
@@ -367,8 +565,13 @@ export function Composer({ onResult, onCare, initialText, prefillToken }: Compos
           aria-live="polite"
         >
           <span className="pulse-dot h-1.5 w-1.5 rounded-full bg-primary inline-block" />
-          <span key={siftingIdx} className="fade-in-slow">
-            {SIFTING_SUBLINES[siftingIdx]}
+          <span
+            key={loadingStage === "full" ? siftingIdx : "frag"}
+            className={loadingStage === "full" ? "fade-in-slow" : ""}
+          >
+            {loadingStage === "fragments"
+              ? FRAGMENT_FETCH_LINE
+              : SIFTING_SUBLINES[siftingIdx]}
           </span>
         </div>
       ) : (
@@ -398,6 +601,136 @@ function WaveBars() {
         />
       ))}
     </span>
+  );
+}
+
+/** One contextual prompt for returning users — home / threads compose surfaces */
+export function ReEntryBlock({ enabled }: { enabled: boolean }) {
+  const [sessionDismissed, setSessionDismissed] = useState(() => {
+    try {
+      return (
+        typeof window !== "undefined" &&
+        sessionStorage.getItem("sift.reentry.dismiss") === "1"
+      );
+    } catch {
+      return false;
+    }
+  });
+
+  const { data } = useQuery<ReEntryResponse>({
+    queryKey: ["/api/reentry"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/reentry");
+      return res.json();
+    },
+    enabled: enabled && !sessionDismissed,
+    staleTime: 60_000,
+  });
+
+  if (!enabled || sessionDismissed || !data?.prompt || !data.action) {
+    return null;
+  }
+
+  const { prompt, action } = data;
+
+  const primaryHref =
+    action.type === "compare"
+      ? `/compare?current=${encodeURIComponent(action.currentSiftId)}&prior=${encodeURIComponent(action.priorSiftId)}`
+      : action.type === "checkin"
+        ? `/s/${action.threadId}`
+        : `/thread/${action.threadId}`;
+
+  const primaryLabel =
+    action.type === "compare"
+      ? "See the comparison"
+      : action.type === "checkin"
+        ? "Pick it up"
+        : "Take a look";
+
+  const dismiss = () => {
+    try {
+      sessionStorage.setItem("sift.reentry.dismiss", "1");
+    } catch {
+      /* ignore */
+    }
+    setSessionDismissed(true);
+  };
+
+  return (
+    <div
+      className="mb-8 rounded-2xl border border-border/60 bg-card/40 px-5 py-5 md:px-6 md:py-6"
+      data-testid="reentry-block"
+    >
+      <p className="text-base md:text-[17px] text-muted-foreground/90 leading-relaxed">
+        {prompt}
+      </p>
+      <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2">
+        <Link href={primaryHref}>
+          <a className="text-sm text-foreground/85 hover:text-foreground underline underline-offset-4 decoration-border hover:decoration-foreground transition-colors">
+            {primaryLabel}
+          </a>
+        </Link>
+        <button
+          type="button"
+          onClick={dismiss}
+          data-testid="reentry-dismiss"
+          className="text-xs text-muted-foreground/70 hover:text-foreground transition-colors"
+        >
+          not now
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** High redundancy gate — minimal surface before forcing analysis or mastery ack */
+export function RedundancyGateCard({
+  gate,
+  onSomethingChanged,
+  onKnowThis,
+}: {
+  gate: SiftRedundancyGateResult;
+  onSomethingChanged: () => void | Promise<void>;
+  onKnowThis: () => void | Promise<void>;
+}) {
+  const { redundancyGate: payload } = gate;
+  return (
+    <article className="fade-up space-y-8 max-w-3xl" data-testid="redundancy-gate">
+      <p className="text-base md:text-[17px] text-foreground leading-relaxed">
+        {payload.message}
+      </p>
+      <div>
+        <p className="text-xs text-muted-foreground/80 mb-3">
+          Here's what you found last time:
+        </p>
+        <div className="rounded-2xl border border-primary/25 bg-primary/5 p-5 md:p-6">
+          <p
+            className="font-serif text-xl md:text-2xl leading-snug text-foreground"
+            data-testid="text-gate-prior-step"
+          >
+            {payload.priorNextStep}
+          </p>
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-6">
+        <button
+          type="button"
+          data-testid="button-gate-something-changed"
+          onClick={() => void onSomethingChanged()}
+          className="text-sm text-foreground/85 hover:text-foreground underline underline-offset-4 decoration-border hover:decoration-foreground transition-colors"
+        >
+          {payload.options[0]}
+        </button>
+        <button
+          type="button"
+          data-testid="button-gate-know-this"
+          onClick={() => void onKnowThis()}
+          className="text-sm text-foreground/85 hover:text-foreground underline underline-offset-4 decoration-border hover:decoration-foreground transition-colors"
+        >
+          {payload.options[1]}
+        </button>
+      </div>
+    </article>
   );
 }
 
@@ -455,13 +788,89 @@ export function Result({
   const [resting, setResting] = useState(false);
   const [correction, setCorrection] = useState("");
   const [correctionSubmitting, setCorrectionSubmitting] = useState(false);
+  const [closurePromptDismissed, setClosurePromptDismissed] = useState(false);
+  const [breakdownLoading, setBreakdownLoading] = useState(false);
+  const [breakdownError, setBreakdownError] = useState<string | null>(null);
+  const [breakdownFadeIn, setBreakdownFadeIn] = useState(false);
+  const checkinSig =
+    result.checkins?.map((c) => c.id).join(",") ?? "";
+
   useEffect(() => {
     setView(result);
     setFitState(null);
     setResting(false);
     setCorrection("");
     setCorrectionSubmitting(false);
-  }, [result.id, result.coreIntent]);
+    setClosurePromptDismissed(false);
+    setBreakdownLoading(false);
+    setBreakdownError(null);
+    setBreakdownFadeIn(false);
+  }, [
+    result.id,
+    result.coreIntent,
+    result.nextStep,
+    checkinSig,
+    JSON.stringify(result.microTasks ?? null),
+  ]);
+
+  const requestBreakdown = async () => {
+    if (!view.mine || readOnly || breakdownLoading) return;
+    setBreakdownError(null);
+    setBreakdownLoading(true);
+    try {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      const token = getAuthToken();
+      if (token) headers.Authorization = `Bearer ${token}`;
+      const res = await fetch(
+        `/api/sift/${encodeURIComponent(view.id)}/breakdown`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ nextStep: view.nextStep }),
+        },
+      );
+      const data = (await res.json().catch(() => ({}))) as {
+        microTasks?: string[];
+        error?: string;
+      };
+      if (res.status === 422) {
+        setBreakdownError(
+          typeof data.error === "string"
+            ? data.error
+            : "Could not break this down — try rephrasing the step.",
+        );
+        setBreakdownLoading(false);
+        return;
+      }
+      if (!res.ok) {
+        setBreakdownError(
+          "Could not break this down — try rephrasing the step.",
+        );
+        setBreakdownLoading(false);
+        return;
+      }
+      const tasks = data.microTasks;
+      if (!Array.isArray(tasks) || tasks.length !== 3) {
+        setBreakdownError(
+          "Could not break this down — try rephrasing the step.",
+        );
+        setBreakdownLoading(false);
+        return;
+      }
+      setBreakdownFadeIn(true);
+      setView((v) => ({ ...v, microTasks: tasks }));
+      setBreakdownLoading(false);
+      queryClient.invalidateQueries({ queryKey: ["/api/sift", view.id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/sifts"] });
+    } catch {
+      setBreakdownError(
+        "Could not break this down — try rephrasing the step.",
+      );
+      setBreakdownLoading(false);
+    }
+  };
 
   const applyCorrection = async () => {
     const v = correction.trim();
@@ -472,11 +881,11 @@ export function Result({
     // re-analysis call fails.
     setCorrectionSubmitting(true);
     try {
-      const merged = `${view.input}\n\nOne more angle: ${v}\n\nWhat I actually want underneath this is: ${v}`;
-      const res = await apiRequest("POST", "/api/sift", {
-        input: merged,
-        inputMode: view.inputMode,
-      });
+      const res = await apiRequest(
+        "PATCH",
+        `/api/sift/${encodeURIComponent(view.id)}/correction`,
+        { reframe: v },
+      );
       const data = (await res.json()) as SiftResult | CareResponse;
       if (isCareResponse(data)) {
         // Crisis screen tripped on the reframe — keep the existing view and
@@ -488,6 +897,7 @@ export function Result({
         return;
       }
       queryClient.invalidateQueries({ queryKey: ["/api/sifts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/sift", view.id] });
       setView(data);
       setFitState("fits");
       setCorrection("");
@@ -505,13 +915,45 @@ export function Result({
     }
   };
 
+  const patchClosurePrompt = async (keepOpen: boolean) => {
+    try {
+      await apiRequest(
+        "PATCH",
+        `/api/sift/${encodeURIComponent(view.id)}/close`,
+        keepOpen
+          ? { closurePromptShown: true, keepOpen: true }
+          : { closurePromptShown: true },
+      );
+      setClosurePromptDismissed(true);
+    } catch (err: unknown) {
+      toast({
+        title: "Couldn't save that choice",
+        description:
+          err instanceof Error ? err.message : "Try again in a moment.",
+      });
+    }
+  };
+
   const shareUrl =
     typeof window !== "undefined"
       ? `${window.location.origin}${window.location.pathname}#/s/${result.id}`
       : "";
 
+  const connectiveCaption =
+    view.signalReason?.trim() ||
+    "This move follows from what matters most right now.";
+
+  const sortedCheckins = [...(view.checkins ?? [])].sort(
+    (a, b) => a.createdAt - b.createdAt,
+  );
+  const latestCheckin =
+    sortedCheckins.length > 0
+      ? sortedCheckins[sortedCheckins.length - 1]
+      : null;
+
   const copyText = async () => {
     const hasNewFraming = (view.matters?.length ?? 0) > 0;
+    const connective = connectiveCaption;
     const lines = [
       `Sift — ${new Date(view.createdAt).toLocaleString()}`,
       "",
@@ -521,17 +963,17 @@ export function Result({
     ];
     if (hasNewFraming) {
       lines.push(
-        "What seems to matter most right now:",
+        "What matters now:",
         ...view.matters.map((m, i) => `${i + 1}. ${m}`),
         "",
       );
-      if ((view.noise?.length ?? 0) > 0) {
-        lines.push(
-          "What may be noise right now:",
-          ...view.noise.map((n) => `— ${n}`),
-          "",
-        );
-      }
+      lines.push(
+        "What may be noise right now:",
+        ...(view.noise?.length
+          ? view.noise.map((n) => `— ${n}`)
+          : ["—"]),
+        "",
+      );
       if (view.signalReason) {
         lines.push("Why this may be the signal:", view.signalReason, "");
       }
@@ -546,6 +988,16 @@ export function Result({
       `One next step:`,
       view.nextStep,
       "",
+      connective,
+      "",
+    );
+    if (view.stepScope) {
+      lines.push(
+        `${view.stepScope.durationEstimate} · clear stopping point: ${view.stepScope.stoppingCondition}`,
+        "",
+      );
+    }
+    lines.push(
       `Quiet reflection:`,
       view.reflection,
       "",
@@ -668,54 +1120,82 @@ export function Result({
           )}
         </section>
 
-        {/* Signal/Noise framing — the new first-result UI. Renders when the
-            analyze pass returned matters/noise (always for new sifts). Legacy
-            sifts created before these fields existed fall back to the
-            "Themes underneath" section below. */}
+        {/* Signal/Noise framing — new sifts always populate matters/noise.
+            Legacy rows fall back to themes below. */}
         {(view.matters?.length ?? 0) > 0 ? (
           <>
-            <section data-testid="section-matters">
-              <Label>What seems to matter most right now</Label>
-              <ul className="mt-4 divide-y divide-border/70 border-y border-border/70">
-                {view.matters.map((m, i) => (
-                  <li
-                    key={i}
-                    className="py-3.5 md:py-4 flex gap-4 md:gap-6"
-                    data-testid={`matters-${i}`}
-                  >
-                    <span className="font-mono text-xs text-muted-foreground pt-1 w-6">
-                      {String(i + 1).padStart(2, "0")}
-                    </span>
-                    <p className="flex-1 font-serif text-lg md:text-xl text-foreground leading-snug">
-                      {m}
-                    </p>
-                  </li>
-                ))}
-              </ul>
-            </section>
-
-            {(view.noise?.length ?? 0) > 0 && (
-              <section data-testid="section-noise">
-                <Label>What may be noise right now</Label>
-                <ul className="mt-4 space-y-2.5">
-                  {view.noise.map((n, i) => (
+            <div
+              className="grid grid-cols-1 md:grid-cols-2 md:gap-x-10 md:gap-y-8 gap-8"
+              data-testid="section-signal-grid"
+            >
+              <section data-testid="section-matters">
+                <Label>What matters now</Label>
+                <ul className="mt-4 divide-y divide-border/70 border-y border-border/70">
+                  {view.matters.map((m, i) => (
                     <li
                       key={i}
-                      className="text-sm md:text-[15px] text-muted-foreground/85 leading-relaxed flex gap-3"
-                      data-testid={`noise-${i}`}
+                      className="py-3.5 md:py-4 flex gap-4 md:gap-6"
+                      data-testid={`matters-${i}`}
                     >
-                      <span
-                        aria-hidden="true"
-                        className="text-muted-foreground/50 select-none"
-                      >
-                        —
+                      <span className="font-mono text-xs text-muted-foreground pt-1 w-6">
+                        {String(i + 1).padStart(2, "0")}
                       </span>
-                      <span className="flex-1">{n}</span>
+                      <p className="flex-1 font-serif text-lg md:text-xl text-foreground leading-snug">
+                        {m}
+                      </p>
                     </li>
                   ))}
                 </ul>
               </section>
-            )}
+
+              <section data-testid="section-noise">
+                <Label>What may be noise right now</Label>
+                <ul className="mt-4 space-y-2.5">
+                  {(view.noise?.length ?? 0) > 0 ? (
+                    (view.noise ?? []).map((n, i) => (
+                      <li
+                        key={i}
+                        className="text-sm md:text-[15px] text-muted-foreground/85 leading-relaxed flex gap-3"
+                        data-testid={`noise-${i}`}
+                      >
+                        <span
+                          aria-hidden="true"
+                          className="text-muted-foreground/50 select-none"
+                        >
+                          —
+                        </span>
+                        <span className="flex-1">{n}</span>
+                      </li>
+                    ))
+                  ) : (
+                    <li className="text-sm text-muted-foreground/60 leading-relaxed">
+                      Nothing singled out on this side for now.
+                    </li>
+                  )}
+                </ul>
+              </section>
+            </div>
+
+            {view.recurringSignal ? (
+              <p
+                className="mt-4 text-xs text-muted-foreground/75 leading-relaxed"
+                data-testid="caption-recurring-signal"
+              >
+                This signal has come up before. You may already know what it's
+                pointing to.
+              </p>
+            ) : null}
+
+            {view.redundancyHint ? (
+              <p
+                className={`text-xs text-muted-foreground/75 leading-relaxed ${
+                  view.recurringSignal ? "mt-3" : "mt-4"
+                }`}
+                data-testid="caption-redundancy-hint"
+              >
+                {view.redundancyHint.message}
+              </p>
+            ) : null}
 
             {view.signalReason && (
               <section data-testid="section-signal-reason">
@@ -768,6 +1248,110 @@ export function Result({
               {view.nextStep}
             </p>
           </div>
+          <p
+            className="mt-3 text-xs text-muted-foreground/75 leading-relaxed"
+            data-testid="text-next-connective"
+          >
+            {connectiveCaption}
+          </p>
+          {view.stepScope ? (
+            <p
+              className="mt-1.5 text-xs text-muted-foreground/75 leading-relaxed"
+              data-testid="text-next-scope"
+            >
+              {view.stepScope.durationEstimate} · clear stopping point:{" "}
+              {view.stepScope.stoppingCondition}
+            </p>
+          ) : null}
+
+          {view.mine && !readOnly ? (
+            <>
+              {view.microTasks?.length === 3 ? (
+                <div
+                  className="mt-4 rounded-xl border border-border/55 bg-muted/35 px-4 py-3.5 text-sm md:text-[15px] text-foreground leading-relaxed"
+                  data-testid="panel-breakdown-microtasks"
+                  style={
+                    breakdownFadeIn
+                      ? {
+                          animation:
+                            "fade-in-slow 0.3s cubic-bezier(0.2, 0.7, 0.2, 1) both",
+                        }
+                      : undefined
+                  }
+                >
+                  <ol className="list-decimal space-y-1.5 pl-5 marker:text-muted-foreground/75">
+                    {view.microTasks.map((t, i) => (
+                      <li key={i}>{t}</li>
+                    ))}
+                  </ol>
+                </div>
+              ) : breakdownLoading ? (
+                <p
+                  className="mt-3 text-sm text-muted-foreground"
+                  aria-live="polite"
+                  data-testid="text-breakdown-loading"
+                >
+                  Finding the smallest move…
+                </p>
+              ) : breakdownError ? (
+                <div className="mt-3 space-y-2" data-testid="panel-breakdown-error">
+                  <p className="text-sm text-muted-foreground leading-relaxed">
+                    {breakdownError}
+                  </p>
+                  <button
+                    type="button"
+                    data-testid="link-breakdown-retry"
+                    onClick={() => {
+                      setBreakdownError(null);
+                      void requestBreakdown();
+                    }}
+                    className="text-xs text-muted-foreground/70 hover:text-foreground underline underline-offset-4 decoration-border hover:decoration-foreground transition-colors"
+                  >
+                    Try again
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  data-testid="link-breakdown"
+                  onClick={() => void requestBreakdown()}
+                  className="mt-3 text-xs text-muted-foreground/70 hover:text-foreground underline underline-offset-4 decoration-border hover:decoration-foreground transition-colors"
+                >
+                  Break it down
+                </button>
+              )}
+            </>
+          ) : null}
+
+          {latestCheckin ? (
+            <div
+              className="mt-6 pt-6 border-t border-border/60 space-y-4"
+              data-testid="checkin-step-diff"
+            >
+              <div className="space-y-2">
+                <p className="text-[10px] tracking-[0.22em] uppercase font-medium text-muted-foreground/80">
+                  Originally
+                </p>
+                <p className="text-sm text-muted-foreground/90 leading-relaxed">
+                  {(latestCheckin.priorNextStep ?? view.baselineNextStep)?.trim() ||
+                    "—"}
+                </p>
+              </div>
+              <div className="space-y-2 pt-2 border-t border-border/40">
+                <p className="text-[10px] tracking-[0.22em] uppercase font-medium text-muted-foreground/80">
+                  After reality
+                </p>
+                <p className="font-serif text-lg md:text-xl text-foreground leading-snug">
+                  {latestCheckin.nextStep}
+                </p>
+              </div>
+              {latestCheckin.changeReason ? (
+                <p className="text-xs text-muted-foreground/80 leading-relaxed pt-1">
+                  {latestCheckin.changeReason}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
         </section>
 
         {/* Reflection */}
@@ -780,6 +1364,37 @@ export function Result({
             "{view.reflection}"
           </p>
         </section>
+
+        {view.showClosurePrompt && !closurePromptDismissed && !readOnly ? (
+          <section
+            className="pt-6 mt-2 border-t border-border/50 space-y-4"
+            data-testid="closure-prompt"
+          >
+            <p className="text-sm text-muted-foreground/85 leading-relaxed">
+              You've sorted through something like this several times, and your
+              reads are landing well. It might be time to close this loop. You
+              can always come back if it shifts.
+            </p>
+            <div className="flex flex-wrap gap-x-6 gap-y-2">
+              <button
+                type="button"
+                data-testid="link-close-thread-prompt"
+                onClick={() => void patchClosurePrompt(false)}
+                className="text-xs text-muted-foreground/70 hover:text-foreground underline underline-offset-4 decoration-border hover:decoration-foreground transition-colors"
+              >
+                Close this thread
+              </button>
+              <button
+                type="button"
+                data-testid="link-keep-thread-open"
+                onClick={() => void patchClosurePrompt(true)}
+                className="text-xs text-muted-foreground/70 hover:text-foreground underline underline-offset-4 decoration-border hover:decoration-foreground transition-colors"
+              >
+                Keep it open
+              </button>
+            </div>
+          </section>
+        ) : null}
 
         {/* Actions */}
         {showFollowup && !readOnly && resting ? (
@@ -994,7 +1609,7 @@ export function Result({
         onOpenChange={setReflectionShareOpen}
         eyebrow="From Sift"
         title="Quiet reflection"
-        line={result.reflection}
+        line={view.reflection}
       />
     </article>
   );

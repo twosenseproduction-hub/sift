@@ -9,7 +9,13 @@ import { screenForCrisis, screenOutputForCrisis } from "./crisis-screen";
 import {
   analyzeRequestSchema,
   analysisSchema,
+  siftFragmentsRequestSchema,
+  siftFragmentsResponseSchema,
+  siftCorrectionRequestSchema,
   operatorArtifactSchema,
+  type StepScope,
+  type SiftRevisionSnapshot,
+  type Theme,
   feedbackRequestSchema,
   feedbackStageSchema,
   feedbackSentimentSchema,
@@ -19,7 +25,10 @@ import {
   classifyContact,
   checkinRequestSchema,
   checkinAnalysisSchema,
+  checkinModelOutputSchema,
   updateSiftStatusSchema,
+  siftClosurePromptPatchSchema,
+  siftBreakdownRequestSchema,
   deepenRequestSchema,
   bookmarkPayloadSchema,
   siftTurnMessageSchema,
@@ -28,6 +37,7 @@ import {
   type Analysis,
   type OperatorArtifact,
   type CheckinAnalysis,
+  type CheckinModelOutput,
   type CheckinResult,
   type SiftResult,
   type Me,
@@ -43,6 +53,7 @@ import {
   type SortResponse,
   type Bookmark,
   type Sift,
+  type ReEntryResponse,
   type FeedbackStats,
   type AdminReviewFeedback,
   type AdminReviewSift,
@@ -54,6 +65,136 @@ const client = new Anthropic();
 // against api.anthropic.com out of the box. When running inside the Perplexity
 // sandbox, set ANTHROPIC_MODEL=claude_sonnet_4_6 (the internal alias).
 const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-5-20250929";
+
+/** Training layer — redundancy gate & closure prompt thresholds (tunable) */
+const REDUNDANCY_LOW_THRESHOLD = 0.4;
+const REDUNDANCY_HIGH_THRESHOLD = 0.65;
+const MASTERY_SORT_ALIGNMENT_MIN = 0.75;
+const MASTERY_RECURRING_SIGNAL_MIN = 3;
+const MASTERY_COUNT_MIN = 2;
+
+const STOP_WORDS = new Set([
+  "a",
+  "an",
+  "the",
+  "and",
+  "or",
+  "but",
+  "in",
+  "on",
+  "at",
+  "to",
+  "for",
+  "of",
+  "as",
+  "by",
+  "with",
+  "from",
+  "is",
+  "are",
+  "was",
+  "were",
+  "be",
+  "been",
+  "being",
+  "have",
+  "has",
+  "had",
+  "do",
+  "does",
+  "did",
+  "will",
+  "would",
+  "could",
+  "should",
+  "may",
+  "might",
+  "must",
+  "can",
+  "this",
+  "that",
+  "these",
+  "those",
+  "it",
+  "its",
+  "i",
+  "im",
+  "ive",
+  "id",
+  "you",
+  "your",
+  "yours",
+  "we",
+  "they",
+  "them",
+  "their",
+  "what",
+  "which",
+  "who",
+  "whom",
+  "when",
+  "where",
+  "why",
+  "how",
+  "all",
+  "each",
+  "every",
+  "both",
+  "few",
+  "more",
+  "most",
+  "other",
+  "some",
+  "such",
+  "no",
+  "nor",
+  "not",
+  "only",
+  "own",
+  "same",
+  "so",
+  "than",
+  "too",
+  "very",
+  "just",
+  "also",
+  "now",
+  "here",
+  "there",
+  "then",
+  "once",
+  "if",
+  "because",
+  "about",
+  "into",
+  "through",
+  "during",
+  "before",
+  "after",
+  "above",
+  "below",
+  "between",
+  "under",
+  "again",
+  "further",
+  "any",
+  "really",
+  "like",
+  "just",
+  "get",
+  "got",
+  "going",
+  "want",
+  "need",
+  "make",
+  "made",
+  "even",
+  "still",
+  "back",
+  "much",
+  "well",
+  "way",
+]);
 
 const SAFETY_CLAUSE = `SAFETY — NON-NEGOTIABLE:
 - Never suggest, validate, romanticize, instruct on, or propose self-harm, suicide, or violence toward anyone. Not as a next step, not as a reflection, not as a theme, not as an observation, not even hypothetically.
@@ -82,7 +223,11 @@ Return STRICT JSON matching this shape exactly:
   "noise": [string, ...],         // 1–3 short phrases of what may be loud but not currently clarifying
   "signalReason": string,         // one sentence naming WHY the elevated thread may carry consequence — provisional, not declarative
   "nextStep": string,             // ONE concrete action they can take today or this week. Specific, small, doable.
-  "reflection": string            // one short sentence that names what they may not be seeing
+  "reflection": string,           // one short sentence that names what they may not be seeing
+  "stepScope": {
+    "durationEstimate": string,   // short, starts with ~ e.g. "~15 min"
+    "stoppingCondition": string   // one phrase — the moment this move is complete (not a success metric)
+  }
 }
 
 Rules:
@@ -93,6 +238,8 @@ Rules:
 - signalReason: One sentence. Name the strongest matters phrase, then say WHY it may carry consequence (what it touches, what depends on it, what it makes possible). Provisional language: "may", "seems to", "could". Not declarative. Under 30 words.
 - nextStep: Must be an action, not advice. Starts with a verb. Concrete, scoped, achievable. Not "reflect more" or "think about." Something they do.
 - reflection: A quiet observation. Honest. Not flattering. Under 20 words.
+- stepScope.durationEstimate: Time envelope only — "~10 min", "~20 min", "~30 min", etc. Never a range.
+- stepScope.stoppingCondition: One concrete completion cue — what would make it obvious this move is done (not outcome hype).
 - If the input is very short or unclear, still produce a best-effort pass — do not ask questions back. matters/noise can be tentative but must still be present.
 - Output JSON only. No prose before or after.`;
 
@@ -384,7 +531,8 @@ Return STRICT JSON matching this shape exactly:
   "hearing": string,         // 2–4 sentences identifying the real pattern or shift
   "matters": [string],       // 2–3 bullets — each a short sentence
   "noise": [string],         // 1–2 bullets — each a short sentence
-  "nextStep": string         // ONE clear, specific, realistic action — often smaller or more precise than before
+  "nextStep": string,        // ONE clear, specific, realistic action — often smaller or more precise than before
+  "changeReason": string     // one or two sentences — why this next step is different from before (provisional)
 }
 
 Rules:
@@ -392,6 +540,7 @@ Rules:
 - "matters": 2 or 3 bullets. Each is a short, grounded sentence.
 - "noise": 1 or 2 bullets. What to let go of or stop tracking.
 - "nextStep": ONE action. Starts with a verb. Adjusted based on the outcome — not a restatement.
+- "changeReason": Name what shifted in the situation — not praise, not blame. Optional only if nothing meaningfully changed (rare).
 - Output JSON only. No prose before or after.`;
 
 function newId(): string {
@@ -449,7 +598,27 @@ function revokeToken(token: string): void {
   deleteSessionStmt.run(token);
 }
 
-async function runAnalysis(input: string): Promise<Analysis> {
+function buildPreSortContext(
+  fragmentSort: { fragment: string; bucket: string }[] | undefined,
+  skippedFragmentSort: boolean | undefined,
+): string {
+  if (skippedFragmentSort) {
+    return "The user skipped the quick fragment sort and asked for the full read.";
+  }
+  if (!fragmentSort?.length) return "";
+  const lines = fragmentSort.map(
+    (s) => `• "${s.fragment}" — marked: ${s.bucket}`,
+  );
+  return `Before the full sift, the user did a quick pass on phrases from their text. This is provisional — not a command:\n${lines.join("\n")}`;
+}
+
+async function runAnalysis(
+  input: string,
+  opts?: { preSortContext?: string },
+): Promise<Analysis> {
+  const extra = opts?.preSortContext
+    ? `\n\n${opts.preSortContext}\n`
+    : "";
   const msg = await client.messages.create({
     model: MODEL,
     max_tokens: 1024,
@@ -457,7 +626,7 @@ async function runAnalysis(input: string): Promise<Analysis> {
     messages: [
       {
         role: "user",
-        content: `Here is what I'm holding right now:\n\n${input}\n\nSift it. Return JSON only.`,
+        content: `Here is what I'm holding right now:\n\n${input}${extra}\nSift it. Return JSON only.`,
       },
     ],
   });
@@ -477,7 +646,18 @@ async function runAnalysis(input: string): Promise<Analysis> {
     if (!match) throw new Error("Model did not return JSON");
     parsed = JSON.parse(match[0]);
   }
-  return analysisSchema.parse(parsed);
+  const analysis = analysisSchema.parse(parsed);
+  if (!analysis.stepScope) {
+    return {
+      ...analysis,
+      stepScope: {
+        durationEstimate: "~20 min",
+        stoppingCondition:
+          "when you can name one concrete piece of this move that is finished",
+      },
+    };
+  }
+  return analysis;
 }
 
 // runOperatorAnalysis — Phase 3 helper. Mirrors runAnalysis but uses the
@@ -534,10 +714,99 @@ function extractJson(raw: string): any {
   try {
     return JSON.parse(cleaned);
   } catch {
-    const m = cleaned.match(/\{[\s\S]*\}/);
-    if (!m) throw new Error("Model did not return JSON");
-    return JSON.parse(m[0]);
+    const objMatch = cleaned.match(/\{[\s\S]*\}/);
+    if (objMatch) return JSON.parse(objMatch[0]);
+    const arrMatch = cleaned.match(/\[[\s\S]*\]/);
+    if (arrMatch) return JSON.parse(arrMatch[0]);
+    throw new Error("Model did not return JSON");
   }
+}
+
+const BREAKDOWN_SYSTEM_PROMPT = `You are helping someone take the first movement toward a step that feels too big. 
+Your only job is to break the following next step into exactly 3 micro-tasks. 
+
+Rules:
+- Each micro-task must take 2 minutes or less
+- Each must be so small it is almost laughable — the bar should be embarrassingly low
+- Each must be physically doable right now, not mentally preparatory
+- Do not reframe, reinterpret, or improve the original step
+- Do not add encouragement, explanation, or context
+- Output only a raw JSON array of exactly 3 strings, nothing else
+
+Example output format:
+["Open the document", "Read the first sentence only", "Write one word"]
+
+Next step: [INSERT NEXT STEP HERE]`;
+
+async function runBreakdownMicroTasks(nextStep: string): Promise<string[]> {
+  const system = BREAKDOWN_SYSTEM_PROMPT.replace(
+    "[INSERT NEXT STEP HERE]",
+    nextStep,
+  );
+  const msg = await client.messages.create({
+    model: MODEL,
+    max_tokens: 400,
+    system,
+    messages: [
+      {
+        role: "user",
+        content: "Return JSON only.",
+      },
+    ],
+  });
+  const textBlock = msg.content.find((b: any) => b.type === "text") as any;
+  const raw = (textBlock?.text ?? "").trim();
+  const parsed = extractJson(raw);
+  if (!Array.isArray(parsed)) {
+    throw new Error("Model did not return a JSON array");
+  }
+  const tasks = parsed
+    .filter((x: unknown): x is string => typeof x === "string")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (tasks.length !== 3) {
+    throw new Error("Breakdown must be exactly 3 micro-tasks");
+  }
+  return tasks;
+}
+
+const FRAGMENTS_SYSTEM_PROMPT = `You pull 4–6 short fragments from the user's text for a quick sort they will do by hand before the full sift.
+
+Return STRICT JSON:
+{ "fragments": [ string ] }
+
+Rules:
+- Exactly 4 to 6 fragments.
+- Each fragment: 3–10 words, from their wording or a tight paraphrase — not generic slogans.
+- Distinct threads. No duplicates.
+- Do not label matters vs noise.
+
+${SAFETY_CLAUSE}
+
+Output JSON only.`;
+
+async function runSiftFragments(input: string): Promise<string[]> {
+  const msg = await client.messages.create({
+    model: MODEL,
+    max_tokens: 400,
+    system: FRAGMENTS_SYSTEM_PROMPT,
+    messages: [
+      {
+        role: "user",
+        content: `Their text:\n\n${input}\n\nReturn JSON only.`,
+      },
+    ],
+  });
+  const textBlock = msg.content.find((b: any) => b.type === "text") as any;
+  const raw = (textBlock?.text ?? "").trim();
+  const parsed = extractJson(raw);
+  const fr = parsed?.fragments;
+  if (!Array.isArray(fr)) throw new Error("Model did not return fragments");
+  const cleaned = fr
+    .filter((x: unknown) => typeof x === "string")
+    .map((s: string) => s.trim())
+    .filter(Boolean);
+  return siftFragmentsResponseSchema.parse({ fragments: cleaned }).fragments;
 }
 
 // Render the full thread into a compact user-role transcript for the model.
@@ -888,7 +1157,7 @@ async function runCheckinAnalysis(
   originalNextStep: string,
   status: string,
   note: string
-): Promise<CheckinAnalysis> {
+): Promise<CheckinModelOutput> {
   const statusLabel =
     status === "did_it"
       ? "I did it."
@@ -928,7 +1197,7 @@ Sift what this outcome reveals. Return JSON only.`;
     if (!match) throw new Error("Model did not return JSON");
     parsed = JSON.parse(match[0]);
   }
-  return checkinAnalysisSchema.parse(parsed);
+  return checkinModelOutputSchema.parse(parsed);
 }
 
 function requireAuth(req: Request, res: Response, next: NextFunction) {
@@ -951,11 +1220,397 @@ function checkinToResult(row: Checkin): CheckinResult {
   };
 }
 
+function siftRowToRevisionSnapshot(row: Sift): SiftRevisionSnapshot {
+  let themes: Theme[] = [];
+  try {
+    const t = JSON.parse(row.themes);
+    themes = Array.isArray(t) ? t : [];
+  } catch {
+    themes = [];
+  }
+  let matters: string[] = [];
+  let noise: string[] = [];
+  try {
+    if (row.matters) {
+      const m = JSON.parse(row.matters);
+      if (Array.isArray(m)) matters = m.filter((x) => typeof x === "string");
+    }
+    if (row.noise) {
+      const n = JSON.parse(row.noise);
+      if (Array.isArray(n)) noise = n.filter((x) => typeof x === "string");
+    }
+  } catch {
+    /* ignore */
+  }
+  let stepScope: StepScope | null = null;
+  if (row.stepScope) {
+    try {
+      const s = JSON.parse(row.stepScope);
+      if (
+        s &&
+        typeof s.durationEstimate === "string" &&
+        typeof s.stoppingCondition === "string"
+      ) {
+        stepScope = s as StepScope;
+      }
+    } catch {
+      /* null */
+    }
+  }
+  return {
+    at: Date.now(),
+    coreIntent: row.coreIntent,
+    nextStep: row.nextStep,
+    reflection: row.reflection,
+    themes,
+    matters,
+    noise,
+    signalReason: row.signalReason ?? null,
+    stepScope,
+  };
+}
+
+function parseStepScopeColumn(raw: string | null): StepScope | undefined {
+  if (!raw) return undefined;
+  try {
+    const s = JSON.parse(raw);
+    if (
+      s &&
+      typeof s.durationEstimate === "string" &&
+      typeof s.stoppingCondition === "string"
+    ) {
+      return s as StepScope;
+    }
+  } catch {
+    /* ignore */
+  }
+  return undefined;
+}
+
+/** Cached breakdown JSON — exactly 3 strings or null */
+function parseMicroTasksColumn(raw: string | null): string[] | null {
+  if (!raw) return null;
+  try {
+    const v = JSON.parse(raw);
+    if (!Array.isArray(v)) return null;
+    const tasks = v
+      .filter((x): x is string => typeof x === "string")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    return tasks.length === 3 ? tasks : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseRevisionHistoryColumn(
+  raw: string | null,
+): SiftRevisionSnapshot[] | undefined {
+  if (!raw) return undefined;
+  try {
+    const v = JSON.parse(raw);
+    return Array.isArray(v) ? v : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+// --- Training layer (sort alignment, recurring signal, redundancy, closure prompt) ---
+
+function tokenizeForOverlap(text: string): Set<string> {
+  const words = text.toLowerCase().split(/\W+/).filter(Boolean);
+  const set = new Set<string>();
+  for (const w of words) {
+    if (w.length <= 2 || STOP_WORDS.has(w)) continue;
+    set.add(w);
+  }
+  return set;
+}
+
+function jaccardSimilarity(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 && b.size === 0) return 1;
+  let inter = 0;
+  a.forEach((x) => {
+    if (b.has(x)) inter++;
+  });
+  const union = a.size + b.size - inter;
+  return union === 0 ? 0 : inter / union;
+}
+
+type RedundancyLevel =
+  | { level: "none" }
+  | { level: "low"; priorSiftId: string; priorNextStep: string }
+  | { level: "high"; priorSiftId: string; priorNextStep: string };
+
+async function checkRedundancy(
+  userId: number | null,
+  newInput: string,
+): Promise<RedundancyLevel> {
+  if (!userId) return { level: "none" };
+  const recent = await storage.getRecentSifts(userId, 10);
+  if (!recent.length) return { level: "none" };
+  const newTok = tokenizeForOverlap(newInput);
+  let best: { id: string; nextStep: string; sim: number } | null = null;
+  for (const row of recent) {
+    const sim = jaccardSimilarity(newTok, tokenizeForOverlap(row.input));
+    if (!best || sim > best.sim) {
+      best = { id: row.id, nextStep: row.nextStep, sim };
+    }
+  }
+  if (!best || best.sim <= REDUNDANCY_LOW_THRESHOLD) return { level: "none" };
+  if (best.sim > REDUNDANCY_HIGH_THRESHOLD) {
+    return {
+      level: "high",
+      priorSiftId: best.id,
+      priorNextStep: best.nextStep,
+    };
+  }
+  return {
+    level: "low",
+    priorSiftId: best.id,
+    priorNextStep: best.nextStep,
+  };
+}
+
+function normalizeMatchFragment(s: string): string {
+  return s.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function fragmentTextInList(fragment: string, list: string[]): boolean {
+  const f = normalizeMatchFragment(fragment);
+  if (!f) return false;
+  for (const item of list) {
+    const m = normalizeMatchFragment(item);
+    if (!m) continue;
+    if (m.includes(f) || f.includes(m)) return true;
+  }
+  return false;
+}
+
+function computeSortAlignmentScore(
+  fragmentSort:
+    | { fragment: string; bucket: "matters" | "noise" | "unsure" }[]
+    | undefined,
+  matters: string[],
+  noise: string[],
+): number | null {
+  if (!fragmentSort?.length) return null;
+  let classified = 0;
+  let matches = 0;
+  for (const row of fragmentSort) {
+    if (row.bucket === "unsure") continue;
+    classified++;
+    const ok =
+      row.bucket === "matters"
+        ? fragmentTextInList(row.fragment, matters)
+        : fragmentTextInList(row.fragment, noise);
+    if (ok) matches++;
+  }
+  if (classified === 0) return null;
+  return matches / classified;
+}
+
+function meaningfulTokensFromStrings(lines: string[]): string[] {
+  const out: string[] = [];
+  for (const line of lines) {
+    for (const w of line.toLowerCase().split(/\W+/)) {
+      if (w.length > 2 && !STOP_WORDS.has(w)) out.push(w);
+    }
+  }
+  return out;
+}
+
+async function detectRecurringSignal(
+  userId: number | null,
+  newMatters: string[],
+  currentSiftId: string,
+): Promise<{ detected: boolean; theme: string | null }> {
+  if (!userId || newMatters.length === 0) {
+    return { detected: false, theme: null };
+  }
+  const recent = await storage.getRecentSifts(userId, 5, currentSiftId);
+  if (recent.length < 2) return { detected: false, theme: null };
+
+  const newTokenList = meaningfulTokensFromStrings(newMatters);
+  const newUnique = Array.from(new Set(newTokenList));
+
+  const matchingIntersections: string[][] = [];
+
+  for (const sift of recent) {
+    let priorMatters: string[] = [];
+    try {
+      if (sift.matters) {
+        const p = JSON.parse(sift.matters);
+        if (Array.isArray(p)) {
+          priorMatters = p.filter((x): x is string => typeof x === "string");
+        }
+      }
+    } catch {
+      priorMatters = [];
+    }
+    const priorSet = new Set(meaningfulTokensFromStrings(priorMatters));
+    const inter = newUnique.filter((t) => priorSet.has(t));
+    if (inter.length >= 2) {
+      matchingIntersections.push(inter);
+    }
+  }
+
+  if (matchingIntersections.length < 2) {
+    return { detected: false, theme: null };
+  }
+
+  const theme =
+    matchingIntersections[0].length >= 2
+      ? `${matchingIntersections[0][0]} ${matchingIntersections[0][1]}`
+      : matchingIntersections[0][0];
+  return { detected: true, theme };
+}
+
+async function shouldShowClosurePrompt(
+  userId: number | null,
+  sift: Sift,
+): Promise<boolean> {
+  if (!userId) return false;
+  if (sift.closurePromptShown === 1) return false;
+  const p = await storage.getOrCreateDiscernmentProfile(userId);
+  const avg = p.avgSortAlignment;
+  if (avg == null || avg < MASTERY_SORT_ALIGNMENT_MIN) return false;
+  if (p.recurringSignalCount < MASTERY_RECURRING_SIGNAL_MIN) return false;
+  if (p.masteryCount < MASTERY_COUNT_MIN) return false;
+  return true;
+}
+
+// --- Smart re-entry (one quiet prompt for returning users) ---
+
+const REENTRY_48H_MS = 48 * 60 * 60 * 1000;
+const REENTRY_24H_MS = 24 * 60 * 60 * 1000;
+const REENTRY_7D_MS = 7 * 24 * 60 * 60 * 1000;
+const REENTRY_COMPARE_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+function threadTitleFromSiftCore(s: Sift): string {
+  const t = s.coreIntent?.trim() || "This thread";
+  return t.length > 72 ? `${t.slice(0, 69)}…` : t;
+}
+
+function siftIsOpenForReentry(row: Sift): boolean {
+  if ((row.status ?? "open") === "closed") return false;
+  const ts = row.threadState ?? "open";
+  return ts !== "closed" && ts !== "archived";
+}
+
+function siftIsClosedForCompare(row: Sift): boolean {
+  return (
+    row.status === "closed" ||
+    row.threadState === "closed"
+  );
+}
+
+async function computeReEntryPrompt(userId: number): Promise<ReEntryResponse> {
+  const rows = await storage.listUserSiftsFull(userId);
+  const openThreads = rows.filter(siftIsOpenForReentry);
+
+  if (openThreads.length === 0) {
+    return { prompt: null };
+  }
+
+  // 1 — overdue check-in (48h since last check-in)
+  let bestOverdue: { s: Sift; lastCi: number } | null = null;
+  for (const s of openThreads) {
+    const cis = await storage.listCheckins(s.id);
+    if (cis.length === 0) continue;
+    const lastCi = Math.max(...cis.map((c) => c.createdAt));
+    if (Date.now() - lastCi <= REENTRY_48H_MS) continue;
+    if (!bestOverdue || lastCi < bestOverdue.lastCi) {
+      bestOverdue = { s, lastCi };
+    }
+  }
+  if (bestOverdue) {
+    return {
+      prompt: "You left something in motion. Want to see where it landed?",
+      action: {
+        type: "checkin",
+        threadId: bestOverdue.s.id,
+        threadTitle: threadTitleFromSiftCore(bestOverdue.s),
+      },
+    };
+  }
+
+  // 2 — next step never acted on (no check-ins, sift older than 24h)
+  let staleNoCheckin: Sift | null = null;
+  for (const s of openThreads) {
+    const cis = await storage.listCheckins(s.id);
+    if (cis.length > 0) continue;
+    if (Date.now() - s.createdAt <= REENTRY_24H_MS) continue;
+    if (
+      !staleNoCheckin ||
+      s.createdAt < staleNoCheckin.createdAt
+    ) {
+      staleNoCheckin = s;
+    }
+  }
+  if (staleNoCheckin) {
+    return {
+      prompt: "You had a next move. Still on the table?",
+      action: {
+        type: "checkin",
+        threadId: staleNoCheckin.id,
+        threadTitle: threadTitleFromSiftCore(staleNoCheckin),
+      },
+    };
+  }
+
+  // 3 — low redundancy sift pointing at a closed prior (within ~24h)
+  const sinceCompare = Date.now() - REENTRY_COMPARE_WINDOW_MS;
+  for (const cur of rows) {
+    if (!cur.redundancyPriorSiftId) continue;
+    if (cur.createdAt < sinceCompare) continue;
+    if (!siftIsOpenForReentry(cur)) continue;
+    const prior = await storage.getSift(cur.redundancyPriorSiftId);
+    if (!prior || prior.userId !== userId) continue;
+    if (!siftIsClosedForCompare(prior)) continue;
+    return {
+      prompt:
+        "Something came up that sounds familiar. Want to compare it to what you already sorted?",
+      action: {
+        type: "compare",
+        currentSiftId: cur.id,
+        priorSiftId: prior.id,
+      },
+    };
+  }
+
+  // 4 — open thread, no activity > 7 days
+  let stalest: { s: Sift; lastAct: number } | null = null;
+  for (const s of openThreads) {
+    const cis = await storage.listCheckins(s.id);
+    const lastCi =
+      cis.length > 0 ? Math.max(...cis.map((c) => c.createdAt)) : s.createdAt;
+    const lastAct = Math.max(s.createdAt, lastCi);
+    if (Date.now() - lastAct <= REENTRY_7D_MS) continue;
+    if (!stalkest || lastAct < stalest.lastAct) {
+      stalest = { s, lastAct };
+    }
+  }
+  if (stalkest) {
+    return {
+      prompt: "This one's been sitting. Still alive, or done for now?",
+      action: {
+        type: "revisit",
+        threadId: stalest.s.id,
+        threadTitle: threadTitleFromSiftCore(stalest.s),
+      },
+    };
+  }
+
+  return { prompt: null };
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
-  app.use(express.json({ limit: "1mb" }));
+  // JSON body parsing lives on the root app (server/index.ts) — keep a single
+  // express.json() so the request body is not parsed twice.
 
   // --- Auth ---
 
@@ -1016,8 +1671,18 @@ export async function registerRoutes(
         .json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
     }
     const handle = parsed.data.handle.toLowerCase();
-    const user = await storage.getUserByHandle(handle);
-    if (!user || !verifyPassphrase(parsed.data.passphrase, user.passphraseHash)) {
+    // Read the hash with better-sqlite3 directly so login matches a plain
+    // `SELECT` + scrypt check (the same path we use to verify deploys).
+    const row = rawDb
+      .prepare(`SELECT id, passphrase_hash FROM users WHERE handle = ?`)
+      .get(handle) as { id: number; passphrase_hash: string } | undefined;
+    if (!row || !verifyPassphrase(parsed.data.passphrase, row.passphrase_hash)) {
+      return res
+        .status(401)
+        .json({ error: "Handle or passphrase doesn't match." });
+    }
+    const user = await storage.getUserById(row.id);
+    if (!user) {
       return res
         .status(401)
         .json({ error: "Handle or passphrase doesn't match." });
@@ -1509,7 +2174,7 @@ function routeThread(input: string): { mode: 'personal'|'operator', entrySignal:
     return { mode: 'operator', entrySignal: 'stakeholder' };
   }
   // Structural work markers (organizing, clarifying, restructuring)
-  if (/\b(clarify|structure|organize|restructure|simplify|priority|prioritize|streamline)\b/.test(L)) {
+  if (/\b(clarify|structure|organize|restructure|simplify|sequence|untangle|streamline)\b/.test(L)) {
     return { mode: 'operator', entrySignal: 'structural_work' };
   }
   // Explicit personal markers
@@ -1524,12 +2189,35 @@ function routeThread(input: string): { mode: 'personal'|'operator', entrySignal:
   return { mode: 'personal', entrySignal: 'none' };
 }
 
+  app.post("/api/sift/fragments", async (req, res) => {
+    const parsed = siftFragmentsRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res
+        .status(400)
+        .json({ error: "Invalid input", details: parsed.error.flatten() });
+    }
+    if (screenForCrisis(parsed.data.input)) {
+      return res.json({ type: "care" });
+    }
+    try {
+      const fragments = await runSiftFragments(parsed.data.input);
+      return res.json({ fragments });
+    } catch (err: any) {
+      console.error("fragments error", err);
+      return res.status(500).json({
+        error: "Could not pull fragments right now.",
+        detail: err?.message ?? String(err),
+      });
+    }
+  });
+
   app.post("/api/sift", async (req, res) => {
     const parsed = analyzeRequestSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
     }
-    const { input, inputMode } = parsed.data;
+    const { input, inputMode, fragmentSort, skippedFragmentSort, forceAnalysis } =
+      parsed.data;
 
     // Crisis safeguard — before persistence, before LLM. If the input describes
     // suicide, self-harm, or intent to harm others, return a care response and
@@ -1541,7 +2229,34 @@ function routeThread(input: string): { mode: 'personal'|'operator', entrySignal:
     const userId = readToken(req);
 
     try {
-      const analysis = await runAnalysis(input);
+      let redundancyCheck: RedundancyLevel = { level: "none" };
+      if (!forceAnalysis && userId) {
+        redundancyCheck = await checkRedundancy(userId, input);
+        if (redundancyCheck.level === "high") {
+          return res.json({
+            input,
+            inputMode,
+            createdAt: Date.now(),
+            mine: true,
+            redundancyGate: {
+              level: "high",
+              priorSiftId: redundancyCheck.priorSiftId,
+              priorNextStep: redundancyCheck.priorNextStep,
+              message:
+                "This looks like something you've already sorted through.",
+              options: ["Something changed", "I think I know this"] as const,
+            },
+          });
+        }
+      }
+
+      const preSortContext = buildPreSortContext(
+        fragmentSort,
+        skippedFragmentSort,
+      );
+      const analysis = await runAnalysis(input, {
+        preSortContext: preSortContext || undefined,
+      });
 
       // Output safeguard — scan every string in the model's response. If it
       // contains crisis-adjacent language (shouldn't, given the system prompt,
@@ -1573,11 +2288,34 @@ function routeThread(input: string): { mode: 'personal'|'operator', entrySignal:
           console.warn("[operator] runOperatorAnalysis failed, persisting Personal-only result", err);
         }
       }
+
+      let sortScore: number | null = null;
+      if (
+        fragmentSort?.length &&
+        !skippedFragmentSort &&
+        analysis.matters?.length
+      ) {
+        sortScore = computeSortAlignmentScore(
+          fragmentSort as {
+            fragment: string;
+            bucket: "matters" | "noise" | "unsure";
+          }[],
+          analysis.matters,
+          analysis.noise,
+        );
+      }
+
+      const recurring = await detectRecurringSignal(userId, analysis.matters, id);
+
       await storage.createSift({
         id,
         matters: JSON.stringify(analysis.matters),
         noise: JSON.stringify(analysis.noise),
         signalReason: analysis.signalReason,
+        stepScope: analysis.stepScope
+          ? JSON.stringify(analysis.stepScope)
+          : null,
+        baselineNextStep: analysis.nextStep,
         userId: userId ?? undefined,
         input,
         inputMode,
@@ -1594,14 +2332,54 @@ function routeThread(input: string): { mode: 'personal'|'operator', entrySignal:
         closureCondition: null,
         artifactType: artifactType ?? null,
         operatorArtifact: operatorArtifact ?? null,
+        recurringSignal: recurring.detected ? 1 : 0,
+        recurringTheme: recurring.theme,
+        redundancyHintLevel:
+          redundancyCheck.level === "low" ? "low" : null,
+        redundancyPriorSiftId:
+          redundancyCheck.level === "low"
+            ? redundancyCheck.priorSiftId
+            : null,
       } as any);
+
+      if (sortScore != null) {
+        await storage.updateSiftSortAlignment(id, sortScore);
+      }
+
+      if (userId) {
+        await storage.updateDiscernmentProfile(
+          userId,
+          recurring.detected ? { recurringSignalDelta: 1 } : undefined,
+        );
+      }
+
+      const row = await storage.getSift(id);
+      const showClosure =
+        row && userId
+          ? await shouldShowClosurePrompt(userId, row)
+          : false;
+
       const result: SiftResult = {
-        id,        input,
+        id,
+        input,
         inputMode,
         createdAt: Date.now(),
         ...analysis,
+        baselineNextStep: analysis.nextStep,
         mine: !!userId,
+        microTasks: null,
         checkins: [],
+        recurringSignal: recurring.detected,
+        ...(redundancyCheck.level === "low"
+          ? {
+              redundancyHint: {
+                level: "low" as const,
+                message:
+                  "You've been here before. Notice if this step feels familiar.",
+              },
+            }
+          : {}),
+        ...(showClosure ? { showClosurePrompt: true } : {}),
       };
       return res.json(result);
     } catch (err: any) {
@@ -1613,12 +2391,138 @@ function routeThread(input: string): { mode: 'personal'|'operator', entrySignal:
     }
   });
 
+  app.patch("/api/sift/:id/correction", requireAuth, async (req, res) => {
+    const userId = (req as any).userId as number;
+    const parsed = siftCorrectionRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res
+        .status(400)
+        .json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+    }
+    const siftId = String(req.params.id);
+    const sift = await storage.getSift(siftId);
+    if (!sift) return res.status(404).json({ error: "Not found" });
+    if (sift.userId !== userId) return res.status(403).json({ error: "Not your sift" });
+
+    const merged = `${sift.input}\n\nOne more angle: ${parsed.data.reframe}\n\nWhat I actually want underneath this is: ${parsed.data.reframe}`;
+    if (screenForCrisis(merged)) {
+      return res.json({ type: "care" });
+    }
+
+    try {
+      const analysis = await runAnalysis(merged);
+      if (screenOutputForCrisis(analysis)) {
+        console.warn("[crisis-screen] output tripped on PATCH correction — discarding");
+        return res.json({ type: "care" });
+      }
+
+      const { mode, entrySignal } = routeThread(merged);
+      let artifactType: string | null = sift.artifactType ?? null;
+      let operatorArtifact: string | null = sift.operatorArtifact ?? null;
+      let currentMoveOverride: string | null = sift.currentMove ?? null;
+      if (mode === "operator") {
+        try {
+          const op = await runOperatorAnalysis(merged);
+          artifactType = op.artifactType;
+          operatorArtifact = JSON.stringify(op);
+          currentMoveOverride = op.currentMove;
+        } catch (err: unknown) {
+          console.warn("[operator] correction runOperatorAnalysis failed, keeping prior artifact fields", err);
+        }
+      }
+
+      const snapshot = siftRowToRevisionSnapshot(sift);
+      const updated = await storage.applySiftCorrection({
+        id: siftId,
+        userId,
+        revisionAppend: snapshot,
+        values: {
+          input: merged,
+          themes: JSON.stringify(analysis.themes),
+          coreIntent: analysis.coreIntent,
+          nextStep: analysis.nextStep,
+          reflection: analysis.reflection,
+          matters: JSON.stringify(analysis.matters),
+          noise: JSON.stringify(analysis.noise),
+          signalReason: analysis.signalReason,
+          stepScope: analysis.stepScope ? JSON.stringify(analysis.stepScope) : null,
+          mode,
+          entrySignal,
+          artifactType,
+          operatorArtifact,
+          currentMove: currentMoveOverride,
+        },
+      });
+      if (!updated) return res.status(404).json({ error: "Not found" });
+
+      const matters: string[] = (() => {
+        try {
+          const v = JSON.parse(updated.matters ?? "[]");
+          return Array.isArray(v) ? v.filter((s) => typeof s === "string") : [];
+        } catch {
+          return [];
+        }
+      })();
+      const noise: string[] = (() => {
+        try {
+          const v = JSON.parse(updated.noise ?? "[]");
+          return Array.isArray(v) ? v.filter((s) => typeof s === "string") : [];
+        } catch {
+          return [];
+        }
+      })();
+
+      const microTasksWire = parseMicroTasksColumn(updated.microTasks ?? null);
+
+      const result: SiftResult = {
+        id: updated.id,
+        input: updated.input,
+        inputMode: updated.inputMode as "text" | "voice",
+        createdAt: updated.createdAt,
+        themes: JSON.parse(updated.themes),
+        coreIntent: updated.coreIntent,
+        nextStep: updated.nextStep,
+        reflection: updated.reflection,
+        matters,
+        noise,
+        signalReason: updated.signalReason ?? "",
+        stepScope: parseStepScopeColumn(updated.stepScope ?? null),
+        baselineNextStep: updated.baselineNextStep ?? updated.nextStep,
+        mine: true,
+        checkins: (await storage.listCheckins(siftId)).map(checkinToResult),
+        revisionHistory: parseRevisionHistoryColumn(updated.revisionHistory ?? null),
+        ...(microTasksWire ? { microTasks: microTasksWire } : { microTasks: null }),
+      };
+      return res.json(result);
+    } catch (err: any) {
+      console.error("correction error", err);
+      return res.status(500).json({
+        error: "Could not update this sift right now.",
+        detail: err?.message ?? String(err),
+      });
+    }
+  });
+
   // List my sifts (optionally with ?q=search)
   app.get("/api/sifts", requireAuth, async (req, res) => {
     const userId = (req as any).userId as number;
     const q = typeof req.query.q === "string" ? req.query.q : undefined;
     const list = await storage.listSiftsByUser(userId, q);
     res.json({ sifts: list });
+  });
+
+  // Smart re-entry — one contextual prompt for signed-in users
+  app.get("/api/reentry", requireAuth, async (req, res) => {
+    const userId = (req as any).userId as number;
+    try {
+      const payload = await computeReEntryPrompt(userId);
+      return res.json(payload);
+    } catch (err: unknown) {
+      console.error("reentry error", err);
+      return res.status(500).json({
+        error: "Could not load re-entry right now.",
+      });
+    }
   });
 
   // Delete one of my sifts
@@ -1737,6 +2641,33 @@ function routeThread(input: string): { mode: 'personal'|'operator', entrySignal:
       }
     })();
     const signalReason: string = row.signalReason ?? "";
+    const stepScopeWire = parseStepScopeColumn(row.stepScope ?? null);
+    const baselineWire =
+      row.baselineNextStep ?? row.nextStep ?? "";
+    const revisionWire =
+      isMine && row.revisionHistory
+        ? parseRevisionHistoryColumn(row.revisionHistory)
+        : undefined;
+
+    const showClosurePromptWire =
+      isMine && viewerId
+        ? await shouldShowClosurePrompt(viewerId, row)
+        : false;
+
+    const redundancyHintWire =
+      isMine && row.redundancyHintLevel === "low"
+        ? {
+            level: "low" as const,
+            message:
+              "You've been here before. Notice if this step feels familiar.",
+          }
+        : undefined;
+
+    const recurringSignalWire = row.recurringSignal === 1;
+
+    const microTasksWire = isMine
+      ? parseMicroTasksColumn(row.microTasks ?? null)
+      : null;
 
     const result: SiftResult = {
       id: row.id,
@@ -1750,13 +2681,87 @@ function routeThread(input: string): { mode: 'personal'|'operator', entrySignal:
       matters,
       noise,
       signalReason,
+      ...(stepScopeWire ? { stepScope: stepScopeWire } : {}),
+      baselineNextStep: baselineWire,
       mine: isMine,
       status: (row.status === "closed" ? "closed" : "open") as any,
       checkins: checkinRows.map(checkinToResult),
       turns,
       bookmark,
+      ...(revisionWire?.length ? { revisionHistory: revisionWire } : {}),
+      ...(recurringSignalWire ? { recurringSignal: true } : {}),
+      ...(redundancyHintWire ? { redundancyHint: redundancyHintWire } : {}),
+      ...(showClosurePromptWire ? { showClosurePrompt: true } : {}),
+      ...(isMine
+        ? microTasksWire
+          ? { microTasks: microTasksWire }
+          : { microTasks: null }
+        : {}),
     };
     return res.json(result);
+  });
+
+  // Break Down — three microscopic tasks for the current next step (owner only)
+  app.post("/api/sift/:id/breakdown", requireAuth, async (req, res) => {
+    const userId = (req as any).userId as number;
+    const parsed = siftBreakdownRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "Invalid input",
+        details: parsed.error.flatten(),
+      });
+    }
+    const siftId = String(req.params.id);
+    const row = await storage.getSift(siftId);
+    if (!row) return res.status(404).json({ error: "Not found" });
+    if (row.userId !== userId) {
+      return res.status(403).json({ error: "Not your sift" });
+    }
+
+    const cached = parseMicroTasksColumn(row.microTasks ?? null);
+    if (cached) {
+      return res.json({ microTasks: cached });
+    }
+
+    try {
+      const tasks = await runBreakdownMicroTasks(parsed.data.nextStep);
+      const ok = await storage.updateSiftMicroTasks(siftId, userId, tasks);
+      if (!ok) return res.status(404).json({ error: "Not found" });
+      await storage.updateDiscernmentProfile(userId, { breakdownDelta: 1 });
+      return res.json({ microTasks: tasks });
+    } catch (err: unknown) {
+      console.error("breakdown error", err);
+      return res.status(422).json({
+        error: "Could not break this down — try rephrasing the step.",
+      });
+    }
+  });
+
+  // Acknowledge mastery without analysis — owner only
+  app.patch("/api/sift/:id/close-loop", requireAuth, async (req, res) => {
+    const userId = (req as any).userId as number;
+    const siftId = String(req.params.id);
+    const ok = await storage.updateSiftClosedLoop(siftId, userId, true);
+    if (!ok) return res.status(404).json({ error: "Not found" });
+    await storage.updateDiscernmentProfile(userId, { masteryDelta: 1 });
+    return res.json({ success: true });
+  });
+
+  // Closure prompt — dismiss or close thread (owner only). Does not run closure LLM.
+  app.patch("/api/sift/:id/close", requireAuth, async (req, res) => {
+    const parsed = siftClosurePromptPatchSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res
+        .status(400)
+        .json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+    }
+    const userId = (req as any).userId as number;
+    const siftId = String(req.params.id);
+    const ok = await storage.patchSiftClosurePrompt(siftId, userId, {
+      keepOpen: !!parsed.data.keepOpen,
+    });
+    if (!ok) return res.status(404).json({ error: "Not found" });
+    return res.json({ ok: true });
   });
 
   // --- Deepening thread (owner only) ---
@@ -2164,9 +3169,10 @@ function routeThread(input: string): { mode: 'personal'|'operator', entrySignal:
     }
 
     try {
+      const priorNextStep = sift.nextStep;
       const analysis = await runCheckinAnalysis(
         sift.input,
-        sift.nextStep,
+        priorNextStep,
         parsed.data.status,
         parsed.data.note ?? ""
       );
@@ -2177,12 +3183,17 @@ function routeThread(input: string): { mode: 'personal'|'operator', entrySignal:
         return res.json({ type: "care" });
       }
 
+      const storedPayload: CheckinAnalysis = { ...analysis, priorNextStep };
+
       const row = await storage.createCheckin({
         siftId,
         status: parsed.data.status,
         note: parsed.data.note ?? "",
-        response: JSON.stringify(analysis),
+        response: JSON.stringify(storedPayload),
       });
+      await storage.updateSiftNextStep(siftId, userId, analysis.nextStep);
+      await storage.updateDiscernmentProfile(userId);
+
       const result: CheckinResult = checkinToResult(row);
       res.json({ checkin: result });
     } catch (err: any) {
