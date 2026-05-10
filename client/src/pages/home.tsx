@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { Header, Footnote } from "@/components/brand";
-import { AppBottomNav } from "@/components/app-bottom-nav";
 import {
   Composer,
   Result,
@@ -85,7 +84,6 @@ export default function Home() {
   // composer stays the unambiguous hero. Starts closed on every mount — a
   // calm, not-always-visible shelf for different ways in.
   const [supportOpen, setSupportOpen] = useState(false);
-  const [metaBanner, setMetaBanner] = useState<string | null>(null);
   const { data: meData } = useMe();
   const me = meData?.me;
 
@@ -124,29 +122,6 @@ export default function Home() {
     };
     window.addEventListener("sift:home-reset", onReset);
     return () => window.removeEventListener("sift:home-reset", onReset);
-  }, []);
-
-  useEffect(() => {
-    try {
-      const b = sessionStorage.getItem("sift.metaSiftBanner");
-      const p = sessionStorage.getItem("sift.metaSiftPrefill");
-      if (p && p.trim()) {
-        setQuickResetSeed(p);
-        setComposerPrefillToken((n) => n + 1);
-      }
-      if (b) setMetaBanner(b);
-    } catch {
-      /* ignore */
-    }
-  }, []);
-
-  useEffect(() => {
-    const onSubmitted = () => {
-      setMetaBanner(null);
-      queryClient.invalidateQueries({ queryKey: ["/api/garden"] });
-    };
-    window.addEventListener("sift:sift-submitted", onSubmitted);
-    return () => window.removeEventListener("sift:sift-submitted", onSubmitted);
   }, []);
 
   const dismissContactPrompt = () => {
@@ -189,7 +164,7 @@ export default function Home() {
       <Header />
 
       <main className="flex-1">
-        <div className="mx-auto max-w-3xl px-6 md:px-8 pb-24">
+        <div className="mx-auto max-w-3xl px-6 md:px-8 pb-16">
           {flow === "idle" || flow === "sifting" ? (
             <div className="pt-10 md:pt-16">
               {canShowResume && (
@@ -241,15 +216,6 @@ export default function Home() {
               )}
 
               <ReEntryBlock enabled={!!me && (flow === "idle" || flow === "sifting")} />
-
-              {metaBanner ? (
-                <p
-                  className="mb-4 text-xs text-muted-foreground text-center"
-                  role="status"
-                >
-                  {metaBanner}
-                </p>
-              ) : null}
 
               <Composer
                 onResult={(r) => {
@@ -516,7 +482,6 @@ export default function Home() {
       </main>
 
       <Footnote />
-      <AppBottomNav />
       <AuthDialog open={authOpen} onOpenChange={setAuthOpen} initialMode="signup" />
       <ContactPromptDialog
         open={contactPromptOpen}

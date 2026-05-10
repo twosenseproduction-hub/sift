@@ -469,11 +469,6 @@ export class DatabaseStorage implements IStorage {
         coreIntent: sifts.coreIntent,
         nextStep: sifts.nextStep,
         status: sifts.status,
-        mode: sifts.mode,
-        threadState: sifts.threadState,
-        frontBurnerRank: sifts.frontBurnerRank,
-        currentMove: sifts.currentMove,
-        metaSift: sifts.metaSift,
       })
       .from(sifts);
 
@@ -492,19 +487,8 @@ export class DatabaseStorage implements IStorage {
     const rows = await base.where(where).orderBy(desc(sifts.createdAt)).all();
     // Guard: treat any legacy/null status as 'open' at read time.
     return rows.map((r) => ({
-      id: r.id,
-      createdAt: r.createdAt,
-      coreIntent: r.coreIntent,
-      nextStep: r.nextStep,
+      ...r,
       status: (r.status === "closed" ? "closed" : "open") as SiftStatus,
-      mode: (r.mode as "personal" | "operator" | null) ?? null,
-      threadState: ((r.threadState as string) || "open") as
-        | "open"
-        | "closed"
-        | "archived",
-      frontBurnerRank: r.frontBurnerRank ?? null,
-      currentMove: r.currentMove ?? null,
-      metaSift: r.metaSift === 1,
     }));
   }
 
@@ -531,28 +515,12 @@ export class DatabaseStorage implements IStorage {
         coreIntent: sifts.coreIntent,
         nextStep: sifts.nextStep,
         status: sifts.status,
-        mode: sifts.mode,
-        threadState: sifts.threadState,
-        frontBurnerRank: sifts.frontBurnerRank,
-        currentMove: sifts.currentMove,
-        metaSift: sifts.metaSift,
       })
       .get();
     if (!row) return undefined;
     return {
-      id: row.id,
-      createdAt: row.createdAt,
-      coreIntent: row.coreIntent,
-      nextStep: row.nextStep,
+      ...row,
       status: (row.status === "closed" ? "closed" : "open") as SiftStatus,
-      mode: (row.mode as "personal" | "operator" | null) ?? null,
-      threadState: ((row.threadState as string) || "open") as
-        | "open"
-        | "closed"
-        | "archived",
-      frontBurnerRank: row.frontBurnerRank ?? null,
-      currentMove: row.currentMove ?? null,
-      metaSift: row.metaSift === 1,
     };
   }
 

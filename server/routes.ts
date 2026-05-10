@@ -612,25 +612,17 @@ function buildPreSortContext(
   return `Before the full sift, the user did a quick pass on phrases from their text. This is provisional — not a command:\n${lines.join("\n")}`;
 }
 
-const META_SIFT_SYSTEM_SUFFIX = `
-
-This is a meta-sift: the user is sifting a recurring pattern, not a single event. The goal is to identify the root dynamic beneath the pattern, not to restate the pattern. The next step should address the underlying structure, not any specific instance. Avoid restating the theme back to the user — compress toward the root cause and one structural move.`;
-
 async function runAnalysis(
   input: string,
-  opts?: { preSortContext?: string; metaSift?: boolean },
+  opts?: { preSortContext?: string },
 ): Promise<Analysis> {
   const extra = opts?.preSortContext
     ? `\n\n${opts.preSortContext}\n`
     : "";
-  const system =
-    opts?.metaSift === true
-      ? `${SYSTEM_PROMPT}${META_SIFT_SYSTEM_SUFFIX}`
-      : SYSTEM_PROMPT;
   const msg = await client.messages.create({
     model: MODEL,
     max_tokens: 1024,
-    system,
+    system: SYSTEM_PROMPT,
     messages: [
       {
         role: "user",
@@ -1500,268 +1492,6 @@ function threadTitleFromSiftCore(s: Sift): string {
   return t.length > 72 ? `${t.slice(0, 69)}…` : t;
 }
 
-function parseJsonStringArray(raw: string | null): string[] {
-  if (!raw) return [];
-  try {
-    const v = JSON.parse(raw);
-    return Array.isArray(v)
-      ? v.filter((x): x is string => typeof x === "string")
-      : [];
-  } catch {
-    return [];
-  }
-}
-
-function monthKeyFromTs(ts: number): string {
-  const d = new Date(ts);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
-
-function monthNameFromKey(key: string): string {
-  const [ys, ms] = key.split("-");
-  const y = Number(ys);
-  const m = Number(ms);
-  return new Date(y, m - 1, 1).toLocaleString("en-US", { month: "long" });
-}
-
-/** Fuzzy alignment for garden connections — mirrors recurring token overlap. */
-function gardenSeedThemesMatch(a: Sift, b: Sift): boolean {
-  const ma = parseJsonStringArray(a.matters);
-  const mb = parseJsonStringArray(b.matters);
-  const rtA = a.recurringTheme?.trim() || null;
-  const rtB = b.recurringTheme?.trim() || null;
-  if (rtA && rtB) {
-    const ta = meaningfulTokensFromStrings([rtA]);
-    const tb = meaningfulTokensFromStrings([rtB]);
-    let n = 0;
-    for (const t of ta) if (tb.includes(t)) n++;
-    if (n >= 2) return true;
-  }
-  const newTok = meaningfulTokensFromStrings(ma);
-  const priorSet = new Set(meaningfulTokensFromStrings(mb));
-  return newTok.filter((t) => priorSet.has(t)).length >= 2;
-}
-
-async function buildGardenPayload(userId: number) {
-  const rows = await storage.listUserSiftsFull(userId);
-  const sorted = [...rows].sort((a, b) => b.createdAt - a.createdAt);
-
-  const totalThreads = sorted.length;
-  const closedThreads = sorted.filter(
-    (r) => r.threadState === "closed" || r.status === "closed",
-  ).length;
-  const openThreads = Math.max(0, totalThreads - closedThreads);
-
-  const themeCounts = new Map<string, { count: number; display: string }>();
-  for (const r of sorted) {
-    const t = r.recurringTheme?.trim();
-    if (!t) continue;
-    const k = t.toLowerCase();
-    const cur = themeCounts.get(k) ?? { count: 0, display: t };
-    cur.count++;
-    themeCounts.set(k, cur);
-  }
-  let coreSignal: string | null = null;
-  let bestN = 0;
-  for (const v of Array.from(themeCounts.values())) {
-    if (v.count > bestN) {
-      bestN = v.count;
-      coreSignal = v.display;
-    }
-  }
-  if (!coreSignal) {
-    coreSignal = "what keeps pulling your attention";
-  }
-
-  const proseDefault = `This month, you've been carrying ${coreSignal}.\n${closedThreads} things found their ground.\n${openThreads} are still breathing.`;
-
-  const buckets = new Map<string, Sift[]>();
-  for (const r of sorted) {
-    const raw = r.recurringTheme?.trim();
-    if (!raw) continue;
-    const k = raw.toLowerCase();
-    const arr = buckets.get(k) ?? [];
-    arr.push(r);
-    buckets.set(k, arr);
-  }
-  let themeGroups: Sift[][] = Array.from(buckets.values());
-  let mergedGroups = true;
-  while (mergedGroups) {
-    mergedGroups = false;
-    outer: for (let i = 0; i < themeGroups.length; i++) {
-      for (let j = i + 1; j < themeGroups.length; j++) {
-        if (
-          gardenSeedThemesMatch(themeGroups[i][0], themeGroups[j][0])
-        ) {
-          themeGroups[i] = [...themeGroups[i], ...themeGroups[j]];
-          themeGroups.splice(j, 1);
-          mergedGroups = true;
-          break outer;
-        }
-      }
-    }
-  }
-
-  const recurringSignals = themeGroups
-    .filter((g) => g.length >= 2)
-    .map((g) => ({
-      theme: g[0].recurringTheme ?? threadTitleFromSiftCore(g[0]),
-      frequency: g.length,
-      threadIds: g.map((x) => x.id),
-      threadTitles: g.map((x) => threadTitleFromSiftCore(x)),
-    }));
-
-  const noisePhraseCounts = new Map<string, { label: string; n: number }>();
-  for (const r of sorted) {
-    for (const n of parseJsonStringArray(r.noise)) {
-      const label = n.trim();
-      if (!label) continue;
-      const k = label.toLowerCase().slice(0, 120);
-      const cur = noisePhraseCounts.get(k) ?? { label, n: 0 };
-      cur.n++;
-      noisePhraseCounts.set(k, cur);
-    }
-  }
-  const clusterMap: {
-    label: string;
-    count: number;
-    type: "signal" | "noise";
-  }[] = [];
-  for (const rs of recurringSignals.slice(0, 5)) {
-    clusterMap.push({ label: rs.theme, count: rs.frequency, type: "signal" });
-  }
-  for (const [, v] of Array.from(noisePhraseCounts.entries())
-    .sort((a, b) => b[1].n - a[1].n)
-    .slice(0, 3)) {
-    clusterMap.push({ label: v.label, count: v.n, type: "noise" });
-  }
-
-  const closedRows = sorted.filter(
-    (r) => r.threadState === "closed" || r.status === "closed",
-  );
-  const closedLoops = await Promise.all(
-    closedRows.map(async (r) => {
-      const cis = await storage.listCheckins(r.id);
-      const sortedCi = [...cis].sort((a, b) => a.createdAt - b.createdAt);
-      const lastNote = sortedCi.length
-        ? sortedCi[sortedCi.length - 1].note?.trim() || null
-        : null;
-      const lastTouch = sortedCi.length
-        ? Math.max(r.createdAt, ...sortedCi.map((c) => c.createdAt))
-        : r.createdAt;
-      return {
-        id: r.id,
-        title: threadTitleFromSiftCore(r),
-        closedAt: new Date(lastTouch).toISOString(),
-        checkinCount: cis.length,
-        finalLesson: lastNote,
-      };
-    }),
-  );
-
-  const closedNotes = await Promise.all(
-    sorted.map(async (r) => {
-      const closed = r.threadState === "closed" || r.status === "closed";
-      if (!closed) return null;
-      const cis = await storage.listCheckins(r.id);
-      if (!cis.length) return null;
-      const sortedCi = [...cis].sort((a, b) => a.createdAt - b.createdAt);
-      const last = sortedCi[sortedCi.length - 1];
-      const n = last.note?.trim();
-      return n || null;
-    }),
-  );
-
-  const seeds = sorted.map((r, idx) => {
-    const mk = monthKeyFromTs(r.createdAt);
-    const matters = parseJsonStringArray(r.matters);
-    const closed = r.threadState === "closed" || r.status === "closed";
-    const proseText = closed
-      ? "This one found its ground."
-      : "This thread is still asking something.";
-    const proseSub = closed
-      ? (closedNotes[idx] ?? "Closed.")
-      : "Something is waiting here.";
-    return {
-      id: r.id,
-      title: threadTitleFromSiftCore(r),
-      closed,
-      month: mk,
-      signal: r.recurringTheme?.trim() ?? null,
-      matters: matters[0] ?? null,
-      nextStep: r.nextStep,
-      proseText,
-      proseSub,
-    };
-  });
-
-  const connections: number[][] = [];
-  for (let i = 0; i < sorted.length; i++) {
-    for (let j = i + 1; j < sorted.length; j++) {
-      if (gardenSeedThemesMatch(sorted[i], sorted[j])) {
-        connections.push([i, j]);
-      }
-    }
-  }
-
-  const monthKeys = Array.from(
-    new Set(sorted.map((r) => monthKeyFromTs(r.createdAt))),
-  ).sort();
-  const months = monthKeys.map((key) => {
-    const inMonth = sorted.filter((r) => monthKeyFromTs(r.createdAt) === key);
-    const count = inMonth.length;
-    const closedCount = inMonth.filter(
-      (r) => r.threadState === "closed" || r.status === "closed",
-    ).length;
-    const openCount = count - closedCount;
-    let summary = "";
-    if (closedCount > openCount) {
-      summary = `${monthNameFromKey(key)} leaned toward what could be closed.`;
-    } else if (openCount > closedCount) {
-      summary = `${monthNameFromKey(key)} added more threads than it closed.`;
-    } else {
-      summary = `${monthNameFromKey(key)} held both motion and closure.`;
-    }
-    return {
-      key,
-      label: monthNameFromKey(key),
-      count,
-      closedCount,
-      summary,
-    };
-  });
-
-  const byMonth: Record<string, string> = {};
-  for (const m of months) {
-    const openCount = m.count - m.closedCount;
-    if (m.closedCount > openCount) {
-      byMonth[m.key] =
-        `${m.label} began to settle. ${m.closedCount} loops closed. Something shifted.`;
-    } else if (openCount > m.closedCount) {
-      byMonth[m.key] =
-        `${m.label} was loud — ${openCount} new threads, ${m.closedCount} closed.\nThe pattern started here.`;
-    } else {
-      byMonth[m.key] =
-        `${m.label} held both new threads and closures in balance.`;
-    }
-  }
-
-  return {
-    prose: { default: proseDefault, byMonth },
-    stats: {
-      totalThreads,
-      closedThreads,
-      coreSignal,
-    },
-    recurringSignals,
-    clusterMap,
-    closedLoops,
-    seeds,
-    connections,
-    months,
-  };
-}
-
 function siftIsOpenForReentry(row: Sift): boolean {
   if ((row.status ?? "open") === "closed") return false;
   const ts = row.threadState ?? "open";
@@ -2486,7 +2216,7 @@ function routeThread(input: string): { mode: 'personal'|'operator', entrySignal:
     if (!parsed.success) {
       return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
     }
-    const { input, inputMode, fragmentSort, skippedFragmentSort, forceAnalysis, metaSift } =
+    const { input, inputMode, fragmentSort, skippedFragmentSort, forceAnalysis } =
       parsed.data;
 
     // Crisis safeguard — before persistence, before LLM. If the input describes
@@ -2526,7 +2256,6 @@ function routeThread(input: string): { mode: 'personal'|'operator', entrySignal:
       );
       const analysis = await runAnalysis(input, {
         preSortContext: preSortContext || undefined,
-        metaSift: metaSift === true,
       });
 
       // Output safeguard — scan every string in the model's response. If it
@@ -2611,7 +2340,6 @@ function routeThread(input: string): { mode: 'personal'|'operator', entrySignal:
           redundancyCheck.level === "low"
             ? redundancyCheck.priorSiftId
             : null,
-        metaSift: metaSift === true ? 1 : null,
       } as any);
 
       if (sortScore != null) {
@@ -2638,7 +2366,6 @@ function routeThread(input: string): { mode: 'personal'|'operator', entrySignal:
         createdAt: Date.now(),
         ...analysis,
         baselineNextStep: analysis.nextStep,
-        ...(metaSift === true ? { metaSift: true } : {}),
         mine: !!userId,
         microTasks: null,
         checkins: [],
@@ -2794,19 +2521,6 @@ function routeThread(input: string): { mode: 'personal'|'operator', entrySignal:
       console.error("reentry error", err);
       return res.status(500).json({
         error: "Could not load re-entry right now.",
-      });
-    }
-  });
-
-  app.get("/api/garden", requireAuth, async (req, res) => {
-    const userId = (req as any).userId as number;
-    try {
-      const payload = await buildGardenPayload(userId);
-      return res.json(payload);
-    } catch (err: unknown) {
-      console.error("garden error", err);
-      return res.status(500).json({
-        error: "Could not load garden right now.",
       });
     }
   });
@@ -2967,7 +2681,6 @@ function routeThread(input: string): { mode: 'personal'|'operator', entrySignal:
       matters,
       noise,
       signalReason,
-      ...(row.metaSift === 1 ? { metaSift: true } : {}),
       ...(stepScopeWire ? { stepScope: stepScopeWire } : {}),
       baselineNextStep: baselineWire,
       mine: isMine,

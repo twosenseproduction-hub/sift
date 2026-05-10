@@ -3,7 +3,6 @@ import { Link, useLocation } from "wouter";
 import { useMe } from "@/lib/auth";
 import { useThreads, usePatchThread } from "@/lib/useThreads";
 import { Header, Footnote } from "@/components/brand";
-import { AppBottomNav } from "@/components/app-bottom-nav";
 import { Button } from "@/components/ui/button";
 import { AuthDialog } from "@/components/auth-dialog";
 import { ArrowRight, Search, Bookmark } from "lucide-react";
@@ -41,7 +40,7 @@ export default function ThreadsPage() {
       <div className="min-h-screen flex flex-col">
         <Header />
         <main className="flex-1">
-          <div className="mx-auto max-w-xl px-6 pt-20 pb-28 text-center">
+          <div className="mx-auto max-w-xl px-6 pt-20 pb-16 text-center">
             <p className="text-[11px] tracking-[0.25em] uppercase text-primary/80 font-medium mb-4">
               Your threads
             </p>
@@ -55,7 +54,6 @@ export default function ThreadsPage() {
           </div>
         </main>
         <Footnote />
-        <AppBottomNav />
         <AuthDialog open={authOpen} onOpenChange={setAuthOpen} initialMode="signup" />
       </div>
     );
@@ -65,7 +63,7 @@ export default function ThreadsPage() {
     <div className="min-h-screen flex flex-col">
       <Header />
       <main className="flex-1">
-        <div className="mx-auto max-w-2xl px-6 md:px-8 pt-8 md:pt-12 pb-28">
+        <div className="mx-auto max-w-2xl px-6 md:px-8 pt-8 md:pt-12 pb-16">
           {/* Header */}
           <div className="mb-8">
             <div className="flex items-center gap-3 mb-1">
@@ -176,7 +174,6 @@ export default function ThreadsPage() {
         </div>
       </main>
       <Footnote />
-      <AppBottomNav />
     </div>
   );
 }
