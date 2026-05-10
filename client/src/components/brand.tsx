@@ -108,6 +108,14 @@ export function Header() {
                   <span className="hidden sm:inline">History</span>
                 </a>
               </Link>
+              <Link href="/garden" data-testid="link-garden">
+                <a className="hover-elevate inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm text-muted-foreground hover:text-foreground transition-colors">
+                  <span className="text-base leading-none select-none" aria-hidden>
+                    ◇
+                  </span>
+                  <span className="hidden sm:inline">Garden</span>
+                </a>
+              </Link>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button

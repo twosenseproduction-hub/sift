@@ -53,15 +53,49 @@ export async function apiRequest(
   data?: unknown | undefined,
 ): Promise<Response> {
   const headers: Record<string, string> = { ...authHeaders() };
-  if (data) headers["Content-Type"] = "application/json";
+  let payload = data;
+  if (
+    method === "POST" &&
+    url === "/api/sift" &&
+    payload &&
+    typeof payload === "object"
+  ) {
+    try {
+      if (
+        typeof sessionStorage !== "undefined" &&
+        sessionStorage.getItem("sift.pendingMetaSift") === "1"
+      ) {
+        payload = { ...(payload as Record<string, unknown>), metaSift: true };
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  if (payload) headers["Content-Type"] = "application/json";
 
   const res = await fetch(`${API_BASE}${url}`, {
     method,
     headers,
-    body: data ? JSON.stringify(data) : undefined,
+    body: payload ? JSON.stringify(payload) : undefined,
   });
 
   await throwIfResNotOk(res);
+
+  if (method === "POST" && url === "/api/sift" && res.ok) {
+    try {
+      if (typeof sessionStorage !== "undefined") {
+        sessionStorage.removeItem("sift.pendingMetaSift");
+        sessionStorage.removeItem("sift.metaSiftBanner");
+        sessionStorage.removeItem("sift.metaSiftPrefill");
+      }
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("sift:sift-submitted"));
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
   return res;
 }
 

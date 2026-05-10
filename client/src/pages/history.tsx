@@ -210,11 +210,16 @@ export default function HistoryPage() {
                     className="flex-1 text-left min-w-0"
                     data-testid={`link-sift-${s.id}`}
                   >
-                    <div className="flex items-center gap-2.5 mb-1.5">
+                    <div className="flex items-center gap-2.5 mb-1.5 flex-wrap">
                       <StatusDot status={s.status} />
                       <span className="font-mono text-[11px] text-muted-foreground uppercase tracking-wider">
                         {formatDate(s.createdAt)}
                       </span>
+                      {s.metaSift ? (
+                        <span className="text-[10px] uppercase tracking-widest text-muted-foreground/80">
+                          pattern sift
+                        </span>
+                      ) : null}
                     </div>
                     <h3
                       className={cn(

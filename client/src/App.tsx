@@ -9,6 +9,7 @@ import Home from "@/pages/home";
 import Shared from "@/pages/shared";
 import HistoryPage from "@/pages/history";
 import ThreadsPage from "@/pages/threads";
+import GardenPage from "@/pages/garden";
 import ThreadPage from "@/pages/thread";
 import ComparePage from "@/pages/compare";
 import AdminPage from "@/pages/admin";
@@ -23,6 +24,7 @@ function AppRouter() {
       <Route path="/" component={Home} />
       <Route path="/history" component={HistoryPage} />
       <Route path="/threads" component={ThreadsPage} />
+      <Route path="/garden" component={GardenPage} />
       <Route path="/thread/:id" component={ThreadPage} />
       <Route path="/compare" component={ComparePage} />
       <Route path="/s/:id" component={Shared} />
