@@ -203,6 +203,44 @@ sqlite.exec(`
   CREATE INDEX IF NOT EXISTS idx_password_resets_user ON password_resets(user_id);
 `);
 
+// Safe migration: add account_lookup table for human-readable sequential account IDs.
+// Runs at every startup; assigns account_id to existing users on first run.
+// format: USR-00001, USR-00002, etc.
+sqlite.exec(`
+  CREATE TABLE IF NOT EXISTS account_lookup (
+    user_id INTEGER PRIMARY KEY,
+    account_id TEXT NOT NULL UNIQUE,
+    created_at INTEGER NOT NULL,
+    handle TEXT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_account_lookup_account ON account_lookup(account_id);
+`);
+
+// If account_lookup is empty but users exist, seed it from the users table.
+// This handles the case where the server is restarted after users were created.
+const lookupCount = (
+  sqlite.prepare(`SELECT COUNT(*) AS n FROM account_lookup`).get() as { n: number }
+).n;
+if (lookupCount === 0) {
+  const allUsers = sqlite
+    .prepare(`SELECT id, handle, created_at FROM users ORDER BY id ASC`)
+    .all() as Array<{ id: number; handle: string; created_at: number }>;
+  if (allUsers.length > 0) {
+    const insertLookup = sqlite.prepare(
+      `INSERT INTO account_lookup (user_id, account_id, created_at, handle) VALUES (?, ?, ?, ?)`
+    );
+    const insertMany = sqlite.transaction((rows: typeof allUsers) => {
+      rows.forEach((row, idx) => {
+        const accountId = `USR-${String(idx + 1).padStart(5, "0")}`;
+        insertLookup.run(row.id, accountId, row.created_at, row.handle);
+      });
+    });
+    insertMany(allUsers);
+    console.log(`[account-lookup] seeded ${allUsers.length} existing users`);
+  }
+}
+
 sqlite.exec(
   `CREATE INDEX IF NOT EXISTS idx_sifts_user_created
      ON sifts(user_id, created_at DESC);`
@@ -282,6 +320,9 @@ export interface IStorage {
     resolved: boolean,
   ): Promise<AdminReviewFeedback | undefined>;
   getAdminReviewSift(id: string): Promise<AdminReviewSift | undefined>;
+  // Account lookup
+  getAccountId(userId: number): Promise<string | undefined>;
+  getAccountIdByHandle(handle: string): Promise<string | undefined>;
 }
 
 export type CreateFeedbackParams = {
@@ -949,6 +990,21 @@ export class DatabaseStorage implements IStorage {
       .run(siftId, updatedAt, payloadJson);
     return { updatedAt, payload };
   }
+
+  // --- Account lookup ---
+  async getAccountId(userId: number): Promise<string | undefined> {
+    const row = rawDb
+      .prepare(`SELECT account_id FROM account_lookup WHERE user_id = ?`)
+      .get(userId) as { account_id: string } | undefined;
+    return row?.account_id;
+  }
+
+  async getAccountIdByHandle(handle: string): Promise<string | undefined> {
+    const row = rawDb
+      .prepare(`SELECT account_id FROM account_lookup WHERE handle = ?`)
+      .get(handle) as { account_id: string } | undefined;
+    return row?.account_id;
+  }
 }
 
 // --- Admin review allowlist serializers ---
@@ -1127,3 +1183,24 @@ function rowToThreadTurn(row: ThreadTurnRow): ThreadTurn | null {
 }
 
 export const storage = new DatabaseStorage();
+
+// ensureAccountLookup inserts a new account_lookup row for a newly created user.
+// Call this after every successful createUser from the signup route.
+export function ensureAccountLookup(userId: number, handle: string): void {
+  const accountId = nextAccountId();
+  rawDb
+    .prepare(
+      `INSERT INTO account_lookup (user_id, account_id, created_at, handle)
+       VALUES (?, ?, ?, ?)`,
+    )
+    .run(userId, accountId, Date.now(), handle);
+}
+
+// --- Account lookup helper ---
+function nextAccountId(): string {
+  const row = sqlite
+    .prepare(`SELECT MAX(CAST(SUBSTR(account_id, 5) AS INTEGER)) AS max_n FROM account_lookup`)
+    .get() as { max_n: number | null };
+  const next = (row?.max_n ?? 0) + 1;
+  return `USR-${String(next).padStart(5, "0")}`;
+}

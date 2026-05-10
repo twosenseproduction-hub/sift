@@ -4,7 +4,7 @@ import express from "express";
 import crypto from "crypto";
 import { nanoid as newId } from "nanoid";
 import Anthropic from "@anthropic-ai/sdk";
-import { storage, rawDb } from "./storage";
+import { storage, rawDb, ensureAccountLookup } from "./storage";
 import { selectDailyPrompt, type RecentSiftSignal } from "./daily-prompt";
 import { screenForCrisis, screenOutputForCrisis } from "./crisis-screen";
 import {
@@ -866,6 +866,7 @@ export async function registerRoutes(
       consentUpdates: parsed.data.consentUpdates,
       consentReflections: parsed.data.consentReflections,
     });
+    ensureAccountLookup(user.id, handle);
     const token = issueToken(user.id);
     res.json({ me: toMe(user), token });
   });
@@ -989,6 +990,15 @@ export async function registerRoutes(
     }
     const token = issueToken(user.id);
     res.json({ me: toMe(user), token });
+  });
+
+  // GET /api/auth/account-id — returns the human-readable account ID for the
+  // signed-in user (e.g. USR-00003). 404 if not found.
+  app.get("/api/auth/account-id", requireAuth, async (req, res) => {
+    const userId = (req as any).userId as number;
+    const accountId = await storage.getAccountId(userId);
+    if (!accountId) return res.status(404).json({ error: "Account ID not found." });
+    res.json({ accountId });
   });
 
   // --- Admin ---
