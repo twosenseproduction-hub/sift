@@ -241,6 +241,39 @@ if (lookupCount === 0) {
   }
 }
 
+// --- Password hash format migration ---
+// Production code switched from base64 → hex at some point. Accounts created
+// before that fix have base64-encoded hashes and can never log in (hex decode
+// fails silently inside verifyPassphrase).  This runs at every startup and
+// converts any remaining base64 hashes to hex so affected accounts recover.
+const migrateHashes = () => {
+  const rows = sqlite.prepare(`SELECT id, passphrase_hash FROM users`).all() as Array<{ id: number; passphrase_hash: string }>;
+  const fix = sqlite.prepare(`UPDATE users SET passphrase_hash = ? WHERE id = ?`);
+  const migrate = sqlite.transaction(() => {
+    rows.forEach((row) => {
+      const { id, passphrase_hash: h } = row;
+      try {
+        Buffer.from(h, "hex");
+      } catch {
+        // Not valid hex — assume it's base64 and convert.
+        try {
+          const buf = Buffer.from(h, "base64");
+          if (buf.length === 80) {
+            const hex = Buffer.concat([buf.slice(0, 16), buf.slice(16)]).toString("hex");
+            fix.run(hex, id);
+            console.log(`[hash-migrate] fixed user ${id}: base64 → hex`);
+          }
+        } catch {
+          console.warn(`[hash-migrate] user ${id}: unknown hash format, skipping`);
+        }
+      }
+    });
+  });
+  migrate();
+  if (rows.length > 0) console.log(`[hash-migrate] checked ${rows.length} user hash(es)`);
+};
+migrateHashes();
+
 sqlite.exec(
   `CREATE INDEX IF NOT EXISTS idx_sifts_user_created
      ON sifts(user_id, created_at DESC);`
