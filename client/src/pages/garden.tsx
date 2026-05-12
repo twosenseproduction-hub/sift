@@ -404,7 +404,7 @@ export default function GardenPage() {
                       "rounded-full border px-3 py-1.5 text-xs transition-colors",
                       selectedMonth === null
                         ? "border-primary/50 bg-primary/10 text-primary"
-                        : "border-border bg-card text-muted-foreground hover:text-foreground",
+                        : "border-border/55 bg-transparent text-muted-foreground hover:border-border hover:bg-muted/25 hover:text-foreground",
                     )}
                   >
                     All time
@@ -419,7 +419,7 @@ export default function GardenPage() {
                         "rounded-full border px-3 py-1.5 text-xs transition-colors",
                         selectedMonth === m.key
                           ? "border-primary/50 bg-primary/10 text-primary"
-                          : "border-border bg-card text-muted-foreground hover:text-foreground",
+                          : "border-border/55 bg-transparent text-muted-foreground hover:border-border hover:bg-muted/25 hover:text-foreground",
                       )}
                     >
                       {m.label}

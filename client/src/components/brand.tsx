@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "wouter";
-import { Moon, Sun, LogOut, User as UserIcon, Bookmark } from "lucide-react";
+import { Moon, Sun, LogOut, User as UserIcon, Bookmark, BookOpen } from "lucide-react";
 import { useTheme } from "@/lib/theme";
 import { useMe, useLogout } from "@/lib/auth";
 import { AuthDialog } from "./auth-dialog";
@@ -122,6 +122,12 @@ export function Header() {
                   <span className="hidden sm:inline">Garden</span>
                 </a>
               </Link>
+              <Link href="/field-notes" data-testid="link-field-notes">
+                <a className="hover-elevate inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm text-muted-foreground hover:text-foreground transition-colors">
+                  <BookOpen className="w-4 h-4" aria-hidden />
+                  <span className="hidden sm:inline">Field notes</span>
+                </a>
+              </Link>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button
@@ -150,13 +156,25 @@ export function Header() {
               </DropdownMenu>
             </>
           ) : (
-            <button
-              onClick={() => setAuthOpen(true)}
-              className="hover-elevate inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm text-muted-foreground hover:text-foreground transition-colors"
-              data-testid="button-signin"
-            >
-              Sign in
-            </button>
+            <>
+              <Link href="/field-notes" data-testid="link-field-notes-signed-out">
+                <a
+                  aria-label="Field notes"
+                  className="hover-elevate inline-flex items-center gap-2 px-2.5 py-1.5 rounded-md text-sm text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <BookOpen className="w-4 h-4 shrink-0" aria-hidden />
+                  <span className="sm:hidden">Notes</span>
+                  <span className="hidden sm:inline">Field notes</span>
+                </a>
+              </Link>
+              <button
+                onClick={() => setAuthOpen(true)}
+                className="hover-elevate inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm text-muted-foreground hover:text-foreground transition-colors"
+                data-testid="button-signin"
+              >
+                Sign in
+              </button>
+            </>
           )}
 
           <button
@@ -182,7 +200,18 @@ export function Footnote() {
         <p className="text-xs text-muted-foreground">
           Sift is a quiet tool. It won't replace your thinking — it helps you find it.
         </p>
-        <div className="mt-3">
+        <div className="mt-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-2">
+          <Link href="/field-notes">
+            <a
+              className="text-xs text-muted-foreground/80 hover:text-foreground underline underline-offset-4 decoration-border/70 hover:decoration-foreground transition-colors"
+              data-testid="link-footnote-field-notes"
+            >
+              Field notes
+            </a>
+          </Link>
+          <span aria-hidden className="hidden sm:inline text-muted-foreground/30">
+            ·
+          </span>
           <button
             type="button"
             onClick={() => setCareOpen(true)}

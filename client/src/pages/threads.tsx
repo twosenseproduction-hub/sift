@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import { useMe } from "@/lib/auth";
 import { useThreads } from "@/lib/useThreads";
 import { Header, Footnote } from "@/components/brand";
@@ -7,8 +8,12 @@ import { Button } from "@/components/ui/button";
 import { AuthDialog } from "@/components/auth-dialog";
 import { ArrowRight, Search, Bookmark } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { ReEntryBlock } from "@/components/sift-ui";
-import type { SiftListItem, SiftStatus } from "@shared/schema";
+import {
+  ReEntryBlock,
+  reentrySuggestedThreadId,
+} from "@/components/sift-ui";
+import { apiRequest } from "@/lib/queryClient";
+import type { ReEntryResponse, SiftListItem, SiftStatus } from "@shared/schema";
 
 type Filter = "all" | "open" | "closed" | "archived";
 
@@ -16,9 +21,33 @@ export default function ThreadsPage() {
   const [authOpen, setAuthOpen] = useState(false);
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
+  const [reentryPinDismissed, setReentryPinDismissed] = useState(() => {
+    try {
+      return (
+        typeof window !== "undefined" &&
+        sessionStorage.getItem("sift.reentry.dismiss") === "1"
+      );
+    } catch {
+      return false;
+    }
+  });
   const { data: meData } = useMe();
   const me = meData?.me;
   const { data: threads, isLoading, isError } = useThreads({ enabled: !!me });
+
+  const { data: reentryData } = useQuery<ReEntryResponse>({
+    queryKey: ["/api/reentry"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/reentry");
+      return res.json();
+    },
+    enabled: !!me && !reentryPinDismissed,
+    staleTime: 60_000,
+  });
+
+  const suggestThreadId = reentryPinDismissed
+    ? null
+    : reentrySuggestedThreadId(reentryData);
 
   const filtered = (threads ?? []).filter((t) => {
     if (filter !== "all" && t.threadState !== filter) return false;
@@ -31,6 +60,13 @@ export default function ThreadsPage() {
     }
     return true;
   });
+
+  const filteredSorted = useMemo(() => {
+    if (!suggestThreadId) return filtered;
+    const hit = filtered.find((t) => t.id === suggestThreadId);
+    if (!hit) return filtered;
+    return [hit, ...filtered.filter((t) => t.id !== suggestThreadId)];
+  }, [filtered, suggestThreadId]);
 
   if (!me) {
     return (
@@ -74,7 +110,11 @@ export default function ThreadsPage() {
             </h1>
           </div>
 
-          <ReEntryBlock enabled />
+          <ReEntryBlock
+            enabled
+            variant="strip"
+            onDismiss={() => setReentryPinDismissed(true)}
+          />
 
           {/* Filter row — Linear-style tabs. "Live" reads less administrative
               than "Open" and matches the rest of the app's voice. */}
@@ -139,7 +179,7 @@ export default function ThreadsPage() {
           )}
 
           {/* Empty */}
-          {!isLoading && !isError && filtered.length === 0 && (
+          {!isLoading && !isError && filteredSorted.length === 0 && (
             <div className="text-center py-12">
               {search ? (
                 <p className="text-muted-foreground text-sm">
@@ -168,10 +208,14 @@ export default function ThreadsPage() {
           )}
 
           {/* List */}
-          {filtered.length > 0 && (
+          {filteredSorted.length > 0 && (
             <ul className="divide-y divide-border/70 border-y border-border/70">
-              {filtered.map((t) => (
-                <ThreadRow key={t.id} thread={t} />
+              {filteredSorted.map((t) => (
+                <ThreadRow
+                  key={t.id}
+                  thread={t}
+                  pickUpHere={!!suggestThreadId && t.id === suggestThreadId}
+                />
               ))}
             </ul>
           )}
@@ -182,7 +226,13 @@ export default function ThreadsPage() {
   );
 }
 
-function ThreadRow({ thread }: { thread: SiftListItem }) {
+function ThreadRow({
+  thread,
+  pickUpHere,
+}: {
+  thread: SiftListItem;
+  pickUpHere?: boolean;
+}) {
   const modeLabel = thread.mode === "operator" ? "Operator" : "Personal";
   const stateMeta =
     thread.threadState === "archived"
@@ -198,7 +248,13 @@ function ThreadRow({ thread }: { thread: SiftListItem }) {
       : null;
 
   return (
-    <li className="group relative py-5 md:py-6 flex gap-4 md:gap-6 hover-elevate rounded-sm -mx-2 px-2 md:-mx-4 md:px-4">
+    <li
+      className={cn(
+        "group relative py-5 md:py-6 flex gap-4 md:gap-6 hover-elevate rounded-sm -mx-2 px-2 md:-mx-4 md:px-4",
+        pickUpHere &&
+          "bg-primary/[0.04] ring-1 ring-primary/15 ring-inset rounded-xl",
+      )}
+    >
       <Link href={`/thread/${thread.id}`}>
         <a
           className="flex-1 text-left min-w-0 block"
@@ -212,6 +268,11 @@ function ThreadRow({ thread }: { thread: SiftListItem }) {
             {thread.metaSift ? (
               <span className="text-[10px] uppercase tracking-widest text-muted-foreground/80">
                 pattern sift
+              </span>
+            ) : null}
+            {pickUpHere ? (
+              <span className="text-[10px] font-medium uppercase tracking-widest text-primary/80">
+                pick up here
               </span>
             ) : null}
             <span className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground/70">

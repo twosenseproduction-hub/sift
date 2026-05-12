@@ -87,11 +87,13 @@ app.use((req, res, next) => {
     await setupVite(httpServer, app);
   }
 
-  // ALWAYS serve the app on the port specified in the environment variable PORT
-  // Other ports are firewalled. Default to 5000 if not specified.
-  // this serves both the API and the client.
-  // It is the only port that is not firewalled.
-  const port = parseInt(process.env.PORT || "5000", 10);
+  // ALWAYS serve the app on PORT when set (e.g. Fly.io). Locally, NODE_ENV is not production—default to 5173 so http://127.0.0.1:5173 matches typical Vite expectations (the stack uses Vite in middleware mode; nothing listens on 5173 separately).
+  // Production defaults to 5000 when PORT is unset.
+  const port = parseInt(
+    process.env.PORT ||
+      (process.env.NODE_ENV === "production" ? "5000" : "5173"),
+    10,
+  );
   const listenOpts: { port: number; host: string; reusePort?: boolean } = {
     port,
     host: process.env.HOST ?? "0.0.0.0",

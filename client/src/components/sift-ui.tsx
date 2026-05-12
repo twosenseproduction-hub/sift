@@ -648,8 +648,26 @@ function WaveBars() {
   );
 }
 
+/** Thread id to pin when highlighting smart re-entry (compare uses current sift id). */
+export function reentrySuggestedThreadId(
+  data: ReEntryResponse | undefined,
+): string | null {
+  const a = data?.action;
+  if (!a) return null;
+  if (a.type === "compare") return a.currentSiftId;
+  return a.threadId;
+}
+
 /** One contextual prompt for returning users — home / threads compose surfaces */
-export function ReEntryBlock({ enabled }: { enabled: boolean }) {
+export function ReEntryBlock({
+  enabled,
+  variant = "card",
+  onDismiss,
+}: {
+  enabled: boolean;
+  variant?: "card" | "strip";
+  onDismiss?: () => void;
+}) {
   const [sessionDismissed, setSessionDismissed] = useState(() => {
     try {
       return (
@@ -698,7 +716,36 @@ export function ReEntryBlock({ enabled }: { enabled: boolean }) {
       /* ignore */
     }
     setSessionDismissed(true);
+    onDismiss?.();
   };
+
+  if (variant === "strip") {
+    return (
+      <div
+        className="mb-6 rounded-xl border border-primary/20 bg-primary/[0.04] px-4 py-3 md:px-5 md:py-3.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
+        data-testid="reentry-strip"
+      >
+        <p className="text-sm text-muted-foreground leading-snug flex-1 min-w-0">
+          {prompt}
+        </p>
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-1 shrink-0">
+          <Link href={primaryHref}>
+            <a className="text-sm font-medium text-foreground/90 hover:text-foreground underline underline-offset-4 decoration-border hover:decoration-foreground transition-colors">
+              {primaryLabel}
+            </a>
+          </Link>
+          <button
+            type="button"
+            onClick={dismiss}
+            data-testid="reentry-dismiss"
+            className="text-xs text-muted-foreground/70 hover:text-foreground transition-colors"
+          >
+            not now
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -846,10 +893,9 @@ export function Result({
     null | "smaller" | "different"
   >(null);
   const [stepRevisionFadeIn, setStepRevisionFadeIn] = useState(false);
-  // Signal/Noise grid stays visible by default but collapses to a compact
-  // summary on demand. Default-open preserves prior expectations; users
-  // can quiet it when they want to focus on the next step alone.
-  const [signalExpanded, setSignalExpanded] = useState(true);
+  // Signal/noise starts folded so the load-bearing move lands first; readers
+  // open "Show signal & noise" when they want the split—not as an ambush.
+  const [signalExpanded, setSignalExpanded] = useState(false);
   const checkinSig =
     result.checkins?.map((c) => c.id).join(",") ?? "";
 
@@ -866,7 +912,7 @@ export function Result({
     setStepCheck(null);
     setStepRevising(null);
     setStepRevisionFadeIn(false);
-    setSignalExpanded(true);
+    setSignalExpanded(false);
   }, [
     result.id,
     result.coreIntent,
@@ -1051,7 +1097,7 @@ export function Result({
 
   const connectiveCaption =
     view.signalReason?.trim() ||
-    "This move follows from what matters most right now.";
+    "One possible shape of the move—not the only one.";
 
   const sortedCheckins = [...(view.checkins ?? [])].sort(
     (a, b) => a.createdAt - b.createdAt,
@@ -1095,7 +1141,7 @@ export function Result({
       );
     }
     lines.push(
-      `One next step:`,
+      `A possible next step:`,
       view.nextStep,
       "",
       connective,
@@ -1267,7 +1313,11 @@ export function Result({
             a proposal, not a final answer (AGENTS.md "step check
             mechanic"). */}
         <section data-testid="section-next">
-          <Label>One next step</Label>
+          <Label>A possible next step</Label>
+          <p className="mt-2 text-xs text-muted-foreground/80 leading-relaxed max-w-xl">
+            A suggestion to react to—not an assignment. Use the buttons below
+            if it needs to shrink or shift.
+          </p>
           <div
             className={`mt-3 rounded-2xl border border-primary/25 bg-primary/5 p-5 md:p-6 transition-opacity ${
               stepRevising ? "opacity-50" : "opacity-100"
@@ -1360,6 +1410,17 @@ export function Result({
               )}
             </div>
           ) : null}
+
+          <div className="mt-4">
+            <Link href="/field-notes">
+              <a
+                data-testid="link-result-field-notes"
+                className="text-xs text-muted-foreground/70 hover:text-foreground underline underline-offset-4 decoration-border/60 hover:decoration-foreground transition-colors"
+              >
+                Hard to pick a move? Field notes (optional)
+              </a>
+            </Link>
+          </div>
 
           {view.mine && !readOnly ? (
             <>
@@ -1466,9 +1527,15 @@ export function Result({
                 data-testid="button-signal-toggle"
                 className="text-xs text-muted-foreground/70 hover:text-foreground transition-colors"
               >
-                {signalExpanded ? "Quiet this" : "Show the read"}
+                {signalExpanded ? "Quiet this" : "Show signal & noise"}
               </button>
             </div>
+
+            {!signalExpanded ? (
+              <p className="text-xs text-muted-foreground/75 leading-relaxed max-w-lg">
+                Optional—open when you want to see how Sift split what matters from what may be loud right now.
+              </p>
+            ) : null}
 
             {signalExpanded ? (
               <div

@@ -276,7 +276,7 @@ export default function Home() {
                   setCareOriginalInput(originalInput);
                   setFlow("care");
                 }}
-                initialText={quickResetSeed ?? FREE_WRITE_SEED}
+                initialText={quickResetSeed ?? (isReturning ? "" : FREE_WRITE_SEED)}
                 prefillToken={composerPrefillToken}
               />
 
@@ -346,6 +346,7 @@ export default function Home() {
 
                       <BreathingDot
                         onContinue={() => {
+                          setQuickResetSeed(FREE_WRITE_SEED);
                           setComposerPrefillToken((n) => n + 1);
                         }}
                       />
@@ -543,6 +544,8 @@ export default function Home() {
           setTodayOpen(false);
           if (dailyPromptText && dailyPromptText.trim().length > 0) {
             setQuickResetSeed(dailyPromptText);
+          } else {
+            setQuickResetSeed(FREE_WRITE_SEED);
           }
           setComposerPrefillToken((n) => n + 1);
         }}

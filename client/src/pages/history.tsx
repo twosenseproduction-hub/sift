@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Header, Footnote } from "@/components/brand";
@@ -11,6 +11,10 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import {
+  ReEntryBlock,
+  reentrySuggestedThreadId,
+} from "@/components/sift-ui";
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -21,7 +25,11 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import type { SiftListItem, SiftStatus } from "@shared/schema";
+import type {
+  ReEntryResponse,
+  SiftListItem,
+  SiftStatus,
+} from "@shared/schema";
 
 type StatusFilter = "all" | "open" | "closed";
 
@@ -32,10 +40,19 @@ export default function HistoryPage() {
   const [q, setQ] = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [reentryPinDismissed, setReentryPinDismissed] = useState(() => {
+    try {
+      return (
+        typeof window !== "undefined" &&
+        sessionStorage.getItem("sift.reentry.dismiss") === "1"
+      );
+    } catch {
+      return false;
+    }
+  });
   const { toast } = useToast();
 
-  // debounce search
-  useMemo(() => {
+  useEffect(() => {
     const t = setTimeout(() => setDebouncedQ(q.trim()), 200);
     return () => clearTimeout(t);
   }, [q]);
@@ -55,6 +72,20 @@ export default function HistoryPage() {
     },
     enabled: !!me,
   });
+
+  const { data: reentryData } = useQuery<ReEntryResponse>({
+    queryKey: ["/api/reentry"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/reentry");
+      return res.json();
+    },
+    enabled: !!me && !reentryPinDismissed,
+    staleTime: 60_000,
+  });
+
+  const suggestThreadId = reentryPinDismissed
+    ? null
+    : reentrySuggestedThreadId(reentryData);
 
   const del = useMutation({
     mutationFn: async (id: string) => {
@@ -118,6 +149,13 @@ export default function HistoryPage() {
     return s.status === statusFilter;
   });
 
+  const siftsSorted = useMemo(() => {
+    if (!suggestThreadId) return sifts;
+    const hit = sifts.find((s) => s.id === suggestThreadId);
+    if (!hit) return sifts;
+    return [hit, ...sifts.filter((s) => s.id !== suggestThreadId)];
+  }, [sifts, suggestThreadId]);
+
   return (
     <div className="min-h-screen flex flex-col">
       <Header />
@@ -132,6 +170,11 @@ export default function HistoryPage() {
             </h1>
           </div>
 
+          <ReEntryBlock
+            enabled
+            onDismiss={() => setReentryPinDismissed(true)}
+          />
+
           {/* Search */}
           <div className="relative mb-4">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
@@ -145,7 +188,7 @@ export default function HistoryPage() {
           </div>
 
           {/* Status filter — quiet text row */}
-          <div className="mb-8 flex items-center gap-5 text-sm">
+          <div className="mb-8 flex items-center gap-5 text-sm flex-wrap">
             {(["all", "open", "closed"] as const).map((f) => (
               <button
                 key={f}
@@ -197,12 +240,16 @@ export default function HistoryPage() {
             </div>
           )}
 
-          {sifts.length > 0 && (
+          {siftsSorted.length > 0 && (
             <ul className="divide-y divide-border/70 border-y border-border/70">
-              {sifts.map((s) => (
+              {siftsSorted.map((s) => (
                 <li
                   key={s.id}
-                  className="group relative py-5 md:py-6 flex gap-4 md:gap-6 hover-elevate rounded-sm -mx-2 px-2 md:-mx-4 md:px-4"
+                  className={cn(
+                    "group relative py-5 md:py-6 flex gap-4 md:gap-6 hover-elevate rounded-sm -mx-2 px-2 md:-mx-4 md:px-4",
+                    suggestThreadId === s.id &&
+                      "bg-primary/[0.04] ring-1 ring-primary/15 ring-inset rounded-xl",
+                  )}
                   data-testid={`history-item-${s.id}`}
                 >
                   <button
@@ -218,6 +265,11 @@ export default function HistoryPage() {
                       {s.metaSift ? (
                         <span className="text-[10px] uppercase tracking-widest text-muted-foreground/80">
                           pattern sift
+                        </span>
+                      ) : null}
+                      {suggestThreadId === s.id ? (
+                        <span className="text-[10px] font-medium uppercase tracking-widest text-primary/80">
+                          pick up here
                         </span>
                       ) : null}
                     </div>
