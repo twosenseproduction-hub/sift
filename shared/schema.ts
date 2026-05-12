@@ -841,6 +841,27 @@ export type Bookmark = {
   payload: BookmarkPayload;
 };
 
+/** Owner-facing thread payload from GET /api/threads/:id (inner `thread` key). */
+export type ThreadDetail = {
+  id: string;
+  createdAt: number;
+  input: string;
+  inputMode: string;
+  coreIntent: string;
+  nextStep: string;
+  reflection: string | null;
+  status: SiftStatus;
+  mode: SiftMode;
+  modeLocked: boolean;
+  entrySignal: string | null;
+  threadState: 'open' | 'closed' | 'archived';
+  frontBurnerRank: number | null;
+  currentMove: string | null;
+  closureCondition: string | null;
+  turns: ThreadTurn[];
+  bookmark?: Bookmark | null;
+};
+
 // ---- Deepen / close API ----
 export const deepenRequestSchema = z.object({
   text: z.string().min(1).max(4000),

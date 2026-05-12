@@ -1,10 +1,10 @@
-import type { ThreadListItem, ThreadDetail } from "@shared/schema";
+import type { SiftListItem, ThreadDetail } from "@shared/schema";
 import { apiRequest, queryClient } from "./queryClient";
 import { useMutation, useQuery } from "@tanstack/react-query";
 
-// GET /api/threads — all active threads for the signed-in user
+// GET /api/threads — same compact row shape as /api/sifts (SiftListItem).
 export function useThreads(options?: { enabled?: boolean }) {
-  return useQuery<ThreadListItem[]>({
+  return useQuery<SiftListItem[]>({
     queryKey: ["/api/threads"],
     queryFn: async () => {
       const res = await apiRequest("GET", "/api/threads");
@@ -14,13 +14,14 @@ export function useThreads(options?: { enabled?: boolean }) {
   });
 }
 
-// GET /api/threads/:id — full thread with turns + bookmark (owner-only fields)
+// GET /api/threads/:id — body is { thread }; unwrap so callers use `data.field`.
 export function useThread(id: string) {
-  return useQuery<ThreadDetail>({
+  return useQuery<ThreadDetail | undefined>({
     queryKey: ["/api/threads", id],
     queryFn: async () => {
       const res = await apiRequest("GET", `/api/threads/${id}`);
-      return res.json();
+      const data = (await res.json()) as { thread?: ThreadDetail };
+      return data.thread;
     },
     enabled: !!id,
   });

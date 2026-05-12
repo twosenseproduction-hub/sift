@@ -9,7 +9,7 @@ import { DeepeningThread } from "@/components/deepening-thread";
 import { BookmarkCard } from "@/components/bookmark-card";
 import { AuthDialog } from "@/components/auth-dialog";
 import { cn } from "@/lib/utils";
-import type { ThreadDetail } from "@shared/schema";
+import type { ThreadDetail, ThreadTurn } from "@shared/schema";
 
 // Thread detail page — /thread/:id
 export default function ThreadPage() {
@@ -22,6 +22,7 @@ export default function ThreadPage() {
   const [localState, setLocalState] = useState<ThreadDetail["threadState"] | null>(null);
   const [localMove, setLocalMove] = useState("");
   const [localRank, setLocalRank] = useState<number | null>(null);
+  const [localClosure, setLocalClosure] = useState("");
 
   // Which thread to show — from URL /thread/:id. The app uses wouter's
   // hash location (see App.tsx), so reading window.location.pathname
@@ -39,6 +40,7 @@ export default function ThreadPage() {
     setLocalState(thread.threadState);
     setLocalMove(thread.currentMove ?? "");
     setLocalRank(thread.frontBurnerRank ?? null);
+    setLocalClosure(thread.closureCondition ?? "");
   }
 
   if (!id) {
@@ -106,6 +108,11 @@ export default function ThreadPage() {
     patch.mutate({ id: thread.id, frontBurnerRank: r });
   };
 
+  const commitClosure = (c: string) => {
+    setLocalClosure(c);
+    patch.mutate({ id: thread.id, closureCondition: c || null });
+  };
+
   return (
     <div className="min-h-screen flex flex-col">
       <Header />
@@ -139,7 +146,7 @@ export default function ThreadPage() {
               </div>
             </div>
             <span className="text-xs text-muted-foreground/50 tabular-nums">
-              {formatDate(thread.updatedAt)}
+              {formatDate(thread.createdAt)}
             </span>
           </div>
 
@@ -336,9 +343,8 @@ export default function ThreadPage() {
   );
 }
 
-function TurnCard({ turn }: { turn: any }) {
+function TurnCard({ turn }: { turn: ThreadTurn }) {
   const isUser = turn.role === "user";
-  const isSift = turn.role === "sift";
 
   return (
     <div className={cn(
@@ -349,10 +355,10 @@ function TurnCard({ turn }: { turn: any }) {
         {isUser ? "You" : "Sift"}
         {turn.kind !== "message" && ` · ${turn.kind}`}
       </p>
-      {turn.text && (
+      {turn.role === "user" && turn.kind === "message" && (
         <p className="text-sm text-foreground/80 leading-relaxed">{turn.text}</p>
       )}
-      {turn.message && (
+      {turn.role === "sift" && turn.kind === "message" && (
         <div className="space-y-1.5">
           {turn.message.mirror && (
             <p className="text-sm text-foreground/80 leading-relaxed italic">
@@ -366,7 +372,7 @@ function TurnCard({ turn }: { turn: any }) {
           )}
         </div>
       )}
-      {turn.reflection && (
+      {turn.kind === "closure" && (
         <p className="text-sm text-muted-foreground/80 italic">{turn.reflection}</p>
       )}
     </div>
