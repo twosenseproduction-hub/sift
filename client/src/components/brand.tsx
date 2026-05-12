@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
-import { Moon, Sun, LogOut, User as UserIcon, Bookmark, BookOpen, Shield } from "lucide-react";
+import { Moon, Sun, LogOut, Bookmark, BookOpen, Shield, Menu } from "lucide-react";
 import { useTheme } from "@/lib/theme";
 import { useMe, useLogout } from "@/lib/auth";
 import { AuthDialog } from "./auth-dialog";
 import { CareScreen } from "./care-screen";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -12,12 +14,35 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
+
+function handleInitials(handle: string): string {
+  const t = handle.trim().replace(/^@/, "");
+  if (!t) return "?";
+  const letters = t.replace(/[^a-zA-Z0-9]/g, "");
+  if (letters.length >= 2) return (letters[0] + letters[1]).toUpperCase();
+  return t.slice(0, 2).toUpperCase();
+}
+
+type WorkspaceKey = "threads" | "garden" | "field-notes";
+
+function activeWorkspaceSegment(path: string): WorkspaceKey | null {
+  if (path === "/threads" || path.startsWith("/thread/") || path === "/history") return "threads";
+  if (path === "/garden") return "garden";
+  if (path === "/field-notes") return "field-notes";
+  return null;
+}
 
 // Brand lockup (icon + wordmark). The colored version reads on light
 // surfaces; the light gray version reads on dark surfaces. Both PNGs
@@ -72,25 +97,57 @@ export function LogoMark({ size = 28 }: { size?: number }) {
   );
 }
 
+function WorkspaceSegmentLink({
+  href,
+  active,
+  children,
+  "data-testid": testId,
+  icon,
+}: {
+  href: string;
+  active: boolean;
+  children: ReactNode;
+  "data-testid"?: string;
+  icon?: ReactNode;
+}) {
+  return (
+    <Link href={href} data-testid={testId}>
+      <a
+        className={cn(
+          "inline-flex items-center justify-center gap-1.5 rounded-md px-2 sm:px-2.5 py-1 text-xs sm:text-sm font-medium transition-colors whitespace-nowrap",
+          active
+            ? "bg-background text-foreground border border-border/50"
+            : "text-muted-foreground hover:text-foreground border border-transparent",
+        )}
+      >
+        {icon}
+        {children}
+      </a>
+    </Link>
+  );
+}
+
 export function Header() {
   const { theme, toggle } = useTheme();
   const { data } = useMe();
   const logout = useLogout();
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
   const [authOpen, setAuthOpen] = useState(false);
+  const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const me = data?.me;
+  const workspaceActive = activeWorkspaceSegment(location);
+
+  useEffect(() => {
+    setWorkspaceOpen(false);
+  }, [location]);
 
   return (
     <header className="w-full">
       <div className="mx-auto max-w-3xl px-6 md:px-8 py-4 md:py-5 flex items-center justify-between gap-3">
         <Link href="/" data-testid="link-home">
           <a
-            className="flex items-center gap-2.5 group"
+            className="flex items-center gap-2.5 group min-w-0"
             onClick={() => {
-              // Home owns its own flow/result state. If we're already on the
-              // home route the <Link> is a no-op and that state would persist,
-              // leaving the user on a stale result. Fire a small event so
-              // Home can reset to the idle composer.
               if (typeof window !== "undefined") {
                 window.dispatchEvent(new CustomEvent("sift:home-reset"));
               }
@@ -100,49 +157,129 @@ export function Header() {
           </a>
         </Link>
 
-        <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           {me ? (
             <>
-              {/* Threads is the single recall surface in the header. History
-                  used to live here, but each sift is reachable from its
-                  thread, and the per-sift breakdown opens from there — so the
-                  duplicate top-level surface was removed. The /history route
-                  is still mounted in App.tsx for any old bookmarks or share
-                  links that may point to it. */}
-              <Link href="/threads" data-testid="link-threads">
-                <a className="hover-elevate inline-flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-md text-sm text-muted-foreground hover:text-foreground transition-colors">
-                  <Bookmark className="w-4 h-4" />
-                  <span className="hidden sm:inline">Threads</span>
-                </a>
-              </Link>
-              <Link href="/garden" data-testid="link-garden">
-                <a className="hover-elevate inline-flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-md text-sm text-muted-foreground hover:text-foreground transition-colors">
-                  <span className="text-base leading-none select-none" aria-hidden>
-                    ◇
-                  </span>
-                  <span className="hidden sm:inline">Garden</span>
-                </a>
-              </Link>
-              <Link href="/field-notes" data-testid="link-field-notes">
-                <a className="hover-elevate inline-flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-md text-sm text-muted-foreground hover:text-foreground transition-colors">
-                  <BookOpen className="w-4 h-4" aria-hidden />
-                  <span className="hidden sm:inline">Field notes</span>
-                </a>
-              </Link>
+              <div
+                className="hidden md:inline-flex items-center rounded-lg border border-border/60 bg-muted/35 p-0.5 gap-0.5"
+                role="navigation"
+                aria-label="Workspace"
+              >
+                <WorkspaceSegmentLink
+                  href="/threads"
+                  active={workspaceActive === "threads"}
+                  data-testid="link-threads"
+                  icon={<Bookmark className="w-3.5 h-3.5 sm:w-4 sm:h-4 opacity-80" aria-hidden />}
+                >
+                  Threads
+                </WorkspaceSegmentLink>
+                <WorkspaceSegmentLink
+                  href="/garden"
+                  active={workspaceActive === "garden"}
+                  data-testid="link-garden"
+                  icon={
+                    <span className="text-sm leading-none select-none opacity-80" aria-hidden>
+                      ◇
+                    </span>
+                  }
+                >
+                  Garden
+                </WorkspaceSegmentLink>
+                <WorkspaceSegmentLink
+                  href="/field-notes"
+                  active={workspaceActive === "field-notes"}
+                  data-testid="link-field-notes"
+                  icon={<BookOpen className="w-3.5 h-3.5 sm:w-4 sm:h-4 opacity-80" aria-hidden />}
+                >
+                  Notes
+                </WorkspaceSegmentLink>
+              </div>
+
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="md:hidden h-9 w-9 shrink-0"
+                aria-label="Open workspace navigation"
+                data-testid="button-workspace-menu"
+                onClick={() => setWorkspaceOpen(true)}
+              >
+                <Menu className="h-4 w-4" />
+              </Button>
+
+              <Sheet open={workspaceOpen} onOpenChange={setWorkspaceOpen}>
+                <SheetContent side="bottom" className="rounded-t-xl">
+                  <SheetHeader className="text-left pb-2">
+                    <SheetTitle className="text-base">Workspace</SheetTitle>
+                  </SheetHeader>
+                  <nav className="flex flex-col gap-1 pt-2" aria-label="Workspace">
+                    <Link href="/threads" data-testid="link-threads-mobile">
+                      <a
+                        onClick={() => setWorkspaceOpen(false)}
+                        className={cn(
+                          "flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors",
+                          workspaceActive === "threads"
+                            ? "bg-muted text-foreground"
+                            : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                        )}
+                      >
+                        <Bookmark className="w-4 h-4 shrink-0 opacity-80" aria-hidden />
+                        Threads
+                      </a>
+                    </Link>
+                    <Link href="/garden" data-testid="link-garden-mobile">
+                      <a
+                        onClick={() => setWorkspaceOpen(false)}
+                        className={cn(
+                          "flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors",
+                          workspaceActive === "garden"
+                            ? "bg-muted text-foreground"
+                            : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                        )}
+                      >
+                        <span className="w-4 text-center text-base leading-none select-none opacity-80" aria-hidden>
+                          ◇
+                        </span>
+                        Garden
+                      </a>
+                    </Link>
+                    <Link href="/field-notes" data-testid="link-field-notes-mobile">
+                      <a
+                        onClick={() => setWorkspaceOpen(false)}
+                        className={cn(
+                          "flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors",
+                          workspaceActive === "field-notes"
+                            ? "bg-muted text-foreground"
+                            : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                        )}
+                      >
+                        <BookOpen className="w-4 h-4 shrink-0 opacity-80" aria-hidden />
+                        Field notes
+                      </a>
+                    </Link>
+                  </nav>
+                </SheetContent>
+              </Sheet>
+
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button
-                    className="hover-elevate inline-flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-md text-sm text-muted-foreground hover:text-foreground transition-colors"
+                    type="button"
+                    className={cn(
+                      "flex h-9 w-9 shrink-0 items-center justify-center rounded-full",
+                      "bg-primary text-primary-foreground text-xs font-semibold tracking-tight",
+                      "ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                      "hover-elevate",
+                    )}
                     data-testid="button-account"
-                    aria-label="Account"
+                    aria-label={`Account, signed in as @${me.handle}`}
                   >
-                    <UserIcon className="w-4 h-4" />
-                    <span className="hidden sm:inline font-mono text-xs">@{me.handle}</span>
+                    {handleInitials(me.handle)}
                   </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="min-w-[180px]">
+                <DropdownMenuContent align="end" className="min-w-[200px]">
                   <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                    Signed in as <span className="font-mono">@{me.handle}</span>
+                    Signed in as <span className="font-mono text-foreground">@{me.handle}</span>
                   </div>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
@@ -176,13 +313,16 @@ export function Header() {
                   <span className="hidden sm:inline">Field notes</span>
                 </a>
               </Link>
-              <button
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="shrink-0"
                 onClick={() => setAuthOpen(true)}
-                className="hover-elevate inline-flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-md text-sm text-muted-foreground hover:text-foreground transition-colors"
                 data-testid="button-signin"
               >
                 Sign in
-              </button>
+              </Button>
             </>
           )}
 
