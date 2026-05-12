@@ -1,5 +1,9 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 import { getBYOKAnthropicKey } from "./byok-settings";
+import {
+  clearMetaSiftSessionStorage,
+  notifyMetaSiftBannerDismissed,
+} from "./metaSift";
 
 const API_BASE = "__PORT_5000__".startsWith("__") ? "" : "__PORT_5000__";
 
@@ -84,21 +88,36 @@ export async function apiRequest(
   }
   if (payload) headers["Content-Type"] = "application/json";
 
-  const res = await fetch(`${API_BASE}${url}`, {
-    method,
-    headers,
-    body: payload ? JSON.stringify(payload) : undefined,
-  });
+  const isSiftPost = method === "POST" && url === "/api/sift";
 
-  await throwIfResNotOk(res);
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${url}`, {
+      method,
+      headers,
+      body: payload ? JSON.stringify(payload) : undefined,
+    });
+  } catch (err) {
+    if (isSiftPost) {
+      clearMetaSiftSessionStorage();
+      notifyMetaSiftBannerDismissed();
+    }
+    throw err;
+  }
 
-  if (method === "POST" && url === "/api/sift" && res.ok) {
+  try {
+    await throwIfResNotOk(res);
+  } catch (err) {
+    if (isSiftPost) {
+      clearMetaSiftSessionStorage();
+      notifyMetaSiftBannerDismissed();
+    }
+    throw err;
+  }
+
+  if (isSiftPost && res.ok) {
     try {
-      if (typeof sessionStorage !== "undefined") {
-        sessionStorage.removeItem("sift.pendingMetaSift");
-        sessionStorage.removeItem("sift.metaSiftBanner");
-        sessionStorage.removeItem("sift.metaSiftPrefill");
-      }
+      clearMetaSiftSessionStorage();
       if (typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent("sift:sift-submitted"));
       }

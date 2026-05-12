@@ -25,6 +25,7 @@ import { FeedbackPrompt } from "@/components/feedback-prompt";
 import { Button } from "@/components/ui/button";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useMe } from "@/lib/auth";
+import { dismissMetaSiftStaging } from "@/lib/metaSift";
 import { useDailyPrompt } from "@/lib/useDailyPrompt";
 import { useResume, clearResume } from "@/lib/resume";
 import { useQuery } from "@tanstack/react-query";
@@ -144,8 +145,16 @@ export default function Home() {
       setMetaBanner(null);
       queryClient.invalidateQueries({ queryKey: ["/api/garden"] });
     };
+    const onMetaBannerCleared = () => setMetaBanner(null);
     window.addEventListener("sift:sift-submitted", onSubmitted);
-    return () => window.removeEventListener("sift:sift-submitted", onSubmitted);
+    window.addEventListener("sift:meta-sift-banner-cleared", onMetaBannerCleared);
+    return () => {
+      window.removeEventListener("sift:sift-submitted", onSubmitted);
+      window.removeEventListener(
+        "sift:meta-sift-banner-cleared",
+        onMetaBannerCleared,
+      );
+    };
   }, []);
 
   const dismissContactPrompt = () => {
@@ -250,12 +259,21 @@ export default function Home() {
               />
 
               {metaBanner ? (
-                <p
-                  className="mb-4 text-xs text-muted-foreground text-center"
-                  role="status"
-                >
-                  {metaBanner}
-                </p>
+                <div className="mb-4 flex flex-col items-center gap-2 sm:flex-row sm:justify-center sm:gap-4">
+                  <p
+                    className="text-xs text-muted-foreground text-center max-w-md"
+                    role="status"
+                  >
+                    {metaBanner}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => dismissMetaSiftStaging()}
+                    className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-4 shrink-0"
+                  >
+                    Dismiss
+                  </button>
+                </div>
               ) : null}
 
               <Composer
