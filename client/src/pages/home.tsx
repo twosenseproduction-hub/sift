@@ -190,7 +190,7 @@ export default function Home() {
       <main className="flex-1">
         <div className="mx-auto max-w-3xl px-6 md:px-8 pb-16">
           {flow === "idle" || flow === "sifting" ? (
-            <div className="pt-10 md:pt-16">
+            <div className="pt-12 md:pt-20">
               {canShowResume && (
                 <ResumeCard
                   onResume={onResumeThread}
@@ -200,7 +200,7 @@ export default function Home() {
               {/* Hero — first-time users get the full reflective hero.
                   Returning users get a minimal prompt label only. */}
               {!isReturning ? (
-                <div className="text-center mb-10 md:mb-14">
+                <div className="text-center mb-12 md:mb-16">
                   <p
                     className="text-[11px] tracking-[0.25em] uppercase text-primary/80 mb-4 font-medium"
                     data-testid="text-eyebrow"
@@ -229,7 +229,7 @@ export default function Home() {
                   </p>
                 </div>
               ) : (
-                <div className="mb-6 md:mb-8">
+                <div className="mb-8 md:mb-10">
                   <p
                     className="text-sm text-muted-foreground/80"
                     data-testid="text-prompt-label"
@@ -302,65 +302,57 @@ export default function Home() {
                 </div>
               )}
 
-              {/* Collapsed support section. One quiet row that expands to
-                  reveal Today from Sift, Quick Reset, and Breath. Keeps the
-                  composer as the unambiguous primary path. All three tools
-                  are preserved with their existing behavior — just moved
-                  behind one disclosure. */}
-              <section
-                className="mt-10 md:mt-12 pt-6 md:pt-8 border-t border-border/40"
-                data-testid="section-support"
-              >
-                <button
-                  type="button"
-                  onClick={() => setSupportOpen((v) => !v)}
-                  aria-expanded={supportOpen}
-                  aria-controls="support-panel"
-                  data-testid="button-support-toggle"
-                  className="w-full flex items-center justify-between gap-4 text-left text-sm text-muted-foreground hover:text-foreground transition-colors"
+              {/* Plume-style zen: hide alternate entry tools until the user
+                  has at least one sift — keeps first sessions one surface. */}
+              {isReturning ? (
+                <section
+                  className="mt-10 md:mt-14 pt-6 md:pt-8 border-t border-border/30"
+                  data-testid="section-support"
                 >
-                  <span>Need a different way in?</span>
-                  <ChevronDown
-                    className={`w-4 h-4 shrink-0 transition-transform duration-300 ${
-                      supportOpen ? "rotate-180" : ""
-                    }`}
-                    aria-hidden="true"
-                  />
-                </button>
-
-                {supportOpen && (
-                  <div
-                    id="support-panel"
-                    data-testid="panel-support"
-                    className="mt-5 space-y-5 fade-in-slow"
+                  <button
+                    type="button"
+                    onClick={() => setSupportOpen((v) => !v)}
+                    aria-expanded={supportOpen}
+                    aria-controls="support-panel"
+                    data-testid="button-support-toggle"
+                    className="w-full flex items-center justify-between gap-4 text-left text-sm text-muted-foreground hover:text-foreground transition-colors"
                   >
-                    {/* 1. Today from Sift — daily nudge, preserves sheet
-                         + share + free-write wiring from the page. */}
-                    <TodayFromSiftCard
-                      onOpen={() => setTodayOpen(true)}
-                      line={dailyPromptText}
+                    <span>Need a different way in?</span>
+                    <ChevronDown
+                      className={`w-4 h-4 shrink-0 transition-transform duration-300 ${
+                        supportOpen ? "rotate-180" : ""
+                      }`}
+                      aria-hidden="true"
                     />
+                  </button>
 
-                    {/* 2. Quick Reset — optional ritual. Hides after use
-                         for the rest of the session, same as before. */}
-                    {!quickResetDismissed && (
-                      <QuickResetCard
-                        onStart={() => setQuickResetOpen(true)}
-                        onSkip={() => setQuickResetDismissed(true)}
+                  {supportOpen && (
+                    <div
+                      id="support-panel"
+                      data-testid="panel-support"
+                      className="mt-5 space-y-5 fade-in-slow"
+                    >
+                      <TodayFromSiftCard
+                        onOpen={() => setTodayOpen(true)}
+                        line={dailyPromptText}
                       />
-                    )}
 
-                    {/* 3. Breath — grounding module. Fullscreen breathing
-                         experience is untouched; onContinue still re-seeds
-                         the composer when the user returns to writing. */}
-                    <BreathingDot
-                      onContinue={() => {
-                        setComposerPrefillToken((n) => n + 1);
-                      }}
-                    />
-                  </div>
-                )}
-              </section>
+                      {!quickResetDismissed && (
+                        <QuickResetCard
+                          onStart={() => setQuickResetOpen(true)}
+                          onSkip={() => setQuickResetDismissed(true)}
+                        />
+                      )}
+
+                      <BreathingDot
+                        onContinue={() => {
+                          setComposerPrefillToken((n) => n + 1);
+                        }}
+                      />
+                    </div>
+                  )}
+                </section>
+              ) : null}
             </div>
           ) : flow === "expanding" && result ? (
             <div className="pt-8 md:pt-12">

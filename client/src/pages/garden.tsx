@@ -59,36 +59,76 @@ function signalProseLine(sigIndex: number, count: number, theme: string): string
   return `${count} threads.\n${theme}.`;
 }
 
-function seedPositions(n: number, w: number, h: number): { x: number; y: number }[] {
-  if (n <= 0 || w <= 0) return [];
-  const pad = 24;
-  const cols = Math.max(1, Math.ceil(Math.sqrt(Math.max(1, n * 1.2))));
-  const rows = Math.max(1, Math.ceil(n / cols));
-  const rw = cols <= 1 ? 0 : (w - 2 * pad) / (cols - 1);
-  const rh = rows <= 1 ? 0 : (h - 2 * pad) / (rows - 1);
-  const out: { x: number; y: number }[] = [];
-  for (let i = 0; i < n; i++) {
-    const row = Math.floor(i / cols);
-    const col = i % cols;
-    const jitterX = Math.sin(i * 2.17 + 1.3) * 10;
-    const jitterY = Math.cos(i * 1.83 + 0.7) * 10;
-    out.push({
-      x: pad + col * rw + jitterX,
-      y: pad + row * rh + jitterY,
-    });
-  }
-  return out;
-}
-
-type Comet = {
-  from: number;
-  to: number;
-  t: number;
-  delay: number;
-  speed: number;
-  trail: { x: number; y: number; a: number }[];
-  dead: boolean;
+type SignalThread = {
+  globalIdx: number;
+  title: string;
+  closed: boolean;
+  month: string;
 };
+
+/**
+ * Inline micro-constellation for a single recurring signal.
+ * Each dot maps 1:1 with the chip below it (same index, same order).
+ */
+function SignalConstellation({
+  threads,
+  selectedMonth,
+  activeSeedIdx,
+  cardHovered,
+  onHoverSeed,
+  onTapSeed,
+}: {
+  threads: SignalThread[];
+  selectedMonth: string | null;
+  activeSeedIdx: number | null;
+  cardHovered: boolean;
+  onHoverSeed: (globalIdx: number | null) => void;
+  onTapSeed: (globalIdx: number) => void;
+}) {
+  if (threads.length === 0) return null;
+  return (
+    <div className="relative mb-3 h-6">
+      <div
+        className={cn(
+          "pointer-events-none absolute left-3 right-3 top-1/2 h-px -translate-y-1/2 transition-opacity duration-300",
+          cardHovered ? "bg-primary/35" : "bg-primary/15",
+        )}
+      />
+      <div className="relative flex h-full items-center justify-between">
+        {threads.map((t) => {
+          const dim = selectedMonth != null && t.month !== selectedMonth;
+          const lit = activeSeedIdx === t.globalIdx;
+          return (
+            <button
+              key={t.globalIdx}
+              type="button"
+              aria-label={t.title}
+              title={t.title}
+              className="relative grid h-6 w-6 place-items-center rounded-full"
+              onMouseEnter={() => onHoverSeed(t.globalIdx)}
+              onMouseLeave={() => onHoverSeed(null)}
+              onFocus={() => onHoverSeed(t.globalIdx)}
+              onBlur={() => onHoverSeed(null)}
+              onClick={() => onTapSeed(t.globalIdx)}
+            >
+              <span
+                className={cn(
+                  "block rounded-full transition-all duration-300",
+                  t.closed
+                    ? "h-2 w-2 bg-primary"
+                    : "h-2.5 w-2.5 bg-chart-3 ring-1 ring-chart-3/30",
+                  dim && "opacity-25",
+                  lit && !dim && t.closed && "scale-110 ring-2 ring-primary/60",
+                  lit && !dim && !t.closed && "scale-110 ring-2 ring-chart-3/60",
+                )}
+              />
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 export default function GardenPage() {
   const { data: meData } = useMe();
@@ -105,9 +145,7 @@ export default function GardenPage() {
   });
 
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
-  const [hoverSeed, setHoverSeed] = useState<number | null>(null);
   const [hoverSignal, setHoverSignal] = useState<number | null>(null);
-  const [litIndices, setLitIndices] = useState<Set<number>>(new Set());
   const [chipHoverSeed, setChipHoverSeed] = useState<number | null>(null);
 
   const [panelOpen, setPanelOpen] = useState(false);
@@ -121,19 +159,8 @@ export default function GardenPage() {
     closed: boolean;
   } | null>(null);
 
-  const wrapRef = useRef<HTMLDivElement | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const particleCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const animRef = useRef<number | null>(null);
   const particleAnimRef = useRef<number | null>(null);
-  const cometsRef = useRef<Comet[]>([]);
-  const timeRef = useRef(0);
-
-  const seedsFiltered = useMemo(() => {
-    if (!data?.seeds) return [];
-    if (!selectedMonth) return data.seeds;
-    return data.seeds.filter((s) => s.month === selectedMonth);
-  }, [data?.seeds, selectedMonth]);
 
   const seedIndexMap = useMemo(() => {
     if (!data?.seeds) return new Map<string, number>();
@@ -142,23 +169,10 @@ export default function GardenPage() {
     return m;
   }, [data?.seeds]);
 
-  const filteredGlobalIndices = useMemo(() => {
-    if (!data?.seeds || !selectedMonth) return null;
-    const set = new Set<number>();
-    data.seeds.forEach((s, i) => {
-      if (s.month === selectedMonth) set.add(i);
-    });
-    return set;
-  }, [data?.seeds, selectedMonth]);
-
   const proseKey = useMemo(() => {
     if (chipHoverSeed != null && data?.seeds[chipHoverSeed]) {
       const s = data.seeds[chipHoverSeed];
       return `seed:${chipHoverSeed}:${s.proseText}:${s.proseSub}`;
-    }
-    if (hoverSeed != null && data?.seeds[hoverSeed]) {
-      const s = data.seeds[hoverSeed];
-      return `seed:${hoverSeed}:${s.proseText}:${s.proseSub}`;
     }
     if (hoverSignal != null && data?.recurringSignals[hoverSignal]) {
       const rs = data.recurringSignals[hoverSignal];
@@ -170,63 +184,11 @@ export default function GardenPage() {
     return `default:${data?.prose.default ?? ""}`;
   }, [
     chipHoverSeed,
-    hoverSeed,
     hoverSignal,
     selectedMonth,
     data?.prose,
     data?.seeds,
     data?.recurringSignals,
-  ]);
-
-  useEffect(() => {
-    if (!data?.connections || !data?.seeds) {
-      setLitIndices(new Set());
-      return;
-    }
-    const litConnectionsFrom = (idx: number) => {
-      const lit = new Set<number>([idx]);
-      for (const [a, b] of data.connections!) {
-        if (a === idx) lit.add(b);
-        if (b === idx) lit.add(a);
-      }
-      return lit;
-    };
-    if (chipHoverSeed != null) {
-      if (filteredGlobalIndices && !filteredGlobalIndices.has(chipHoverSeed)) {
-        setLitIndices(new Set());
-        return;
-      }
-      setLitIndices(litConnectionsFrom(chipHoverSeed));
-      return;
-    }
-    if (hoverSeed != null) {
-      if (filteredGlobalIndices && !filteredGlobalIndices.has(hoverSeed)) {
-        setLitIndices(new Set());
-        return;
-      }
-      setLitIndices(litConnectionsFrom(hoverSeed));
-      return;
-    }
-    if (hoverSignal != null && data.recurringSignals[hoverSignal]) {
-      const rs = data.recurringSignals[hoverSignal];
-      const lit = new Set<number>();
-      for (const id of rs.threadIds) {
-        const gi = seedIndexMap.get(id);
-        if (gi != null) lit.add(gi);
-      }
-      setLitIndices(lit);
-      return;
-    }
-    setLitIndices(new Set());
-  }, [
-    chipHoverSeed,
-    hoverSeed,
-    hoverSignal,
-    data?.connections,
-    data?.seeds,
-    data?.recurringSignals,
-    seedIndexMap,
-    filteredGlobalIndices,
   ]);
 
   /** Particle layer */
@@ -310,196 +272,6 @@ export default function GardenPage() {
     };
   }, []);
 
-  /** Constellation */
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    const wrap = wrapRef.current;
-    if (!canvas || !wrap || !data?.seeds?.length) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    let running = true;
-    const root = document.documentElement;
-
-    const draw = () => {
-      if (!running) return;
-      const W = wrap.clientWidth;
-      const H = 260;
-      const DPR = window.devicePixelRatio || 1;
-      canvas.width = Math.floor(W * DPR);
-      canvas.height = Math.floor(H * DPR);
-      canvas.style.width = `${W}px`;
-      canvas.style.height = `${H}px`;
-      ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-
-      const chart3Str = getComputedStyle(root).getPropertyValue("--chart-3").trim();
-      const borderStr = getComputedStyle(root).getPropertyValue("--border").trim();
-      const chart2Str = getComputedStyle(root).getPropertyValue("--chart-2").trim();
-      const primaryStr = getComputedStyle(root).getPropertyValue("--primary").trim();
-
-      const hslPrimary = (a: number) => `hsl(${primaryStr.replace(/,/g, " ")} / ${a})`;
-      const hslGlow = chart3Str
-        ? (a: number) => `hsl(${chart3Str.replace(/,/g, " ")} / ${a})`
-        : hslPrimary;
-      const hslGreen = chart2Str
-        ? (a: number) => `hsl(${chart2Str.replace(/,/g, " ")} / ${a})`
-        : hslPrimary;
-      const hslBorder = (a: number) => `hsl(${borderStr.replace(/,/g, " ")} / ${a})`;
-
-      const n = data.seeds.length;
-      const pos = seedPositions(n, W, H);
-      timeRef.current += 1 / 60;
-
-      ctx.clearRect(0, 0, W, H);
-
-      const dimSet = filteredGlobalIndices;
-
-      const edgeLit = (ia: number, ib: number) =>
-        litIndices.has(ia) && litIndices.has(ib);
-
-      for (const [ia, ib] of data.connections) {
-        const ax = pos[ia]?.x ?? 0;
-        const ay = pos[ia]?.y ?? 0;
-        const bx = pos[ib]?.x ?? 0;
-        const by = pos[ib]?.y ?? 0;
-        const outA = dimSet && !dimSet.has(ia);
-        const outB = dimSet && !dimSet.has(ib);
-        let width = 0.55;
-        let alpha = 0.09;
-        if (outA || outB) {
-          width = 0.3;
-          alpha = 0.04;
-        } else if (edgeLit(ia, ib)) {
-          width = 1.3;
-          alpha = 0.5;
-        }
-        ctx.strokeStyle = hslGlow(alpha);
-        ctx.lineWidth = width;
-        ctx.beginPath();
-        ctx.moveTo(ax, ay);
-        ctx.lineTo(bx, by);
-        ctx.stroke();
-      }
-
-      const comets = cometsRef.current;
-      for (const c of comets) {
-        if (c.delay > 0) {
-          c.delay -= 16;
-          continue;
-        }
-        const ax = pos[c.from]?.x ?? 0;
-        const ay = pos[c.from]?.y ?? 0;
-        const bx = pos[c.to]?.x ?? 0;
-        const by = pos[c.to]?.y ?? 0;
-        c.t += c.speed;
-        if (c.t >= 1) {
-          c.dead = true;
-          continue;
-        }
-        const hx = ax + (bx - ax) * c.t;
-        const hy = ay + (by - ay) * c.t;
-        const grad = ctx.createRadialGradient(hx, hy, 0, hx, hy, 5);
-        grad.addColorStop(0, hslGlow(0.55));
-        grad.addColorStop(1, hslGlow(0));
-        ctx.fillStyle = grad;
-        ctx.beginPath();
-        ctx.arc(hx, hy, 5, 0, Math.PI * 2);
-        ctx.fill();
-        c.trail.push({ x: hx, y: hy, a: 0.45 });
-        if (c.trail.length > 14) c.trail.shift();
-        for (let i = 0; i < c.trail.length; i++) {
-          const tr = c.trail[i];
-          const fade = (i + 1) / c.trail.length;
-          ctx.fillStyle = hslGlow(0.35 * fade * fade);
-          ctx.beginPath();
-          ctx.arc(tr.x, tr.y, 1.5, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
-      cometsRef.current = comets.filter((c) => !c.dead);
-
-      for (let i = 0; i < n; i++) {
-        const { x, y } = pos[i];
-        const seed = data.seeds[i];
-        const dimmed = dimSet && !dimSet.has(i);
-        const closed = seed.closed;
-        const lit = litIndices.has(i);
-        const hovered = hoverSeed === i;
-
-        if (closed) {
-          ctx.globalAlpha = dimmed ? 0.18 : 1;
-          ctx.fillStyle = hslGreen(0.95);
-          ctx.beginPath();
-          ctx.arc(x, y, 3, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.globalAlpha = 1;
-          continue;
-        }
-
-        const phase = i * 1.7;
-        const pulse = 0.5 + 0.5 * Math.sin(timeRef.current * ((Math.PI * 2) / 5) + phase);
-        const glowR = 14 + pulse * 8;
-        const coreR = 4 + pulse * 1;
-
-        ctx.globalAlpha = dimmed ? 0.18 : 1;
-        if (!dimmed) {
-          const g = ctx.createRadialGradient(x, y, 0, x, y, glowR);
-          g.addColorStop(0, hslGlow(0.35));
-          g.addColorStop(1, hslGlow(0));
-          ctx.fillStyle = g;
-          ctx.beginPath();
-          ctx.arc(x, y, glowR, 0, Math.PI * 2);
-          ctx.fill();
-        }
-
-        ctx.fillStyle = hslGlow(dimmed ? 0.15 : lit ? 0.95 : 0.75);
-        ctx.beginPath();
-        ctx.arc(x, y, coreR * (lit ? 1.05 : 1), 0, Math.PI * 2);
-        ctx.fill();
-
-        if (hovered && !dimmed) {
-          ctx.strokeStyle = hslBorder(0.25);
-          ctx.lineWidth = 1;
-          ctx.beginPath();
-          ctx.arc(x, y, coreR + 6, 0, Math.PI * 2);
-          ctx.stroke();
-        }
-        ctx.globalAlpha = 1;
-      }
-
-      animRef.current = requestAnimationFrame(draw);
-    };
-
-    const ro = new ResizeObserver(() => draw());
-    ro.observe(wrap);
-    draw();
-
-    return () => {
-      running = false;
-      ro.disconnect();
-      if (animRef.current) cancelAnimationFrame(animRef.current);
-    };
-  }, [data?.seeds, data?.connections, filteredGlobalIndices, litIndices, hoverSeed]);
-
-  const launchComets = (fromIdx: number) => {
-    if (!data?.connections) return;
-    for (const [a, b] of data.connections) {
-      let other = -1;
-      if (a === fromIdx) other = b;
-      else if (b === fromIdx) other = a;
-      else continue;
-      cometsRef.current.push({
-        from: fromIdx,
-        to: other,
-        t: 0,
-        delay: Math.random() * 200,
-        speed: 0.022 + Math.random() * 0.012,
-        trail: [],
-        dead: false,
-      });
-    }
-  };
-
   const openPanelFromSeed = (idx: number) => {
     if (!data?.seeds[idx]) return;
     const s = data.seeds[idx];
@@ -534,48 +306,6 @@ export default function GardenPage() {
     } finally {
       setPanelLoading(false);
     }
-  };
-
-  const onCanvasPointer = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!data?.seeds?.length || !wrapRef.current) return;
-    const rect = canvasRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
-    const W = wrapRef.current.clientWidth;
-    const pos = seedPositions(data.seeds.length, W, 260);
-    let hit: number | null = null;
-    for (let i = 0; i < pos.length; i++) {
-      if (filteredGlobalIndices && !filteredGlobalIndices.has(i)) continue;
-      const dx = mx - pos[i].x;
-      const dy = my - pos[i].y;
-      if (dx * dx + dy * dy <= 20 * 20) hit = i;
-    }
-    setHoverSeed(hit);
-    if (hit != null) {
-      setHoverSignal(null);
-      setChipHoverSeed(null);
-    }
-  };
-
-  const endHover = () => {
-    setHoverSeed(null);
-  };
-
-  const pickSeedAtClient = (clientX: number, clientY: number) => {
-    if (!data?.seeds?.length || !wrapRef.current || !canvasRef.current) return null;
-    const rect = canvasRef.current.getBoundingClientRect();
-    const mx = clientX - rect.left;
-    const my = clientY - rect.top;
-    const W = wrapRef.current.clientWidth;
-    const pos = seedPositions(data.seeds.length, W, 260);
-    for (let i = 0; i < pos.length; i++) {
-      if (filteredGlobalIndices && !filteredGlobalIndices.has(i)) continue;
-      const dx = mx - pos[i].x;
-      const dy = my - pos[i].y;
-      if (dx * dx + dy * dy <= 20 * 20) return i;
-    }
-    return null;
   };
 
   if (!me) {
@@ -623,7 +353,7 @@ export default function GardenPage() {
           {isLoading && (
             <div className="space-y-4">
               <div className="h-24 rounded-xl bg-muted/40 animate-pulse" />
-              <div className="h-[260px] rounded-xl bg-muted/30 animate-pulse" />
+              <div className="h-32 rounded-xl bg-muted/30 animate-pulse" />
             </div>
           )}
 
@@ -650,13 +380,6 @@ export default function GardenPage() {
                           {data.seeds[chipHoverSeed].proseSub}
                         </p>
                       </>
-                    ) : hoverSeed != null && data.seeds[hoverSeed] ? (
-                      <>
-                        <p>{data.seeds[hoverSeed].proseText}</p>
-                        <p className="mt-2 text-sm text-muted-foreground">
-                          {data.seeds[hoverSeed].proseSub}
-                        </p>
-                      </>
                     ) : hoverSignal != null && data.recurringSignals[hoverSignal] ? (
                       signalProseLine(
                         hoverSignal,
@@ -672,7 +395,7 @@ export default function GardenPage() {
                 </div>
               </section>
 
-              <section className="mb-6">
+              <section className="mb-8">
                 <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
@@ -711,32 +434,6 @@ export default function GardenPage() {
                 )}
               </section>
 
-              <section ref={wrapRef} className="mb-10 w-full">
-                <canvas
-                  ref={canvasRef}
-                  className="w-full cursor-crosshair touch-none rounded-xl border border-border/40 bg-card/30"
-                  height={260}
-                  onMouseMove={onCanvasPointer}
-                  onMouseLeave={endHover}
-                  onClick={(e) => {
-                    const hit = pickSeedAtClient(e.clientX, e.clientY);
-                    if (hit != null) {
-                      launchComets(hit);
-                      openPanelFromSeed(hit);
-                    }
-                  }}
-                  onTouchEnd={(e) => {
-                    const t = e.changedTouches[0];
-                    if (!t) return;
-                    const hit = pickSeedAtClient(t.clientX, t.clientY);
-                    if (hit != null) {
-                      launchComets(hit);
-                      openPanelFromSeed(hit);
-                    }
-                  }}
-                />
-              </section>
-
               <section className="mb-12 space-y-4">
                 <div className="flex items-center gap-3 mb-2">
                   <span className="h-px w-6 bg-primary/40" />
@@ -752,6 +449,18 @@ export default function GardenPage() {
                     selectedMonth &&
                     monthIdsInFilter &&
                     !rs.threadIds.some((id) => monthIdsInFilter.includes(id));
+                  const signalThreads: SignalThread[] = rs.threadIds
+                    .map((id, ti) => {
+                      const gi = seedIndexMap.get(id);
+                      const s = gi != null ? data.seeds[gi] : null;
+                      return {
+                        globalIdx: gi ?? -1,
+                        title: rs.threadTitles[ti] ?? s?.title ?? "Thread",
+                        closed: s?.closed ?? false,
+                        month: s?.month ?? "",
+                      };
+                    })
+                    .filter((t) => t.globalIdx >= 0);
                   return (
                     <article
                       key={`${rs.theme}-${sigIdx}`}
@@ -763,7 +472,6 @@ export default function GardenPage() {
                       )}
                       onMouseEnter={() => {
                         setHoverSignal(sigIdx);
-                        setHoverSeed(null);
                         setChipHoverSeed(null);
                       }}
                       onMouseLeave={() => setHoverSignal(null)}
@@ -774,6 +482,14 @@ export default function GardenPage() {
                       <p className="font-serif text-lg md:text-xl text-foreground italic leading-snug mb-4">
                         {rs.theme}
                       </p>
+                      <SignalConstellation
+                        threads={signalThreads}
+                        selectedMonth={selectedMonth}
+                        activeSeedIdx={chipHoverSeed}
+                        cardHovered={hoverSignal === sigIdx}
+                        onHoverSeed={(gi) => setChipHoverSeed(gi)}
+                        onTapSeed={(gi) => openPanelFromSeed(gi)}
+                      />
                       <div className="flex flex-wrap gap-2 mb-4">
                         {rs.threadTitles.map((t, ti) => (
                           <button

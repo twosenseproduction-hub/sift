@@ -4,6 +4,21 @@ import type { Me } from "@shared/schema";
 
 type MeResponse = { me: Me; token?: string };
 
+/** Headspace-style “Today first”: land on `#/` after sign-in unless the hash is a deep link. */
+function navigateToTodayUnlessDeepLinked() {
+  if (typeof window === "undefined") return;
+  const raw = window.location.hash.replace(/^#/, "") || "/";
+  const path = raw.split("?")[0];
+  const deep =
+    path.startsWith("/s/") ||
+    path.startsWith("/thread/") ||
+    path.startsWith("/compare") ||
+    path.startsWith("/admin");
+  if (!deep) {
+    window.location.hash = "/";
+  }
+}
+
 // Token is held in-memory only. Storage (localStorage/sessionStorage/cookies)
 // is blocked inside the deployed iframe, so we keep the token in module state
 // for the life of the page. A full reload returns the user to signed-out state.
@@ -31,6 +46,7 @@ export function useSignup() {
       if (data.token) setAuthToken(data.token);
       queryClient.setQueryData(["/api/auth/me"], { me: data.me });
       queryClient.invalidateQueries({ queryKey: ["/api/sifts"] });
+      navigateToTodayUnlessDeepLinked();
     },
   });
 }
@@ -61,6 +77,7 @@ export function useLogin() {
       if (data.token) setAuthToken(data.token);
       queryClient.setQueryData(["/api/auth/me"], { me: data.me });
       queryClient.invalidateQueries({ queryKey: ["/api/sifts"] });
+      navigateToTodayUnlessDeepLinked();
     },
   });
 }

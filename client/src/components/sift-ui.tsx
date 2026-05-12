@@ -1707,27 +1707,12 @@ export function Result({
               className="text-sm text-muted-foreground mb-4"
               data-testid="text-followup-microcopy"
             >
-              Where do you want to take this?
+              When you&apos;re ready, choose a next move.
             </p>
             <div className="flex flex-wrap items-center gap-3">
-              {onExpand && (
-                <Button
-                  type="button"
-                  onClick={() => {
-                    track("sn.expand_now");
-                    onExpand();
-                  }}
-                  data-testid="button-expand-now"
-                  className="gap-2"
-                >
-                  <ArrowRight className="w-4 h-4" />
-                  Expand on this now
-                </Button>
-              )}
               {onCheckInLater && (
                 <Button
                   type="button"
-                  variant="outline"
                   onClick={() => {
                     track("sn.come_back_later");
                     onCheckInLater();
@@ -1739,6 +1724,21 @@ export function Result({
                   Come back to this later
                 </Button>
               )}
+              {onExpand && (
+                <Button
+                  type="button"
+                  variant={onCheckInLater ? "outline" : "default"}
+                  onClick={() => {
+                    track("sn.expand_now");
+                    onExpand();
+                  }}
+                  data-testid="button-expand-now"
+                  className="gap-2"
+                >
+                  <ArrowRight className="w-4 h-4" />
+                  Expand on this now
+                </Button>
+              )}
               <button
                 type="button"
                 onClick={() => setResting(true)}
@@ -1748,7 +1748,10 @@ export function Result({
                 Let it rest
               </button>
             </div>
-            <div className="mt-4 flex flex-wrap items-center gap-4">
+            <div
+              className="mt-4 flex flex-wrap items-center gap-4 fade-in-slow"
+              style={{ animationDelay: "420ms" }}
+            >
               {onSave && (
                 <button
                   type="button"
@@ -1772,7 +1775,10 @@ export function Result({
             </div>
             {/* Share reflection + copy text — "Share" opens a standalone share
                 card (reflection only), matching the daily prompt pattern. */}
-            <div className="mt-6 flex flex-wrap items-center gap-3">
+            <div
+              className="mt-6 flex flex-wrap items-center gap-3 fade-in-slow"
+              style={{ animationDelay: "620ms" }}
+            >
               <button
                 type="button"
                 onClick={() => setReflectionShareOpen(true)}
