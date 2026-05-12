@@ -234,6 +234,14 @@ if (!siftColsTraining.some((c) => c.name === "micro_tasks")) {
   sqlite.exec(`ALTER TABLE sifts ADD COLUMN micro_tasks TEXT;`);
 }
 
+// Meta-sift flag (Garden pattern sifts) — nullable integer 0|1|null
+const siftColsMeta = sqlite
+  .prepare(`PRAGMA table_info(sifts);`)
+  .all() as Array<{ name: string }>;
+if (!siftColsMeta.some((c) => c.name === "meta_sift")) {
+  sqlite.exec(`ALTER TABLE sifts ADD COLUMN meta_sift INTEGER;`);
+}
+
 sqlite.exec(`
   CREATE TABLE IF NOT EXISTS discernment_profiles (
     user_id INTEGER PRIMARY KEY NOT NULL,
@@ -925,6 +933,7 @@ export class DatabaseStorage implements IStorage {
       threadState: ((r.threadState as string) || "open") as "open"|"closed"|"archived",
       frontBurnerRank: r.frontBurnerRank ?? null,
       currentMove: r.currentMove ?? null,
+      metaSift: r.metaSift === 1,
     }));
   }
 
@@ -953,6 +962,7 @@ export class DatabaseStorage implements IStorage {
         threadState: sifts.threadState,
         frontBurnerRank: sifts.frontBurnerRank,
         currentMove: sifts.currentMove,
+        metaSift: sifts.metaSift,
       })
       .get();
     if (!row) return undefined;
@@ -966,6 +976,7 @@ export class DatabaseStorage implements IStorage {
       threadState: ((row.threadState as string) || "open") as "open"|"closed"|"archived",
       frontBurnerRank: row.frontBurnerRank ?? null,
       currentMove: row.currentMove ?? null,
+      metaSift: row.metaSift === 1,
     };
   }
 
