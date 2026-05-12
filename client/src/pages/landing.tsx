@@ -184,203 +184,13 @@ function Content({
   );
 }
 
-// Pill — the small bordered tags used in the hero and the rotating
-// example surface. Uses the primary teal as the bordered tint.
-function Pill({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="inline-flex items-center rounded-full border border-primary/15 bg-primary/[0.06] px-4 py-2 text-sm text-primary">
-      {children}
-    </span>
-  );
-}
-
-// HeroDemo — a self-running, four-stage loop that mirrors the actual
-// app's flow (compose → analyze → result → reset). The text in the
-// composer types itself out, the Sift button "presses" itself, a
-// thinking pause, then the result panel slides in with the same
-// Matters / Noise / next-step format the real app produces. Then it
-// fades back to the composer and starts again.
-//
-// This is intentionally not wired to /api/sift — the marketing host
-// is anonymous and the goal is honest demonstration, not a back-door
-// to the product. The example is fixed and credible.
-function HeroDemo() {
-  type Stage = "typing" | "thinking" | "result" | "hold";
-  const [stage, setStage] = useState<Stage>("typing");
-  const [typed, setTyped] = useState("");
-
-  const FULL_TEXT =
-    "There is so much I should be doing — replying, planning, fixing — and I keep stalling. I do not know if I am tired or avoiding something.";
-  const MIRROR =
-    "What you are holding is not laziness. It is a stack of half\u2011started things and a quiet question underneath.";
-  const MATTERS = [
-    "The thing you keep almost\u2011starting is the one you actually care about.",
-    "You are tired in a way rest alone does not fix.",
-  ];
-  const NOISE = [
-    "The full inbox.",
-    "The shape of the to\u2011do list.",
-    "The story that you are behind.",
-  ];
-  const NEXT_STEP =
-    "Pick the one item that scares you a little and write the first sentence — nothing more.";
-
-  // Run the timeline. Each stage transitions to the next via setTimeout
-  // so we do not need to coordinate animations and clocks.
-  useEffect(() => {
-    let cancelled = false;
-    let timers: number[] = [];
-    const t = (ms: number, fn: () => void) => {
-      const id = window.setTimeout(() => !cancelled && fn(), ms);
-      timers.push(id);
-    };
-
-    if (stage === "typing") {
-      setTyped("");
-      // 28ms per char → about 4.5s for the whole sentence
-      let i = 0;
-      const tick = () => {
-        if (cancelled) return;
-        i += 1;
-        setTyped(FULL_TEXT.slice(0, i));
-        if (i < FULL_TEXT.length) {
-          const id = window.setTimeout(tick, 28);
-          timers.push(id);
-        } else {
-          // pause briefly with the full text visible, then "press Sift"
-          t(900, () => setStage("thinking"));
-        }
-      };
-      const id = window.setTimeout(tick, 600); // small initial pause
-      timers.push(id);
-    } else if (stage === "thinking") {
-      t(1500, () => setStage("result"));
-    } else if (stage === "result") {
-      t(7500, () => setStage("hold"));
-    } else if (stage === "hold") {
-      t(900, () => setStage("typing"));
-    }
-
-    return () => {
-      cancelled = true;
-      timers.forEach((id) => window.clearTimeout(id));
-    };
-  }, [stage]);
-
-  const showResult = stage === "result";
-  const composerActive = stage === "typing" || stage === "thinking";
-
-  return (
-    <div
-      className="relative w-full"
-      aria-label="A short example of what Sift does"
-      data-testid="hero-demo"
-      // The wrapper holds two absolutely-stacked cards. Min-height keeps
-      // the taller of the two (the result) inside its bounds at every
-      // breakpoint, so neither card spills past the hero.
-      style={{ minHeight: "clamp(440px, 56vh, 540px)" }}
-    >
-      {/* The composer card. Absolute so it can cross‑fade with the
-          result without one pushing the other around. */}
-      <div
-        className={`absolute inset-0 rounded-3xl border border-border/60 bg-card/80 p-6 shadow-[0_24px_60px_-30px_rgba(0,0,0,0.18)] backdrop-blur-md transition-opacity duration-700 ${
-          composerActive ? "opacity-100" : "pointer-events-none opacity-0"
-        }`}
-      >
-        <p className="mb-3 text-[11px] font-medium uppercase tracking-[0.22em] text-muted-foreground">
-          Clarity over comfort
-        </p>
-        <h3 className="m-0 mb-4 font-serif text-3xl leading-tight tracking-tight">
-          What are you holding <em className="font-serif italic">right now?</em>
-        </h3>
-        <div className="min-h-[120px] rounded-xl border border-border/40 bg-background/60 p-4">
-          <p className="m-0 text-[15px] leading-[1.7] text-foreground/90">
-            {typed}
-            {composerActive && (
-              <span
-                className="ml-[2px] inline-block h-[1.05em] w-[2px] -translate-y-[2px] bg-foreground/60 align-middle"
-                style={{ animation: "blink 1s step-end infinite" }}
-              />
-            )}
-          </p>
-        </div>
-        <div className="mt-4 flex items-center justify-between">
-          <span className="text-xs text-muted-foreground">
-            {stage === "thinking" ? "Sifting\u2026" : "Messy is fine."}
-          </span>
-          <span
-            className={`inline-flex h-9 items-center justify-center rounded-full px-4 text-xs font-semibold transition-all ${
-              stage === "thinking"
-                ? "bg-primary text-primary-foreground scale-95"
-                : "bg-primary/90 text-primary-foreground"
-            }`}
-          >
-            Sift
-          </span>
-        </div>
-      </div>
-
-      {/* The result card, absolutely positioned so it can cross‑fade with
-          the composer. Same surface, same border, different content. */}
-      <div
-        className={`absolute inset-0 rounded-3xl border border-border/60 bg-card/85 p-6 shadow-[0_24px_60px_-30px_rgba(0,0,0,0.20)] backdrop-blur-md transition-all duration-700 ${
-          showResult
-            ? "opacity-100 translate-y-0"
-            : "pointer-events-none opacity-0 translate-y-3"
-        }`}
-      >
-        <p className="mb-3 text-[11px] font-medium uppercase tracking-[0.22em] text-muted-foreground">
-          What Sift heard
-        </p>
-        <p className="m-0 mb-5 text-[15px] leading-[1.7] text-foreground/90">
-          {MIRROR}
-        </p>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <p className="mb-1.5 text-[11px] uppercase tracking-[0.18em] text-primary/70">
-              Matters
-            </p>
-            <ul className="m-0 space-y-1.5 p-0">
-              {MATTERS.map((m, i) => (
-                <li
-                  key={`mat-${i}`}
-                  className="flex gap-2 text-[13px] leading-snug text-foreground/90"
-                >
-                  <span className="mt-[0.4em] text-primary/60">·</span>
-                  <span>{m}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-          <div>
-            <p className="mb-1.5 text-[11px] uppercase tracking-[0.18em] text-muted-foreground/80">
-              Noise
-            </p>
-            <ul className="m-0 space-y-1.5 p-0">
-              {NOISE.map((n, i) => (
-                <li
-                  key={`noi-${i}`}
-                  className="flex gap-2 text-[13px] leading-snug text-muted-foreground"
-                >
-                  <span className="mt-[0.4em] text-muted-foreground/50">·</span>
-                  <span>{n}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-        <div className="mt-5 rounded-xl border border-primary/20 bg-primary/[0.06] px-4 py-3">
-          <p className="mb-0.5 text-[10px] font-medium uppercase tracking-[0.22em] text-primary/70">
-            One next step
-          </p>
-          <p className="m-0 text-[14px] leading-snug text-foreground/95">
-            {NEXT_STEP}
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-}
+// HeroDemo / Pill / ComposerMock previously lived here as inline mocks
+// for the marketing hero and the "actual experience" section. The
+// landing page now uses the shared EngineDemo component for its hero
+// demo (so marketing and the in-app demo cannot drift), and the
+// "experience" section was removed as part of the section
+// consolidation (L2). They were deleted to keep the file honest about
+// what is rendered.
 
 // FaqItem — single accordion row. Native <details> so it works without
 // JS state, keyboard, or screen‑reader gymnastics. The chevron rotates
@@ -471,25 +281,11 @@ function LandingHeader() {
             How it works
           </a>
           <a
-            href="#engine"
-            className="transition-colors hover:text-foreground"
-            data-testid="link-nav-engine"
-          >
-            The engine
-          </a>
-          <a
             href="#clarity"
             className="transition-colors hover:text-foreground"
             data-testid="link-nav-clarity"
           >
-            Clarity
-          </a>
-          <a
-            href="#use-cases"
-            className="transition-colors hover:text-foreground"
-            data-testid="link-nav-cases"
-          >
-            Use cases
+            Examples
           </a>
           <a
             href="/#/pricing"
@@ -530,121 +326,6 @@ function LandingHeader() {
         </div>
       </div>
     </header>
-  );
-}
-
-// Mini composer mock used in the "actual experience" section. This is
-// a static facsimile of the real composer — same hero question, same
-// helper line, same warm cream framing — but it's not interactive.
-// ComposerMock — the composer surface that sits beside the
-// "clear surface" copy. It slowly types one honest line, holds it,
-// then quietly clears and starts again. Different example from the
-// hero so the page does not feel repetitive on second look. Uses an
-// IntersectionObserver to delay the typing until the section is in
-// view, so the visitor catches the start of the line, not the end.
-function ComposerMock() {
-  const FULL =
-    "I keep saying yes to things I do not actually want to do, and I cannot tell if it is generosity or fear.";
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const [typed, setTyped] = useState("");
-  const [seen, setSeen] = useState(false);
-
-  // Trigger once when the composer enters the viewport.
-  useEffect(() => {
-    const node = containerRef.current;
-    if (!node) return;
-    const obs = new IntersectionObserver(
-      (entries) => {
-        for (const e of entries) {
-          if (e.isIntersecting) {
-            setSeen(true);
-            obs.disconnect();
-            break;
-          }
-        }
-      },
-      { threshold: 0.4 }
-    );
-    obs.observe(node);
-    return () => obs.disconnect();
-  }, []);
-
-  // Loop: type → hold → clear → type again. Slower than the hero
-  // (40ms/char) so this section feels patient, not performing.
-  useEffect(() => {
-    if (!seen) return;
-    let cancelled = false;
-    const timers: number[] = [];
-    const t = (ms: number, fn: () => void) => {
-      const id = window.setTimeout(() => !cancelled && fn(), ms);
-      timers.push(id);
-    };
-    const run = () => {
-      setTyped("");
-      let i = 0;
-      const tick = () => {
-        if (cancelled) return;
-        i += 1;
-        setTyped(FULL.slice(0, i));
-        if (i < FULL.length) {
-          const id = window.setTimeout(tick, 40);
-          timers.push(id);
-        } else {
-          // Hold the full line for a beat, then clear and restart.
-          t(6000, () => {
-            setTyped("");
-            t(1200, run);
-          });
-        }
-      };
-      t(900, tick);
-    };
-    run();
-    return () => {
-      cancelled = true;
-      timers.forEach((id) => window.clearTimeout(id));
-    };
-  }, [seen]);
-
-  return (
-    <div
-      ref={containerRef}
-      className="overflow-hidden rounded-[34px] bg-card shadow-[0_24px_50px_hsl(var(--foreground)/0.08)]"
-      data-testid="mock-composer"
-    >
-      <div className="px-8 pb-4 pt-8">
-        <div className="mb-4 text-[11px] font-medium uppercase tracking-[0.25em] text-primary/80">
-          Clarity over comfort
-        </div>
-        <h3 className="m-0 max-w-[10ch] font-serif text-[clamp(2rem,3.5vw,3.2rem)] leading-[1.02] tracking-tight">
-          What are you holding{" "}
-          <span className="italic text-primary">right now?</span>
-        </h3>
-      </div>
-      <div className="px-8 pb-7">
-        <div className="flex min-h-[176px] flex-col justify-between border-t border-border/60 pt-4">
-          <div className="text-base leading-[1.7] text-foreground/85">
-            {typed}
-            {seen && (
-              <span
-                className="ml-[2px] inline-block h-[1.05em] w-[2px] -translate-y-[2px] bg-foreground/55 align-middle"
-                style={{ animation: "blink 1s step-end infinite" }}
-              />
-            )}
-            {!seen && (
-              <span className="text-muted-foreground/90">
-                What's on your mind?
-              </span>
-            )}
-          </div>
-          <div className="flex flex-wrap items-center justify-between gap-4 pt-6">
-            <span className="text-sm text-muted-foreground/70">
-              Messy is fine.
-            </span>
-          </div>
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -957,32 +638,19 @@ export default function Landing() {
             </div>
           </div>
           <Content>
-            <div className="grid items-center gap-12 md:grid-cols-[1.05fr_1fr]">
+            <div className="grid items-center gap-12 md:grid-cols-[1fr_1.15fr]">
               <Reveal>
-                <div className="mb-6">
+                {/* One sentence + one button (L4). The logo above acts as
+                    the brand anchor; the live demo on the right carries
+                    the rest of the explanation. No supporting paragraph,
+                    no eyebrow tagline — the hero models the product. */}
+                <div className="mb-7">
                   <Logo size={72} />
                 </div>
-                <p className="mb-4 text-[12px] font-medium uppercase tracking-[0.26em] text-muted-foreground">
-                  A quiet tool for a noisy mind
-                </p>
-                <h1 className="m-0 mb-5 font-serif text-[clamp(2.6rem,5vw,4.6rem)] leading-[0.95] tracking-[-0.045em]">
-                  Sift helps you tell
-                  <br />
-                  what matters from
-                  <br />
-                  what is only loud.
+                <h1 className="m-0 mb-8 font-serif text-[clamp(2.6rem,5vw,4.6rem)] leading-[0.95] tracking-[-0.045em]">
+                  Tell what matters from what is only loud.
                 </h1>
-                <p className="max-w-[34rem] text-[clamp(1.05rem,1.4vw,1.25rem)] leading-[1.65] text-muted-foreground">
-                  You speak or type what you are holding. Sift separates signal
-                  from noise, returns the deeper pattern, and gives you one
-                  next step you can actually take.
-                </p>
-                <div className="mt-7 flex flex-wrap gap-3">
-                  <Pill>Quiet clarity</Pill>
-                  <Pill>One next step</Pill>
-                  <Pill>No clutter</Pill>
-                </div>
-                <div className="mt-9">
+                <div>
                   <a
                     href={getAppHref()}
                     className="inline-flex h-12 items-center justify-center rounded-full bg-primary px-7 text-sm font-semibold text-primary-foreground shadow-md transition-transform hover:-translate-y-px"
@@ -993,58 +661,13 @@ export default function Landing() {
                 </div>
               </Reveal>
               <Reveal delay={120}>
-                <HeroDemo />
-              </Reveal>
-            </div>
-          </Content>
-        </Section>
-
-        {/* The actual experience */}
-        <Section id="experience">
-          <div aria-hidden="true" className="absolute inset-0 z-0 overflow-hidden">
-            <div
-              className="absolute h-[340px] w-[340px] rounded-full blur-[70px]"
-              style={{
-                top: -80,
-                left: "4%",
-                background: "hsl(36 35% 70% / 0.28)",
-                animation: "float 16s ease-in-out infinite",
-              }}
-            />
-            <div
-              className="absolute h-[320px] w-[320px] rounded-full blur-[70px]"
-              style={{
-                bottom: -70,
-                right: "3%",
-                background: "hsl(var(--primary) / 0.10)",
-                animation: "float 20s ease-in-out infinite",
-              }}
-            />
-          </div>
-          <Content>
-            <div className="grid items-center gap-14 md:grid-cols-2">
-              <div>
-                <Reveal>
-                  <p className="mb-4 text-[12px] font-medium uppercase tracking-[0.26em] text-muted-foreground">
-                    The actual experience
-                  </p>
-                </Reveal>
-                <Reveal delay={80}>
-                  <h2 className="m-0 mb-5 max-w-[11ch] font-serif text-[clamp(2.7rem,5.2vw,5.4rem)] leading-[0.95] tracking-[-0.05em]">
-                    Built to feel like a clear surface, not another app asking
-                    things from you.
-                  </h2>
-                </Reveal>
-                <Reveal delay={160}>
-                  <p className="max-w-[33rem] text-[clamp(1rem,1.6vw,1.25rem)] leading-[1.7] text-muted-foreground">
-                    The entry is quiet. The language is spare. The response is
-                    structured enough to help, but restrained enough to feel
-                    human.
-                  </p>
-                </Reveal>
-              </div>
-              <Reveal delay={120}>
-                <ComposerMock />
+                {/* The live engine demo sits in the hero so the visitor
+                    sees what Sift does in the first 15 seconds. Three
+                    starter pills above let them pick which flavor of
+                    input to watch. */}
+                <div data-testid="hero-engine-demo">
+                  <EngineDemo compact showSelector />
+                </div>
               </Reveal>
             </div>
           </Content>
@@ -1221,54 +844,6 @@ export default function Landing() {
           </Content>
         </Section>
 
-        {/* The engine — animated demo of how the sort actually happens */}
-        <Section id="engine">
-          <div aria-hidden="true" className="absolute inset-0 z-0 overflow-hidden">
-            <div
-              className="absolute h-[340px] w-[340px] rounded-full blur-[80px]"
-              style={{
-                top: -80,
-                right: "6%",
-                background: "hsl(186 40% 38% / 0.14)",
-                animation: "float 18s ease-in-out infinite",
-              }}
-            />
-            <div
-              className="absolute h-[280px] w-[280px] rounded-full blur-[80px]"
-              style={{
-                bottom: -50,
-                left: "4%",
-                background: "hsl(36 35% 70% / 0.22)",
-                animation: "float 22s ease-in-out infinite",
-              }}
-            />
-          </div>
-          <Content>
-            <Reveal>
-              <p className="mb-4 text-center text-[12px] font-medium uppercase tracking-[0.26em] text-muted-foreground">
-                The engine
-              </p>
-            </Reveal>
-            <Reveal delay={80}>
-              <h2 className="mx-auto m-0 mb-4 max-w-[22ch] text-center font-serif text-[clamp(2.2rem,4.2vw,4rem)] leading-[0.95] tracking-[-0.05em]">
-                How the sort happens.
-              </h2>
-            </Reveal>
-            <Reveal delay={140}>
-              <p className="mx-auto mb-12 max-w-[58ch] text-center leading-7 text-muted-foreground">
-                A messy paragraph goes in. Sift listens for the phrases that
-                are actually there, separates what matters from what doesn’t,
-                and hands back one small, doable thing.
-              </p>
-            </Reveal>
-            <Reveal delay={200}>
-              <div className="mx-auto max-w-[1080px]">
-                <EngineDemo />
-              </div>
-            </Reveal>
-          </Content>
-        </Section>
-
         {/* Clarity */}
         <Section id="clarity">
           <div aria-hidden="true" className="absolute inset-0 z-0 overflow-hidden">
@@ -1324,73 +899,6 @@ export default function Landing() {
                   </p>
                 </Reveal>
               </div>
-            </div>
-          </Content>
-        </Section>
-
-        {/* Use cases */}
-        <Section id="use-cases">
-          <div aria-hidden="true" className="absolute inset-0 z-0 overflow-hidden">
-            <div
-              className="absolute h-[300px] w-[300px] rounded-full blur-[70px]"
-              style={{
-                top: -50,
-                left: "4%",
-                background: "hsl(180 18% 50% / 0.12)",
-                animation: "float 16s ease-in-out infinite",
-              }}
-            />
-            <div
-              className="absolute h-[260px] w-[260px] rounded-full blur-[70px]"
-              style={{
-                bottom: -50,
-                right: "3%",
-                background: "hsl(36 35% 70% / 0.24)",
-                animation: "float 20s ease-in-out infinite",
-              }}
-            />
-          </div>
-          <Content className="text-center">
-            <Reveal>
-              <p className="mb-4 text-[12px] font-medium uppercase tracking-[0.26em] text-muted-foreground">
-                When it helps most
-              </p>
-            </Reveal>
-            <Reveal delay={80}>
-              <h2 className="mx-auto m-0 max-w-[22ch] font-serif text-[clamp(2.2rem,4vw,2.8rem)] leading-[1.05] tracking-[-0.03em]">
-                For emotional clutter, hard decisions, and recurring loops.
-              </h2>
-            </Reveal>
-            <div className="mt-10 grid gap-5 md:grid-cols-2 lg:grid-cols-4">
-              {[
-                {
-                  title: "Relationship confusion",
-                  body: "When mixed signals and old wounds blur what is actually true.",
-                },
-                {
-                  title: "Inner conflict",
-                  body: "When two motives are competing and you cannot tell which one is real.",
-                },
-                {
-                  title: "Decision pressure",
-                  body: "When too many options make it harder, not easier, to move.",
-                },
-                {
-                  title: "Thought loops",
-                  body: "When your mind keeps circling but insight is not increasing.",
-                },
-              ].map((c, i) => (
-                <Reveal key={c.title} delay={120 + i * 80}>
-                  <div className="h-full rounded-3xl border border-border/60 bg-card/70 p-6 text-left shadow-[var(--shadow-md)] backdrop-blur-md">
-                    <h3 className="m-0 mb-2 font-serif text-xl tracking-tight">
-                      {c.title}
-                    </h3>
-                    <p className="m-0 leading-7 text-muted-foreground">
-                      {c.body}
-                    </p>
-                  </div>
-                </Reveal>
-              ))}
             </div>
           </Content>
         </Section>
@@ -1562,59 +1070,30 @@ export default function Landing() {
                 </div>
               </Reveal>
             </div>
-          </Content>
-        </Section>
 
-        {/* CTA */}
-        <Section id="cta" className="overflow-hidden">
-          <div aria-hidden="true" className="absolute inset-0 z-0 overflow-hidden">
-            <div
-              className="absolute h-[420px] w-[420px] rounded-full blur-[70px]"
-              style={{
-                top: -120,
-                left: -40,
-                background: "hsl(36 35% 70% / 0.35)",
-                animation: "float 18s ease-in-out infinite",
-              }}
-            />
-            <div
-              className="absolute h-[360px] w-[360px] rounded-full blur-[70px]"
-              style={{
-                bottom: -140,
-                right: -60,
-                background: "hsl(var(--primary) / 0.16)",
-                animation: "float 22s ease-in-out infinite",
-              }}
-            />
-          </div>
-          <Content className="text-center">
-            <Reveal>
-              <p className="mb-4 text-[12px] font-medium uppercase tracking-[0.26em] text-muted-foreground">
-                Clarity over comfort
-              </p>
-            </Reveal>
-            <Reveal delay={80}>
-              <h2 className="mx-auto m-0 max-w-[22ch] font-serif text-[clamp(2.4rem,4vw,3.4rem)] leading-[1.05] tracking-[-0.03em]">
-                When you are ready to hear what is really going on, Sift is
-                ready to listen.
-              </h2>
-            </Reveal>
-            <Reveal delay={160}>
-              <p className="mx-auto mt-5 max-w-[34rem] text-[clamp(1.05rem,1.8vw,1.4rem)] leading-[1.7] text-muted-foreground">
-                Bring one live situation, one looping thought, or one decision
-                that feels heavy. See what changes when the noise is stripped
-                away.
-              </p>
-            </Reveal>
-            <Reveal delay={220}>
-              <div className="mt-10 flex flex-wrap justify-center gap-4">
-                <a
-                  href={getAppHref()}
-                  className="inline-flex h-12 min-w-[180px] items-center justify-center rounded-full bg-primary px-7 text-sm font-semibold text-primary-foreground shadow-md transition-transform hover:-translate-y-px"
-                  data-testid="link-cta-primary"
-                >
-                  Try Sift now
-                </a>
+            {/* Closing CTA — folded into the FAQ section so the page ends
+                on one quiet invitation instead of a separate panel. */}
+            <Reveal delay={200}>
+              <div
+                className="mt-16 md:mt-20 text-center"
+                data-testid="faq-cta"
+              >
+                <p className="mb-3 text-[12px] font-medium uppercase tracking-[0.26em] text-muted-foreground">
+                  Clarity over comfort
+                </p>
+                <h3 className="mx-auto m-0 mb-4 max-w-[22ch] font-serif text-[clamp(2rem,3.4vw,2.8rem)] leading-[1.05] tracking-[-0.03em]">
+                  When you are ready to hear what is really going on, Sift is
+                  ready to listen.
+                </h3>
+                <div className="mt-6 flex flex-wrap justify-center gap-4">
+                  <a
+                    href={getAppHref()}
+                    className="inline-flex h-12 min-w-[180px] items-center justify-center rounded-full bg-primary px-7 text-sm font-semibold text-primary-foreground shadow-md transition-transform hover:-translate-y-px"
+                    data-testid="link-cta-primary"
+                  >
+                    Try Sift now
+                  </a>
+                </div>
               </div>
             </Reveal>
           </Content>
@@ -1643,25 +1122,11 @@ export default function Landing() {
             How it works
           </a>
           <a
-            href="#engine"
-            className="transition-colors hover:text-foreground"
-            data-testid="link-footer-engine"
-          >
-            The engine
-          </a>
-          <a
             href="#clarity"
             className="transition-colors hover:text-foreground"
             data-testid="link-footer-clarity"
           >
-            Clarity
-          </a>
-          <a
-            href="#use-cases"
-            className="transition-colors hover:text-foreground"
-            data-testid="link-footer-cases"
-          >
-            Use cases
+            Examples
           </a>
           <a
             href="/#/pricing"

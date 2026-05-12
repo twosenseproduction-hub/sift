@@ -79,10 +79,16 @@ export default function ThreadsPage() {
 
           <ReEntryBlock enabled />
 
-          {/* Filter row */}
+          {/* Filter row — Linear-style tabs. "Live" reads less administrative
+              than "Open" and matches the rest of the app's voice. */}
           <div className="flex items-center gap-5 text-sm mb-6 overflow-x-auto pb-1">
             {(["all", "open", "closed", "archived"] as Filter[]).map((f) => {
-              const label = f === "all" ? "All" : f.charAt(0).toUpperCase() + f.slice(1);
+              const label =
+                f === "all"
+                  ? "All"
+                  : f === "open"
+                    ? "Live"
+                    : f.charAt(0).toUpperCase() + f.slice(1);
               const count =
                 f === "all"
                   ? (threads?.length ?? 0)
@@ -92,6 +98,7 @@ export default function ThreadsPage() {
                 <button
                   key={f}
                   onClick={() => setFilter(f)}
+                  data-testid={`filter-${f}`}
                   className={cn(
                     "whitespace-nowrap transition-colors",
                     filter === f

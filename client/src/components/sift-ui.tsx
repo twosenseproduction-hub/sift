@@ -22,6 +22,7 @@ import type {
 import type { FragmentBucket } from "@shared/schema";
 import { isCareResponse, isRedundancyGateResult } from "@shared/schema";
 import { ClarifyPrompt } from "./clarify-prompt";
+import { previewModeFromInput } from "@/lib/routeThread";
 
 // Deterministic thin-input heuristic. Returns true when the submission is
 // likely too sparse for a confident sift. Intentionally conservative — we
@@ -537,25 +538,28 @@ export function Composer({
             </span>
           </div>
 
-          <Button
-            type="button"
-            onClick={submit}
-            disabled={loading || !input.trim()}
-            data-testid="button-sift"
-            className="gap-2"
-          >
-            {loading ? (
-              <>
-                <Sparkles className="w-4 h-4 animate-pulse" />
-                Sifting…
-              </>
-            ) : (
-              <>
-                <Send className="w-4 h-4" />
-                Sift
-              </>
-            )}
-          </Button>
+          <div className="flex items-center gap-2.5">
+            <ComposerModePill input={input} />
+            <Button
+              type="button"
+              onClick={submit}
+              disabled={loading || !input.trim()}
+              data-testid="button-sift"
+              className="gap-2"
+            >
+              {loading ? (
+                <>
+                  <Sparkles className="w-4 h-4 animate-pulse" />
+                  Sifting…
+                </>
+              ) : (
+                <>
+                  <Send className="w-4 h-4" />
+                  Sift
+                </>
+              )}
+            </Button>
+          </div>
         </div>
       </div>
       {loading ? (
@@ -587,6 +591,46 @@ export function Composer({
         </p>
       )}
     </div>
+  );
+}
+
+// ComposerModePill — a quiet preview of what the server will route to.
+// Mirrors server/routes.ts routeThread() via previewModeFromInput. The
+// server remains the source of truth; this is a visual hint so the user
+// can see Personal/Operator before they submit. Hidden on short input
+// where the routing signal is too thin to be honest.
+function ComposerModePill({ input }: { input: string }) {
+  const trimmed = input.trim();
+  // Below ~6 words there isn't enough signal to honestly preview. The
+  // server applies its own thin-input gate after submit; the pill stays
+  // silent here so it doesn't flicker on every keystroke.
+  if (trimmed.split(/\s+/).filter(Boolean).length < 6) return null;
+  const mode = previewModeFromInput(trimmed);
+  const label = mode === "operator" ? "Operator" : "Personal";
+  const className =
+    mode === "operator"
+      ? "inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/5 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.16em] text-primary/80"
+      : "inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-card/60 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground/85";
+  return (
+    <span
+      className={className}
+      data-testid={`pill-composer-mode-${mode}`}
+      title={
+        mode === "operator"
+          ? "This looks like work — Sift will route as Operator."
+          : "This looks personal — Sift will route as Personal."
+      }
+    >
+      <span
+        aria-hidden="true"
+        className={
+          mode === "operator"
+            ? "h-1.5 w-1.5 rounded-full bg-primary/70"
+            : "h-1.5 w-1.5 rounded-full bg-muted-foreground/50"
+        }
+      />
+      {label}
+    </span>
   );
 }
 
@@ -792,6 +836,20 @@ export function Result({
   const [breakdownLoading, setBreakdownLoading] = useState(false);
   const [breakdownError, setBreakdownError] = useState<string | null>(null);
   const [breakdownFadeIn, setBreakdownFadeIn] = useState(false);
+  // Step-check negotiation. The proposed step is a proposal, not a final
+  // answer — the user replies with one of three options. "fits" quietly
+  // confirms; "smaller" / "different" ask the server for a revised step
+  // on the same underlying signal. We track loading so the row can dim
+  // while the model re-spins the move.
+  const [stepCheck, setStepCheck] = useState<null | "fits">(null);
+  const [stepRevising, setStepRevising] = useState<
+    null | "smaller" | "different"
+  >(null);
+  const [stepRevisionFadeIn, setStepRevisionFadeIn] = useState(false);
+  // Signal/Noise grid stays visible by default but collapses to a compact
+  // summary on demand. Default-open preserves prior expectations; users
+  // can quiet it when they want to focus on the next step alone.
+  const [signalExpanded, setSignalExpanded] = useState(true);
   const checkinSig =
     result.checkins?.map((c) => c.id).join(",") ?? "";
 
@@ -805,6 +863,10 @@ export function Result({
     setBreakdownLoading(false);
     setBreakdownError(null);
     setBreakdownFadeIn(false);
+    setStepCheck(null);
+    setStepRevising(null);
+    setStepRevisionFadeIn(false);
+    setSignalExpanded(true);
   }, [
     result.id,
     result.coreIntent,
@@ -869,6 +931,54 @@ export function Result({
         "Could not break this down — try rephrasing the step.",
       );
       setBreakdownLoading(false);
+    }
+  };
+
+  const requestStepRevision = async (variant: "smaller" | "different") => {
+    if (!view.mine || readOnly || stepRevising) return;
+    setStepRevising(variant);
+    setStepCheck(null);
+    setStepRevisionFadeIn(false);
+    try {
+      const res = await apiRequest(
+        "POST",
+        `/api/sift/${encodeURIComponent(view.id)}/revise-step`,
+        { variant },
+      );
+      const data = (await res.json()) as {
+        nextStep?: string;
+        stepScope?: { durationEstimate: string; stoppingCondition: string };
+        error?: string;
+      };
+      if (!res.ok || !data.nextStep) {
+        toast({
+          title: "Couldn't revise that step",
+          description:
+            typeof data.error === "string"
+              ? data.error
+              : "Try again in a moment.",
+        });
+        setStepRevising(null);
+        return;
+      }
+      setStepRevisionFadeIn(true);
+      setView((v) => ({
+        ...v,
+        nextStep: data.nextStep!,
+        stepScope: data.stepScope ?? v.stepScope,
+        // A revised step invalidates the cached micro-tasks. Clearing here
+        // matches the server, which sets micro_tasks to NULL on revision.
+        microTasks: null,
+      }));
+      queryClient.invalidateQueries({ queryKey: ["/api/sift", view.id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/sifts"] });
+    } catch (err: any) {
+      toast({
+        title: "Couldn't revise that step",
+        description: err?.message ?? "Try again in a moment.",
+      });
+    } finally {
+      setStepRevising(null);
     }
   };
 
@@ -1120,127 +1230,57 @@ export function Result({
           )}
         </section>
 
-        {/* Signal/Noise framing — new sifts always populate matters/noise.
-            Legacy rows fall back to themes below. */}
-        {(view.matters?.length ?? 0) > 0 ? (
-          <>
-            <div
-              className="grid grid-cols-1 md:grid-cols-2 md:gap-x-10 md:gap-y-8 gap-8"
-              data-testid="section-signal-grid"
-            >
-              <section data-testid="section-matters">
-                <Label>What matters now</Label>
-                <ul className="mt-4 divide-y divide-border/70 border-y border-border/70">
-                  {view.matters.map((m, i) => (
-                    <li
-                      key={i}
-                      className="py-3.5 md:py-4 flex gap-4 md:gap-6"
-                      data-testid={`matters-${i}`}
-                    >
-                      <span className="font-mono text-xs text-muted-foreground pt-1 w-6">
-                        {String(i + 1).padStart(2, "0")}
-                      </span>
-                      <p className="flex-1 font-serif text-lg md:text-xl text-foreground leading-snug">
-                        {m}
-                      </p>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-
-              <section data-testid="section-noise">
-                <Label>What may be noise right now</Label>
-                <ul className="mt-4 space-y-2.5">
-                  {(view.noise?.length ?? 0) > 0 ? (
-                    (view.noise ?? []).map((n, i) => (
-                      <li
-                        key={i}
-                        className="text-sm md:text-[15px] text-muted-foreground/85 leading-relaxed flex gap-3"
-                        data-testid={`noise-${i}`}
-                      >
-                        <span
-                          aria-hidden="true"
-                          className="text-muted-foreground/50 select-none"
-                        >
-                          —
-                        </span>
-                        <span className="flex-1">{n}</span>
-                      </li>
-                    ))
-                  ) : (
-                    <li className="text-sm text-muted-foreground/60 leading-relaxed">
-                      Nothing singled out on this side for now.
-                    </li>
-                  )}
-                </ul>
-              </section>
-            </div>
-
-            {view.recurringSignal ? (
-              <p
-                className="mt-4 text-xs text-muted-foreground/75 leading-relaxed"
-                data-testid="caption-recurring-signal"
+        {/* Operator surfaces only when the routed mode is operator. Two
+            quiet pills — front-burner rank and the artifact label — sit
+            above the next-step card so the user knows the system is
+            treating the situation as a live thread inside work. Personal
+            mode keeps the simpler card without these affordances. */}
+        {view.mode === "operator" &&
+        (view.frontBurnerRank != null || view.artifactType) ? (
+          <div
+            className="flex flex-wrap items-center gap-2 -mt-4"
+            data-testid="row-operator-pills"
+          >
+            {view.frontBurnerRank != null ? (
+              <span
+                data-testid="pill-front-burner-rank"
+                className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/5 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.18em] text-primary/80"
               >
-                This signal has come up before. You may already know what it's
-                pointing to.
-              </p>
+                <span className="h-1.5 w-1.5 rounded-full bg-primary/70" />
+                Front burner #{view.frontBurnerRank}
+              </span>
             ) : null}
-
-            {view.redundancyHint ? (
-              <p
-                className={`text-xs text-muted-foreground/75 leading-relaxed ${
-                  view.recurringSignal ? "mt-3" : "mt-4"
-                }`}
-                data-testid="caption-redundancy-hint"
+            {view.artifactType ? (
+              <span
+                data-testid="pill-artifact-type"
+                className="inline-flex items-center rounded-full border border-border/70 bg-card/60 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground/80"
               >
-                {view.redundancyHint.message}
-              </p>
+                {artifactTypeLabel(view.artifactType)}
+              </span>
             ) : null}
+          </div>
+        ) : null}
 
-            {view.signalReason && (
-              <section data-testid="section-signal-reason">
-                <Label>Why this may be the signal</Label>
-                <p
-                  className="mt-3 font-serif text-lg md:text-xl text-foreground leading-relaxed"
-                  data-testid="text-signal-reason"
-                >
-                  {view.signalReason}
-                </p>
-              </section>
-            )}
-          </>
-        ) : (
-          /* Legacy fallback — themes view for sifts created before matters/noise existed. */
-          <section data-testid="section-themes">
-            <Label>Themes underneath</Label>
-            <ul className="mt-4 divide-y divide-border/70 border-y border-border/70">
-              {view.themes.map((t, i) => (
-                <li
-                  key={i}
-                  className="py-4 md:py-5 flex gap-4 md:gap-6"
-                  data-testid={`theme-${i}`}
-                >
-                  <span className="font-mono text-xs text-muted-foreground pt-1 w-6">
-                    {String(i + 1).padStart(2, "0")}
-                  </span>
-                  <div className="flex-1">
-                    <h3 className="font-serif text-lg md:text-xl text-foreground">
-                      {t.title}
-                    </h3>
-                    <p className="text-sm md:text-[15px] text-muted-foreground mt-1.5 leading-relaxed">
-                      {t.summary}
-                    </p>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
-
-        {/* Next step */}
+        {/* Next step — promoted above the signal/noise grid so the
+            load-bearing artifact sits where the eye lands first. The
+            step-check chip row sits directly beneath it: the step is
+            a proposal, not a final answer (AGENTS.md "step check
+            mechanic"). */}
         <section data-testid="section-next">
           <Label>One next step</Label>
-          <div className="mt-3 rounded-2xl border border-primary/25 bg-primary/5 p-5 md:p-6">
+          <div
+            className={`mt-3 rounded-2xl border border-primary/25 bg-primary/5 p-5 md:p-6 transition-opacity ${
+              stepRevising ? "opacity-50" : "opacity-100"
+            }`}
+            style={
+              stepRevisionFadeIn && !stepRevising
+                ? {
+                    animation:
+                      "fade-in-slow 0.3s cubic-bezier(0.2, 0.7, 0.2, 1) both",
+                  }
+                : undefined
+            }
+          >
             <p
               className="font-serif text-xl md:text-2xl leading-snug text-foreground"
               data-testid="text-next-step"
@@ -1262,6 +1302,63 @@ export function Result({
               {view.stepScope.durationEstimate} · clear stopping point:{" "}
               {view.stepScope.stoppingCondition}
             </p>
+          ) : null}
+
+          {/* Step-check negotiation. Three quiet chips — "That works" is
+              the confirm; "Smaller, please" and "Different angle" each
+              re-spin the move on the same signal. Hidden in read-only
+              or non-owner views. */}
+          {view.mine && !readOnly ? (
+            <div
+              className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm"
+              data-testid="row-step-check"
+              aria-live="polite"
+            >
+              {stepRevising ? (
+                <p
+                  className="text-xs text-muted-foreground/80"
+                  data-testid="text-step-revising"
+                >
+                  Finding a {stepRevising === "smaller" ? "smaller" : "different"} move…
+                </p>
+              ) : stepCheck === "fits" ? (
+                <p
+                  className="text-xs text-muted-foreground/70"
+                  data-testid="text-step-fits"
+                >
+                  Good. The move is yours to take.
+                </p>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setStepCheck("fits")}
+                    data-testid="button-step-fits"
+                    className="text-foreground/85 hover:text-foreground transition-colors"
+                  >
+                    That works
+                  </button>
+                  <span aria-hidden="true" className="text-muted-foreground/40">·</span>
+                  <button
+                    type="button"
+                    onClick={() => void requestStepRevision("smaller")}
+                    data-testid="button-step-smaller"
+                    className="text-foreground/85 hover:text-foreground underline underline-offset-4 decoration-border hover:decoration-foreground transition-colors"
+                  >
+                    Smaller, please
+                  </button>
+                  <span aria-hidden="true" className="text-muted-foreground/40">·</span>
+                  <button
+                    type="button"
+                    onClick={() => void requestStepRevision("different")}
+                    data-testid="button-step-different"
+                    className="text-foreground/85 hover:text-foreground underline underline-offset-4 decoration-border hover:decoration-foreground transition-colors"
+                  >
+                    Different angle
+                  </button>
+                </>
+              )}
+            </div>
           ) : null}
 
           {view.mine && !readOnly ? (
@@ -1353,6 +1450,155 @@ export function Result({
             </div>
           ) : null}
         </section>
+
+        {/* The read — signal/noise framing demoted below the move, with a
+            quiet collapse so the next step stays load-bearing. New sifts
+            populate matters/noise; legacy rows fall back to themes. */}
+        {(view.matters?.length ?? 0) > 0 ? (
+          <section data-testid="section-signal" className="space-y-5">
+            <div className="flex items-center justify-between gap-4">
+              <Label>The read underneath</Label>
+              <button
+                type="button"
+                onClick={() => setSignalExpanded((v) => !v)}
+                aria-expanded={signalExpanded}
+                aria-controls="signal-grid-panel"
+                data-testid="button-signal-toggle"
+                className="text-xs text-muted-foreground/70 hover:text-foreground transition-colors"
+              >
+                {signalExpanded ? "Quiet this" : "Show the read"}
+              </button>
+            </div>
+
+            {signalExpanded ? (
+              <div
+                id="signal-grid-panel"
+                className="space-y-6 fade-in-slow"
+              >
+                <div
+                  className="grid grid-cols-1 md:grid-cols-2 md:gap-x-10 md:gap-y-8 gap-8"
+                  data-testid="section-signal-grid"
+                >
+                  <section data-testid="section-matters">
+                    <Label>What matters now</Label>
+                    <ul className="mt-4 divide-y divide-border/70 border-y border-border/70">
+                      {view.matters.map((m, i) => (
+                        <li
+                          key={i}
+                          className="py-3.5 md:py-4 flex gap-4 md:gap-6"
+                          data-testid={`matters-${i}`}
+                        >
+                          <span className="font-mono text-xs text-muted-foreground pt-1 w-6">
+                            {String(i + 1).padStart(2, "0")}
+                          </span>
+                          <p className="flex-1 font-serif text-lg md:text-xl text-foreground leading-snug">
+                            {m}
+                          </p>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+
+                  <section data-testid="section-noise">
+                    <Label>What may be noise right now</Label>
+                    <ul className="mt-4 space-y-2.5">
+                      {(view.noise?.length ?? 0) > 0 ? (
+                        (view.noise ?? []).map((n, i) => (
+                          <li
+                            key={i}
+                            className="text-sm md:text-[15px] text-muted-foreground/85 leading-relaxed flex gap-3"
+                            data-testid={`noise-${i}`}
+                          >
+                            <span
+                              aria-hidden="true"
+                              className="text-muted-foreground/50 select-none"
+                            >
+                              —
+                            </span>
+                            <span className="flex-1">{n}</span>
+                          </li>
+                        ))
+                      ) : (
+                        <li className="text-sm text-muted-foreground/60 leading-relaxed">
+                          Nothing singled out on this side for now.
+                        </li>
+                      )}
+                    </ul>
+                  </section>
+                </div>
+
+                {view.recurringSignal ? (
+                  <p
+                    className="text-xs text-muted-foreground/75 leading-relaxed"
+                    data-testid="caption-recurring-signal"
+                  >
+                    This signal has come up before. You may already know what
+                    it's pointing to.
+                  </p>
+                ) : null}
+
+                {view.redundancyHint ? (
+                  <p
+                    className="text-xs text-muted-foreground/75 leading-relaxed"
+                    data-testid="caption-redundancy-hint"
+                  >
+                    {view.redundancyHint.message}
+                  </p>
+                ) : null}
+
+                {view.signalReason && (
+                  <section data-testid="section-signal-reason">
+                    <Label>Why this may be the signal</Label>
+                    <p
+                      className="mt-3 font-serif text-lg md:text-xl text-foreground leading-relaxed"
+                      data-testid="text-signal-reason"
+                    >
+                      {view.signalReason}
+                    </p>
+                  </section>
+                )}
+              </div>
+            ) : (
+              <p
+                className="text-xs text-muted-foreground/70 leading-relaxed"
+                data-testid="text-signal-summary"
+              >
+                {view.matters.length}{" "}
+                {view.matters.length === 1 ? "thing matters" : "things matter"}
+                {(view.noise?.length ?? 0) > 0
+                  ? `, ${view.noise!.length} may be noise`
+                  : ""}
+                .
+              </p>
+            )}
+          </section>
+        ) : (
+          /* Legacy fallback — themes view for sifts created before matters/noise existed. */
+          <section data-testid="section-themes">
+            <Label>Themes underneath</Label>
+            <ul className="mt-4 divide-y divide-border/70 border-y border-border/70">
+              {view.themes.map((t, i) => (
+                <li
+                  key={i}
+                  className="py-4 md:py-5 flex gap-4 md:gap-6"
+                  data-testid={`theme-${i}`}
+                >
+                  <span className="font-mono text-xs text-muted-foreground pt-1 w-6">
+                    {String(i + 1).padStart(2, "0")}
+                  </span>
+                  <div className="flex-1">
+                    <h3 className="font-serif text-lg md:text-xl text-foreground">
+                      {t.title}
+                    </h3>
+                    <p className="text-sm md:text-[15px] text-muted-foreground mt-1.5 leading-relaxed">
+                      {t.summary}
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
 
         {/* Reflection */}
         <section data-testid="section-reflection">
@@ -1624,6 +1870,23 @@ function Label({ children }: { children: React.ReactNode }) {
       </span>
     </div>
   );
+}
+
+// Short, calm labels for the four operator artifact types. These render
+// as a small pill above the next-step card in Operator mode only —
+// Personal mode hides them entirely.
+function artifactTypeLabel(t: NonNullable<SiftResult["artifactType"]>): string {
+  switch (t) {
+    case "decision_memo":
+      return "Decision memo";
+    case "project_brief":
+      return "Project brief";
+    case "stakeholder_brief":
+      return "Stakeholder read";
+    case "operator_card":
+    default:
+      return "Operator card";
+  }
 }
 
 // ---------- Skeleton while thinking ----------

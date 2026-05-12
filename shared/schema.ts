@@ -369,6 +369,12 @@ export type SiftResult = Analysis & {
   showClosurePrompt?: boolean;
   /** Three micro-tasks from Break it down — null until generated */
   microTasks?: string[] | null;
+  /** Routed mode — drives Operator-only UI affordances on the result. */
+  mode?: SiftMode;
+  /** Operator front-burner rank — 1|2|3 when set, null otherwise. */
+  frontBurnerRank?: number | null;
+  /** Operator artifact discriminator — used to render the right pill. */
+  artifactType?: OperatorArtifactType | null;
 };
 
 /** POST /api/sift may return this instead of a full SiftResult when redundancy is high */
@@ -424,6 +430,25 @@ export const siftBreakdownRequestSchema = z.object({
   nextStep: z.string().min(1).max(4000),
 });
 export type SiftBreakdownRequest = z.infer<typeof siftBreakdownRequestSchema>;
+
+// PATCH /api/sift/:id/revise-step — step negotiation. The step is a proposal,
+// never final. "smaller" asks for a narrower variant that still passes the
+// scope/time tests. "different" asks for a different shape of move on the
+// same underlying signal.
+export const siftStepRevisionRequestSchema = z.object({
+  variant: z.enum(["smaller", "different"]),
+});
+export type SiftStepRevisionRequest = z.infer<
+  typeof siftStepRevisionRequestSchema
+>;
+
+export const siftStepRevisionResponseSchema = z.object({
+  nextStep: z.string().min(1),
+  stepScope: stepScopeSchema,
+});
+export type SiftStepRevisionResponse = z.infer<
+  typeof siftStepRevisionResponseSchema
+>;
 export type SiftClosurePromptPatchRequest = z.infer<
   typeof siftClosurePromptPatchSchema
 >;

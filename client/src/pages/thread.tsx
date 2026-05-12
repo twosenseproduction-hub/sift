@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "wouter";
+import { Link, useRoute } from "wouter";
 import { ArrowRight, Bookmark, ChevronDown, ChevronUp } from "lucide-react";
 import { useMe } from "@/lib/auth";
 import { useThread, usePatchThread } from "@/lib/useThreads";
@@ -23,9 +23,13 @@ export default function ThreadPage() {
   const [localMove, setLocalMove] = useState("");
   const [localRank, setLocalRank] = useState<number | null>(null);
 
-  // Which thread to show — from URL /thread/:id
-  // Use window.location for hash routing
-  const id = window.location.pathname.split("/thread/")[1]?.split("?")[0] ?? "";
+  // Which thread to show — from URL /thread/:id. The app uses wouter's
+  // hash location (see App.tsx), so reading window.location.pathname
+  // would only return "/" for hashed routes like "#/thread/abc". Use
+  // wouter's route matcher instead so deep links resolve under both
+  // path and hash routing.
+  const [, params] = useRoute<{ id: string }>("/thread/:id");
+  const id = params?.id ?? "";
 
   const { data: thread, isLoading, isError } = useThread(id);
   const patch = usePatchThread();

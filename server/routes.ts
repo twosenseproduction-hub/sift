@@ -29,6 +29,9 @@ import {
   updateSiftStatusSchema,
   siftClosurePromptPatchSchema,
   siftBreakdownRequestSchema,
+  siftStepRevisionRequestSchema,
+  siftStepRevisionResponseSchema,
+  stepScopeSchema,
   deepenRequestSchema,
   bookmarkPayloadSchema,
   siftTurnMessageSchema,
@@ -776,6 +779,56 @@ async function runBreakdownMicroTasks(nextStep: string): Promise<string[]> {
     throw new Error("Breakdown must be exactly 3 micro-tasks");
   }
   return tasks;
+}
+
+const STEP_REVISION_SYSTEM_PROMPT = `You are revising one proposed next step. The user has read the current step and asked for a revised version. The revision must still pass Sift's tests for "one next step":
+- Doable in 5–30 minutes
+- Has a clear stopping condition
+- Concrete, physical, not preparatory
+- No "try" — must have a real completion moment
+- Same governing signal as the original step; do not pivot the underlying read
+
+Two variants:
+
+"smaller" — narrow the step further. Same shape, smaller scope. The stopping condition should be reachable in 5–15 minutes. Strip ambition, keep movement.
+
+"different" — a different shape of move on the same signal. Same underlying tension, different angle of action (e.g. a conversation instead of writing, a constraint instead of a draft, a question instead of an answer).
+
+Output STRICT JSON:
+{
+  "nextStep": string,
+  "stepScope": { "durationEstimate": string, "stoppingCondition": string }
+}
+
+Rules:
+- nextStep: one sentence, 10–35 words, no preamble, no "try", no "consider".
+- durationEstimate: short phrase, e.g. "~15 min", "10 min", "20 min".
+- stoppingCondition: one short clause naming the visible moment the step is done.
+- Do not explain the change. Just return the revised JSON.
+- Do not return the original next step verbatim — the user has asked for something different.
+
+${SAFETY_CLAUSE}
+
+Output JSON only.`;
+
+async function runStepRevision(args: {
+  input: string;
+  coreIntent: string;
+  currentStep: string;
+  variant: "smaller" | "different";
+}): Promise<{ nextStep: string; stepScope: StepScope }> {
+  const userMsg = `Original input:\n${args.input}\n\nWhat this is pointing to:\n${args.coreIntent}\n\nCurrent proposed next step:\n${args.currentStep}\n\nVariant requested: ${args.variant}\n\nReturn JSON only.`;
+  const msg = await client.messages.create({
+    model: MODEL,
+    max_tokens: 400,
+    system: STEP_REVISION_SYSTEM_PROMPT,
+    messages: [{ role: "user", content: userMsg }],
+  });
+  const textBlock = msg.content.find((b: any) => b.type === "text") as any;
+  const raw = (textBlock?.text ?? "").trim();
+  const parsed = extractJson(raw);
+  const validated = siftStepRevisionResponseSchema.parse(parsed);
+  return validated;
 }
 
 const FRAGMENTS_SYSTEM_PROMPT = `You pull 4–6 short fragments from the user's text for a quick sort they will do by hand before the full sift.
@@ -2643,6 +2696,9 @@ function routeThread(input: string): { mode: 'personal'|'operator', entrySignal:
         microTasks: null,
         checkins: [],
         recurringSignal: recurring.detected,
+        mode,
+        frontBurnerRank: null,
+        artifactType: (artifactType as SiftResult["artifactType"]) ?? null,
         ...(redundancyCheck.level === "low"
           ? {
               redundancyHint: {
@@ -2764,6 +2820,10 @@ function routeThread(input: string): { mode: 'personal'|'operator', entrySignal:
         mine: true,
         checkins: (await storage.listCheckins(siftId)).map(checkinToResult),
         revisionHistory: parseRevisionHistoryColumn(updated.revisionHistory ?? null),
+        mode: (updated.mode as SiftResult["mode"]) ?? undefined,
+        frontBurnerRank: updated.frontBurnerRank ?? null,
+        artifactType:
+          (updated.artifactType as SiftResult["artifactType"]) ?? null,
         ...(microTasksWire ? { microTasks: microTasksWire } : { microTasks: null }),
       };
       return res.json(result);
@@ -2975,6 +3035,10 @@ function routeThread(input: string): { mode: 'personal'|'operator', entrySignal:
       checkins: checkinRows.map(checkinToResult),
       turns,
       bookmark,
+      mode: (row.mode as SiftResult["mode"]) ?? undefined,
+      frontBurnerRank: row.frontBurnerRank ?? null,
+      artifactType:
+        (row.artifactType as SiftResult["artifactType"]) ?? null,
       ...(revisionWire?.length ? { revisionHistory: revisionWire } : {}),
       ...(recurringSignalWire ? { recurringSignal: true } : {}),
       ...(redundancyHintWire ? { redundancyHint: redundancyHintWire } : {}),
@@ -3020,6 +3084,56 @@ function routeThread(input: string): { mode: 'personal'|'operator', entrySignal:
       console.error("breakdown error", err);
       return res.status(422).json({
         error: "Could not break this down — try rephrasing the step.",
+      });
+    }
+  });
+
+  // Step negotiation — revise the proposed one_next_step without re-sifting
+  // the whole result. The step is a proposal, not a final answer (per
+  // AGENTS.md "step check mechanic"). "smaller" narrows scope; "different"
+  // proposes a different shape of move on the same signal. Owner-only.
+  app.post("/api/sift/:id/revise-step", requireAuth, async (req, res) => {
+    const userId = (req as any).userId as number;
+    const parsed = siftStepRevisionRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: parsed.error.issues[0]?.message ?? "Invalid input",
+      });
+    }
+    const siftId = String(req.params.id);
+    const row = await storage.getSift(siftId);
+    if (!row) return res.status(404).json({ error: "Not found" });
+    if (row.userId !== userId) {
+      return res.status(403).json({ error: "Not your sift" });
+    }
+    try {
+      const revised = await runStepRevision({
+        input: row.input,
+        coreIntent: row.coreIntent,
+        currentStep: row.nextStep,
+        variant: parsed.data.variant,
+      });
+      // Persist the revised step. We deliberately do not touch matters/noise
+      // or coreIntent — the underlying read is unchanged, only the move
+      // proposed off it.
+      rawDb
+        .prepare(
+          "UPDATE sifts SET next_step = ?, step_scope = ?, micro_tasks = NULL WHERE id = ? AND user_id = ?",
+        )
+        .run(
+          revised.nextStep,
+          JSON.stringify(revised.stepScope),
+          siftId,
+          userId,
+        );
+      return res.json({
+        nextStep: revised.nextStep,
+        stepScope: revised.stepScope,
+      });
+    } catch (err: unknown) {
+      console.error("step revision error", err);
+      return res.status(422).json({
+        error: "Could not revise that step — try again.",
       });
     }
   });

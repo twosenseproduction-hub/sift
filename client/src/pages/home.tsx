@@ -28,7 +28,7 @@ import { useMe } from "@/lib/auth";
 import { useDailyPrompt } from "@/lib/useDailyPrompt";
 import { useResume, clearResume } from "@/lib/resume";
 import { useQuery } from "@tanstack/react-query";
-import { Bookmark, ChevronDown, ArrowRight } from "lucide-react";
+import { Bookmark, ChevronDown } from "lucide-react";
 import type {
   SiftResult,
   SiftListItem,
@@ -239,7 +239,17 @@ export default function Home() {
                 </div>
               )}
 
-              <ReEntryBlock enabled={!!me && (flow === "idle" || flow === "sifting")} />
+              {/* One re-entry slot, never two. ResumeCard wins when present
+                  (it's the user's last visited thread, the most precise
+                  re-entry cue); ReEntryBlock falls back to a smart suggestion
+                  only when no resume thread is staged. */}
+              <ReEntryBlock
+                enabled={
+                  !!me &&
+                  !canShowResume &&
+                  (flow === "idle" || flow === "sifting")
+                }
+              />
 
               {metaBanner ? (
                 <p
@@ -578,47 +588,40 @@ function ResumeCard({
   onResume: () => void;
   onStartFresh: () => void;
 }) {
+  // A single slim row, not a stacked card. The composer below is the
+  // unambiguous primary surface; this is a quiet "still alive?" cue
+  // that takes one tap to re-enter or one tap to dismiss.
   return (
     <div
-      className="mb-8 md:mb-10 rounded-xl border border-primary/20 bg-primary/5 px-4 py-4 md:px-5 md:py-5"
+      className="mb-6 md:mb-8 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3"
       data-testid="card-resume"
     >
-      <div className="flex items-start gap-3">
-        <Bookmark className="w-4 h-4 mt-1 text-primary shrink-0" />
-        <div className="flex-1 min-w-0">
-          <p
-            className="text-[11px] tracking-[0.25em] uppercase text-primary/80 mb-1.5 font-medium"
-            data-testid="text-resume-eyebrow"
-          >
-            Pick up where you left off
-          </p>
-          <p
-            className="text-sm text-foreground/85 leading-relaxed mb-3"
-            data-testid="text-resume-body"
-          >
-            You were in the middle of a thread.
-          </p>
-          <div className="flex flex-wrap items-center gap-3">
-            <Button
-              size="sm"
-              onClick={onResume}
-              data-testid="button-resume-thread"
-              className="gap-2"
-            >
-              Resume thread
-              <ArrowRight className="w-3.5 h-3.5" />
-            </Button>
-            <button
-              type="button"
-              onClick={onStartFresh}
-              data-testid="button-resume-start-fresh"
-              className="text-sm text-muted-foreground hover:text-foreground underline underline-offset-4 decoration-border hover:decoration-foreground transition-colors"
-            >
-              Start fresh
-            </button>
-          </div>
-        </div>
-      </div>
+      <Bookmark
+        className="w-3.5 h-3.5 text-primary/80 shrink-0"
+        aria-hidden="true"
+      />
+      <p
+        className="flex-1 min-w-0 text-sm text-foreground/85 leading-snug"
+        data-testid="text-resume-body"
+      >
+        Still alive — you were in the middle of a thread.
+      </p>
+      <button
+        type="button"
+        onClick={onResume}
+        data-testid="button-resume-thread"
+        className="text-sm text-foreground/90 hover:text-foreground underline underline-offset-4 decoration-primary/60 hover:decoration-foreground transition-colors"
+      >
+        Pick it up
+      </button>
+      <button
+        type="button"
+        onClick={onStartFresh}
+        data-testid="button-resume-start-fresh"
+        className="text-xs text-muted-foreground/70 hover:text-foreground transition-colors"
+      >
+        Done for now
+      </button>
     </div>
   );
 }

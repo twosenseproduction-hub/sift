@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "wouter";
-import { Moon, Sun, Archive, LogOut, User as UserIcon } from "lucide-react";
+import { Moon, Sun, Archive, LogOut, User as UserIcon, Bookmark } from "lucide-react";
 import { useTheme } from "@/lib/theme";
 import { useMe, useLogout } from "@/lib/auth";
 import { AuthDialog } from "./auth-dialog";
@@ -102,6 +102,12 @@ export function Header() {
         <div className="flex items-center gap-1">
           {me ? (
             <>
+              <Link href="/threads" data-testid="link-threads">
+                <a className="hover-elevate inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm text-muted-foreground hover:text-foreground transition-colors">
+                  <Bookmark className="w-4 h-4" />
+                  <span className="hidden sm:inline">Threads</span>
+                </a>
+              </Link>
               <Link href="/history" data-testid="link-history">
                 <a className="hover-elevate inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm text-muted-foreground hover:text-foreground transition-colors">
                   <Archive className="w-4 h-4" />
