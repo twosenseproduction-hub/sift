@@ -1,0 +1,36 @@
+# fly.staging.toml — Sift staging environment
+#
+# One-time setup (run manually before first PR deploy):
+#   fly apps create sift-twosense-staging
+#   fly volumes create sift_data --app sift-twosense-staging --region sjc --size 1
+#   fly secrets set ANTHROPIC_API_KEY=<your-key> --app sift-twosense-staging
+#   fly secrets set ADMIN_HANDLES=<your-handles> --app sift-twosense-staging
+#
+# After that, PR deploys are automatic via GitHub Actions.
+
+app = "sift-twosense-staging"
+primary_region = "sjc"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8080"
+  NODE_ENV = "production"
+  DB_PATH = "/data/sift.db"
+
+[[mounts]]
+  source = "sift_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
