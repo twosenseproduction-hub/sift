@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useRoute } from "wouter";
-import { ArrowRight, Bookmark, ChevronDown, ChevronUp } from "lucide-react";
+import { ArrowRight, Bookmark, ChevronDown, ChevronUp, ListChecks } from "lucide-react";
 import { useMe } from "@/lib/auth";
 import { useThread, usePatchThread } from "@/lib/useThreads";
 import { Header, Footnote } from "@/components/brand";
@@ -261,6 +261,33 @@ export default function ThreadPage() {
                 onCloseLoop={undefined}
               />
             </div>
+          )}
+
+          {/* Open full sift — the per-sift detail page (/s/:id) is where the
+              canonical Sift response renders, including the "Break it down"
+              micro-tasks affordance. Threads used to be the only path; this
+              card guarantees the breakdown is one tap from any thread, so
+              History no longer needs to live in the header. */}
+          {me && (
+            <Link href={`/s/${thread.id}`}>
+              <a
+                className="mb-10 flex items-center justify-between gap-4 rounded-xl border border-border/60 bg-card/50 px-4 py-3.5 hover:border-border hover:bg-card/80 transition-colors group"
+                data-testid="link-open-full-sift"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <ListChecks className="w-4 h-4 shrink-0 text-primary/70" />
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-foreground/90 leading-snug">
+                      Open the full sift
+                    </p>
+                    <p className="text-xs text-muted-foreground line-clamp-1">
+                      What matters, what's noise, and the breakdown of the next step
+                    </p>
+                  </div>
+                </div>
+                <ArrowRight className="w-4 h-4 shrink-0 text-muted-foreground/60 group-hover:text-foreground transition-colors" />
+              </a>
+            </Link>
           )}
 
           {/* Turns so far */}
