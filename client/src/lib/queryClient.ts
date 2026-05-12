@@ -1,4 +1,5 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import { getBYOKAnthropicKey } from "./byok-settings";
 
 const API_BASE = "__PORT_5000__".startsWith("__") ? "" : "__PORT_5000__";
 
@@ -61,15 +62,25 @@ export async function apiRequest(
     typeof payload === "object"
   ) {
     try {
+      let p = { ...(payload as Record<string, unknown>) };
       if (
         typeof sessionStorage !== "undefined" &&
         sessionStorage.getItem("sift.pendingMetaSift") === "1"
       ) {
-        payload = { ...(payload as Record<string, unknown>), metaSift: true };
+        p = { ...p, metaSift: true };
       }
+      payload = p;
     } catch {
       /* ignore */
     }
+  }
+  const byok = getBYOKAnthropicKey();
+  if (
+    byok &&
+    method === "POST" &&
+    (url === "/api/sift" || url === "/api/sift/fragments")
+  ) {
+    headers["x-sift-anthropic-key"] = byok;
   }
   if (payload) headers["Content-Type"] = "application/json";
 

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useRoute } from "wouter";
 import { ArrowRight, Bookmark, ChevronDown, ChevronUp, ListChecks } from "lucide-react";
 import { useMe } from "@/lib/auth";
@@ -35,13 +35,19 @@ export default function ThreadPage() {
   const { data: thread, isLoading, isError } = useThread(id);
   const patch = usePatchThread();
 
-  // Sync local state from server when thread loads
-  if (thread && localState === null) {
+  useEffect(() => {
+    setShowControls(false);
+  }, [id]);
+
+  // Hydrate controls from server whenever the route thread changes — avoid
+  // setState during render and stale locals after navigating thread A → B.
+  useEffect(() => {
+    if (!thread) return;
     setLocalState(thread.threadState);
     setLocalMove(thread.currentMove ?? "");
     setLocalRank(thread.frontBurnerRank ?? null);
     setLocalClosure(thread.closureCondition ?? "");
-  }
+  }, [thread?.id]);
 
   if (!id) {
     return (

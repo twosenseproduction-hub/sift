@@ -33,7 +33,9 @@ export default function ThreadsPage() {
   });
   const { data: meData } = useMe();
   const me = meData?.me;
-  const { data: threads, isLoading, isError } = useThreads({ enabled: !!me });
+  const { data: threads, isLoading, isError } = useThreads({
+    enabled: !!me,
+  });
 
   const { data: reentryData } = useQuery<ReEntryResponse>({
     queryKey: ["/api/reentry"],

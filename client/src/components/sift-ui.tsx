@@ -269,8 +269,9 @@ export function Composer({
         if (onRedundancyGate) onRedundancyGate(data);
         return;
       }
+      let out = data as SiftResult;
       queryClient.invalidateQueries({ queryKey: ["/api/sifts"] });
-      onResult(data);
+      onResult(out);
       setInput("");
       setInterim("");
       setClarifyInput(null);

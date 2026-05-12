@@ -10,7 +10,7 @@ import { BookmarkCard } from "@/components/bookmark-card";
 import { DeepeningThread } from "@/components/deepening-thread";
 import { CareScreen } from "@/components/care-screen";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, ChevronRight } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import type { SiftResult, Bookmark } from "@shared/schema";
 
 // Shared (a.k.a. saved-thread) page.
@@ -132,26 +132,12 @@ export default function Shared() {
                 </div>
               )}
 
-              {/* Original result — always available, collapsed implicitly by
-                  appearing beneath the bookmark for owners. Readers see it as
-                  their only view. */}
-              {(!data.mine || !activeBookmark || view === "deepening") && (
+              {/* Full sift output — always visible. Owners with a bookmark still
+                  saw nothing unless they expanded “See the original sift”; that
+                  hid matters/noise and the next step by default. */}
+              <div className="mt-10">
                 <Result result={data} readOnly={!data.mine} />
-              )}
-
-              {/* Show the original result beneath the bookmark when owner is
-                  in bookmark view — as an at-a-glance reference. */}
-              {data.mine && activeBookmark && view === "bookmark" && (
-                <details className="mt-6 group" data-testid="details-original-sift">
-                  <summary className="cursor-pointer text-sm text-muted-foreground hover:text-foreground transition-colors list-none flex items-center gap-2">
-                    <ChevronRight className="w-4 h-4 transition-transform group-open:rotate-90" />
-                    See the original sift
-                  </summary>
-                  <div className="mt-4">
-                    <Result result={data} readOnly />
-                  </div>
-                </details>
-              )}
+              </div>
 
               {data.mine && (
                 <FeedbackPrompt stage="result" siftId={data.id} />

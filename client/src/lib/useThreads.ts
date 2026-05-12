@@ -10,7 +10,8 @@ export function useThreads(options?: { enabled?: boolean }) {
       const res = await apiRequest("GET", "/api/threads");
       return (await res.json()).threads;
     },
-    enabled: options?.enabled ?? true,
+    enabled:
+      options?.enabled === false ? false : (options?.enabled ?? true),
   });
 }
 
@@ -19,7 +20,10 @@ export function useThread(id: string) {
   return useQuery<ThreadDetail | undefined>({
     queryKey: ["/api/threads", id],
     queryFn: async () => {
-      const res = await apiRequest("GET", `/api/threads/${id}`);
+      const res = await apiRequest(
+        "GET",
+        `/api/threads/${encodeURIComponent(id)}`,
+      );
       const data = (await res.json()) as { thread?: ThreadDetail };
       return data.thread;
     },
@@ -27,7 +31,6 @@ export function useThread(id: string) {
   });
 }
 
-// PATCH /api/threads/:id — update thread state
 type PatchThreadVars = {
   id: string;
   threadState?: "open" | "closed" | "archived";
@@ -45,7 +48,11 @@ export function usePatchThread() {
       if (body.frontBurnerRank !== undefined) filtered.frontBurnerRank = body.frontBurnerRank;
       if (body.currentMove !== undefined) filtered.currentMove = body.currentMove;
       if (body.closureCondition !== undefined) filtered.closureCondition = body.closureCondition;
-      await apiRequest("PATCH", `/api/threads/${id}`, filtered);
+      await apiRequest(
+        "PATCH",
+        `/api/threads/${encodeURIComponent(id)}`,
+        filtered,
+      );
       return vars;
     },
     onSuccess: (vars) => {

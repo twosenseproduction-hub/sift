@@ -154,13 +154,11 @@ export default function Home() {
     } catch {}
   };
 
-  // For signed-in users, check if they have any prior sifts.
-  // If they do, hide onboarding affordances (See example, hero copy).
-  // Server returns { sifts: [...] } — matches the shape used in history.tsx.
   const { data: siftsData } = useQuery<{ sifts: SiftListItem[] }>({
     queryKey: ["/api/sifts"],
     enabled: !!me,
   });
+
   const isReturning = !!me && (siftsData?.sifts.length ?? 0) > 0;
 
   // Resume state — surfaced only on the idle home view. If the referenced
@@ -302,8 +300,7 @@ export default function Home() {
                 </div>
               )}
 
-              {/* Plume-style zen: hide alternate entry tools until the user
-                  has at least one sift — keeps first sessions one surface. */}
+              {/* Progressive disclosure: alternate entry tools after first sift */}
               {isReturning ? (
                 <section
                   className="mt-10 md:mt-14 pt-6 md:pt-8 border-t border-border/30"

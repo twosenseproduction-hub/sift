@@ -37,6 +37,7 @@ import {
   siftTurnMessageSchema,
   sortPromptPayloadSchema,
   sortRequestSchema,
+  updateThreadSchema,
   type Analysis,
   type OperatorArtifact,
   type CheckinAnalysis,
@@ -1910,11 +1911,11 @@ async function computeReEntryPrompt(userId: number): Promise<ReEntryResponse> {
       cis.length > 0 ? Math.max(...cis.map((c) => c.createdAt)) : s.createdAt;
     const lastAct = Math.max(s.createdAt, lastCi);
     if (Date.now() - lastAct <= REENTRY_7D_MS) continue;
-    if (!stalkest || lastAct < stalest.lastAct) {
+    if (!stalest || lastAct < stalest.lastAct) {
       stalest = { s, lastAct };
     }
   }
-  if (stalkest) {
+  if (stalest) {
     return {
       prompt: "This one's been sitting. Still alive, or done for now?",
       action: {
@@ -2913,9 +2914,8 @@ function routeThread(input: string): { mode: 'personal'|'operator', entrySignal:
     let turns: any[] = [];
     let bookmark: any = null;
     if (userId && thread.userId === userId) {
-      const { listTurns, getBookmark } = await import("./storage");
-      turns = await listTurns(String(req.params.id));
-      bookmark = (await getBookmark(String(req.params.id))) ?? undefined;
+      turns = await storage.listTurns(String(req.params.id));
+      bookmark = (await storage.getBookmark(String(req.params.id))) ?? undefined;
     }
     res.json({
       thread: {
