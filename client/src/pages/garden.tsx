@@ -169,6 +169,14 @@ export default function GardenPage() {
     return m;
   }, [data?.seeds]);
 
+  /** Threads matching month chip filter — indices align with `data.seeds`. */
+  const seedsInView = useMemo(() => {
+    if (!data?.seeds) return [];
+    return data.seeds
+      .map((s, globalIdx) => ({ s, globalIdx }))
+      .filter(({ s }) => selectedMonth == null || s.month === selectedMonth);
+  }, [data?.seeds, selectedMonth]);
+
   const proseKey = useMemo(() => {
     if (chipHoverSeed != null && data?.seeds[chipHoverSeed]) {
       const s = data.seeds[chipHoverSeed];
@@ -434,6 +442,68 @@ export default function GardenPage() {
                 )}
               </section>
 
+              <section className="mb-12 border-t border-border/45 pt-10 space-y-4">
+                <div className="flex items-center gap-3 mb-1">
+                  <span className="h-px w-6 bg-primary/40" />
+                  <span className="text-[11px] tracking-[0.2em] uppercase font-medium text-primary/80">
+                    Your threads
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground leading-relaxed mb-4">
+                  Every sift lives here. Recurring signals below appear once similar wording shows up across two threads.
+                </p>
+                {seedsInView.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    Nothing in this month filter — choose another month or “All time”.
+                  </p>
+                ) : (
+                  <ul className="space-y-2">
+                    {seedsInView.map(({ s, globalIdx }) => {
+                      const monthLabel =
+                        data.months.find((m) => m.key === s.month)?.label ??
+                        s.month;
+                      return (
+                        <li key={s.id}>
+                          <button
+                            type="button"
+                            className="w-full text-left rounded-xl border border-border/55 bg-card/35 px-4 py-3.5 transition-colors hover:bg-card/60 hover:border-border flex gap-3 items-start"
+                            onMouseEnter={() => setChipHoverSeed(globalIdx)}
+                            onMouseLeave={() => setChipHoverSeed(null)}
+                            onFocus={() => setChipHoverSeed(globalIdx)}
+                            onBlur={() => setChipHoverSeed(null)}
+                            onClick={() => openPanelFromSeed(globalIdx)}
+                          >
+                            <span
+                              className={cn(
+                                "mt-1.5 inline-block h-2 w-2 shrink-0 rounded-full ring-1",
+                                s.closed
+                                  ? "bg-primary ring-primary/25"
+                                  : "bg-chart-3 ring-chart-3/30",
+                              )}
+                              aria-hidden
+                            />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-start justify-between gap-2 mb-1">
+                                <p className="text-sm font-medium text-foreground leading-snug">
+                                  {s.title}
+                                </p>
+                                <span className="shrink-0 text-[10px] uppercase tracking-wider text-muted-foreground/70 tabular-nums">
+                                  {monthLabel}
+                                </span>
+                              </div>
+                              <p className="text-xs text-muted-foreground line-clamp-2">
+                                {s.closed ? "Closed · " : "Live · "}
+                                Next: {s.nextStep ?? "—"}
+                              </p>
+                            </div>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </section>
+
               <section className="mb-12 space-y-4">
                 <div className="flex items-center gap-3 mb-2">
                   <span className="h-px w-6 bg-primary/40" />
@@ -441,7 +511,12 @@ export default function GardenPage() {
                     Recurring signals
                   </span>
                 </div>
-                {data.recurringSignals.map((rs, sigIdx) => {
+                {data.recurringSignals.length === 0 ? (
+                  <p className="text-sm text-muted-foreground leading-relaxed">
+                    No shared pattern surfaced yet. Keep sifting — when signal lines echo across threads, they cluster here automatically.
+                  </p>
+                ) : (
+                  data.recurringSignals.map((rs, sigIdx) => {
                   const monthIdsInFilter =
                     selectedMonth &&
                     data.seeds.filter((s) => s.month === selectedMonth).map((s) => s.id);
@@ -516,7 +591,8 @@ export default function GardenPage() {
                       </button>
                     </article>
                   );
-                })}
+                  })
+                )}
               </section>
 
               <section className="mb-12 border-t border-border/50 pt-10">
