@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { Moon, Sun, LogOut, User as UserIcon, Bookmark, BookOpen, Shield } from "lucide-react";
 import { useTheme } from "@/lib/theme";
 import { useMe, useLogout } from "@/lib/auth";
@@ -76,12 +76,13 @@ export function Header() {
   const { theme, toggle } = useTheme();
   const { data } = useMe();
   const logout = useLogout();
+  const [, setLocation] = useLocation();
   const [authOpen, setAuthOpen] = useState(false);
   const me = data?.me;
 
   return (
     <header className="w-full">
-      <div className="mx-auto max-w-3xl px-6 md:px-8 py-6 flex items-center justify-between">
+      <div className="mx-auto max-w-3xl px-6 md:px-8 py-4 md:py-5 flex items-center justify-between gap-3">
         <Link href="/" data-testid="link-home">
           <a
             className="flex items-center gap-2.5 group"
@@ -99,7 +100,7 @@ export function Header() {
           </a>
         </Link>
 
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
           {me ? (
             <>
               {/* Threads is the single recall surface in the header. History
@@ -109,13 +110,13 @@ export function Header() {
                   is still mounted in App.tsx for any old bookmarks or share
                   links that may point to it. */}
               <Link href="/threads" data-testid="link-threads">
-                <a className="hover-elevate inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm text-muted-foreground hover:text-foreground transition-colors">
+                <a className="hover-elevate inline-flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-md text-sm text-muted-foreground hover:text-foreground transition-colors">
                   <Bookmark className="w-4 h-4" />
                   <span className="hidden sm:inline">Threads</span>
                 </a>
               </Link>
               <Link href="/garden" data-testid="link-garden">
-                <a className="hover-elevate inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm text-muted-foreground hover:text-foreground transition-colors">
+                <a className="hover-elevate inline-flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-md text-sm text-muted-foreground hover:text-foreground transition-colors">
                   <span className="text-base leading-none select-none" aria-hidden>
                     ◇
                   </span>
@@ -123,21 +124,15 @@ export function Header() {
                 </a>
               </Link>
               <Link href="/field-notes" data-testid="link-field-notes">
-                <a className="hover-elevate inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm text-muted-foreground hover:text-foreground transition-colors">
+                <a className="hover-elevate inline-flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-md text-sm text-muted-foreground hover:text-foreground transition-colors">
                   <BookOpen className="w-4 h-4" aria-hidden />
                   <span className="hidden sm:inline">Field notes</span>
-                </a>
-              </Link>
-              <Link href="/privacy" data-testid="link-privacy-signed-in">
-                <a className="hover-elevate inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm text-muted-foreground hover:text-foreground transition-colors">
-                  <Shield className="w-4 h-4" aria-hidden />
-                  <span className="hidden sm:inline">Privacy</span>
                 </a>
               </Link>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button
-                    className="hover-elevate inline-flex items-center gap-2 px-2.5 py-1.5 rounded-md text-sm text-muted-foreground hover:text-foreground transition-colors"
+                    className="hover-elevate inline-flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-md text-sm text-muted-foreground hover:text-foreground transition-colors"
                     data-testid="button-account"
                     aria-label="Account"
                   >
@@ -151,6 +146,14 @@ export function Header() {
                   </div>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
+                    onClick={() => setLocation("/privacy")}
+                    data-testid="menuitem-privacy"
+                    className="gap-2"
+                  >
+                    <Shield className="w-4 h-4" />
+                    Privacy
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
                     onClick={() => logout.mutate()}
                     data-testid="menuitem-logout"
                     className="gap-2"
@@ -163,16 +166,10 @@ export function Header() {
             </>
           ) : (
             <>
-              <Link href="/privacy" data-testid="link-privacy">
-                <a className="hover-elevate inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm text-muted-foreground hover:text-foreground transition-colors">
-                  <Shield className="w-4 h-4" aria-hidden />
-                  <span className="hidden sm:inline">Privacy</span>
-                </a>
-              </Link>
               <Link href="/field-notes" data-testid="link-field-notes-signed-out">
                 <a
                   aria-label="Field notes"
-                  className="hover-elevate inline-flex items-center gap-2 px-2.5 py-1.5 rounded-md text-sm text-muted-foreground hover:text-foreground transition-colors"
+                  className="hover-elevate inline-flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-md text-sm text-muted-foreground hover:text-foreground transition-colors"
                 >
                   <BookOpen className="w-4 h-4 shrink-0" aria-hidden />
                   <span className="sm:hidden">Notes</span>
@@ -181,7 +178,7 @@ export function Header() {
               </Link>
               <button
                 onClick={() => setAuthOpen(true)}
-                className="hover-elevate inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm text-muted-foreground hover:text-foreground transition-colors"
+                className="hover-elevate inline-flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-md text-sm text-muted-foreground hover:text-foreground transition-colors"
                 data-testid="button-signin"
               >
                 Sign in
