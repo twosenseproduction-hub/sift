@@ -1596,6 +1596,80 @@ function gardenSeedThemesMatch(a: Sift, b: Sift): boolean {
   return newTok.filter((t) => priorSet.has(t)).length >= 2;
 }
 
+function isMetaSiftRow(r: Sift): boolean {
+  return r.metaSift === 1;
+}
+
+/**
+ * Connected components where each edge is gardenSeedThemesMatch — same geometry
+ * as `connections` on the payload. Production rows often lack recurring_theme;
+ * matters overlap still links threads like local seed data with themes set.
+ * Meta/pattern sifts are omitted so they cannot bridge unrelated threads.
+ */
+function gardenRecurringClusters(sorted: Sift[]): Sift[][] {
+  const active = sorted.filter((r) => !isMetaSiftRow(r));
+  const m = active.length;
+  const parent = Array.from({ length: m }, (_, i) => i);
+  const find = (i: number): number => {
+    if (parent[i] !== i) parent[i] = find(parent[i]);
+    return parent[i];
+  };
+  const union = (i: number, j: number) => {
+    const ri = find(i);
+    const rj = find(j);
+    if (ri !== rj) parent[rj] = ri;
+  };
+  for (let i = 0; i < m; i++) {
+    for (let j = i + 1; j < m; j++) {
+      if (gardenSeedThemesMatch(active[i], active[j])) union(i, j);
+    }
+  }
+  const byRoot = new Map<number, number[]>();
+  for (let k = 0; k < m; k++) {
+    const r = find(k);
+    const arr = byRoot.get(r) ?? [];
+    arr.push(k);
+    byRoot.set(r, arr);
+  }
+  return Array.from(byRoot.values())
+    .filter((idxs) => idxs.length >= 2)
+    .map((idxs) => idxs.map((k) => active[k]));
+}
+
+function gardenClusterTheme(rows: Sift[]): string {
+  const rt = rows
+    .map((r) => r.recurringTheme?.trim())
+    .filter((x): x is string => !!x);
+  if (rt.length > 0) {
+    const counts = new Map<string, number>();
+    for (const t of rt) counts.set(t, (counts.get(t) ?? 0) + 1);
+    let best = rt[0]!;
+    let bestN = -1;
+    for (const [t, c] of Array.from(counts.entries())) {
+      if (c > bestN) {
+        best = t;
+        bestN = c;
+      }
+    }
+    return best;
+  }
+  const matterLines = rows.flatMap((r) => parseJsonStringArray(r.matters));
+  const tok = meaningfulTokensFromStrings(matterLines);
+  const freq = new Map<string, number>();
+  for (const t of tok) freq.set(t, (freq.get(t) ?? 0) + 1);
+  const top = Array.from(freq.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([w]) => w);
+  const w0 = top[0];
+  const w1 = top[1];
+  if (top.length >= 2 && w0 !== undefined && w1 !== undefined) {
+    return `${w0} ${w1}`;
+  }
+  if (w0 !== undefined) return w0;
+  return threadTitleFromSiftCore(rows[0]);
+}
+
 async function buildGardenPayload(userId: number) {
   const rows = await storage.listUserSiftsFull(userId);
   const sorted = [...rows].sort((a, b) => b.createdAt - a.createdAt);
@@ -1629,41 +1703,14 @@ async function buildGardenPayload(userId: number) {
 
   const proseDefault = `This month, you've been carrying ${coreSignal}.\n${closedThreads} things found their ground.\n${openThreads} are still breathing.`;
 
-  const buckets = new Map<string, Sift[]>();
-  for (const r of sorted) {
-    const raw = r.recurringTheme?.trim();
-    if (!raw) continue;
-    const k = raw.toLowerCase();
-    const arr = buckets.get(k) ?? [];
-    arr.push(r);
-    buckets.set(k, arr);
-  }
-  let themeGroups: Sift[][] = Array.from(buckets.values());
-  let mergedGroups = true;
-  while (mergedGroups) {
-    mergedGroups = false;
-    outer: for (let i = 0; i < themeGroups.length; i++) {
-      for (let j = i + 1; j < themeGroups.length; j++) {
-        if (
-          gardenSeedThemesMatch(themeGroups[i][0], themeGroups[j][0])
-        ) {
-          themeGroups[i] = [...themeGroups[i], ...themeGroups[j]];
-          themeGroups.splice(j, 1);
-          mergedGroups = true;
-          break outer;
-        }
-      }
-    }
-  }
-
-  const recurringSignals = themeGroups
-    .filter((g) => g.length >= 2)
-    .map((g) => ({
-      theme: g[0].recurringTheme ?? threadTitleFromSiftCore(g[0]),
-      frequency: g.length,
-      threadIds: g.map((x) => x.id),
-      threadTitles: g.map((x) => threadTitleFromSiftCore(x)),
-    }));
+  const recurringSignals = gardenRecurringClusters(sorted)
+    .map((groupRows) => ({
+      theme: gardenClusterTheme(groupRows),
+      frequency: groupRows.length,
+      threadIds: groupRows.map((x) => x.id),
+      threadTitles: groupRows.map((x) => threadTitleFromSiftCore(x)),
+    }))
+    .sort((a, b) => b.frequency - a.frequency);
 
   const noisePhraseCounts = new Map<string, { label: string; n: number }>();
   for (const r of sorted) {
