@@ -73,6 +73,19 @@
   --tracking-normal: 0em;
   --spacing: 0.25rem;
 
+  /* ─── Companion Canvas Tokens ─────────────────────────────────── */
+  /* The rounded room frame */
+  --room-frame-radius: 1.75rem;
+  /* Frosted glass bubble (light) */
+  --glass-bg: hsl(42 40% 97% / 0.76);
+  --glass-border: hsl(36 18% 82% / 0.55);
+  --glass-blur: blur(14px);
+  /* Vignette inner shadow for the frame */
+  --frame-inner-shadow: inset 0 0 48px 0 hsl(30 18% 14% / 0.12);
+  /* Pill composer */
+  --composer-pill-bg: hsl(42 40% 97% / 0.92);
+  /* ──────────────────────────────────────────────────────────────── */
+
   --sidebar-primary-border: hsl(var(--sidebar-primary));
   --sidebar-primary-border: hsl(
     from hsl(var(--sidebar-primary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha
@@ -164,6 +177,13 @@
   --shadow-xl: 0px 20px 30px 0px hsl(0 0% 0% / 0.5);
   --shadow-2xl: 0px 24px 48px 0px hsl(0 0% 0% / 0.6);
 
+  /* ─── Companion Canvas Tokens (dark) ──────────────────────────── */
+  --glass-bg: hsl(30 14% 12% / 0.82);
+  --glass-border: hsl(30 10% 22% / 0.6);
+  --frame-inner-shadow: inset 0 0 48px 0 hsl(0 0% 0% / 0.35);
+  --composer-pill-bg: hsl(30 12% 13% / 0.94);
+  /* ──────────────────────────────────────────────────────────────── */
+
   --sidebar-primary-border: hsl(var(--sidebar-primary));
   --sidebar-primary-border: hsl(
     from hsl(var(--sidebar-primary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha
@@ -246,6 +266,185 @@
   #root {
     position: relative;
     z-index: 1;
+  }
+}
+
+@layer components {
+  /* ─── Companion Canvas Components ────────────────────────────────
+   *
+   * .room-frame     — the rounded poster/world that houses the pixel art
+   * .presence-bubble — frosted glass speech surface anchored inside frame
+   * .composer-pill  — the pill-shaped input below the frame
+   * .logo-chip      — teal brand badge in the top bar
+   *
+   * ──────────────────────────────────────────────────────────────── */
+
+  .room-frame {
+    position: relative;
+    width: 100%;
+    max-width: 460px;
+    border-radius: var(--room-frame-radius);
+    overflow: hidden;
+    box-shadow:
+      var(--frame-inner-shadow),
+      var(--shadow-2xl);
+    /* Thin warm border so the frame reads as a physical object */
+    outline: 1.5px solid hsl(var(--border) / 0.5);
+    outline-offset: -1.5px;
+  }
+
+  /* Aspect ratio enforced via padding-bottom on the inner sizer,
+     or use aspect-ratio directly — companion page uses aspect-[3/4] */
+  .room-frame-sizer {
+    aspect-ratio: 3 / 4;
+    width: 100%;
+  }
+
+  /* The actual art fills the frame */
+  .room-frame img,
+  .room-frame .room-art {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  /* Subtle bottom-up gradient to anchor the bubble */
+  .room-frame::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(
+      to top,
+      hsl(30 18% 10% / 0.55) 0%,
+      hsl(30 18% 10% / 0.18) 38%,
+      transparent 65%
+    );
+    border-radius: inherit;
+  }
+
+  /* ── Frosted presence bubble — sits at bottom inside the frame ── */
+  .presence-bubble {
+    position: absolute;
+    bottom: 1.25rem;
+    left: 1rem;
+    right: 1rem;
+    z-index: 10;
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+    border-radius: 1rem;
+    padding: 0.875rem 1rem;
+  }
+
+  /* ── Pill composer below the frame ────────────────────────────── */
+  .composer-pill {
+    width: 100%;
+    max-width: 460px;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: var(--composer-pill-bg);
+    border: 1px solid hsl(var(--border));
+    border-radius: 9999px;
+    padding: 0.625rem 0.75rem 0.625rem 1.125rem;
+    box-shadow: var(--shadow-sm);
+    transition: box-shadow 0.15s ease, border-color 0.15s ease;
+  }
+
+  .composer-pill:focus-within {
+    border-color: hsl(var(--primary) / 0.45);
+    box-shadow: var(--shadow-md), 0 0 0 3px hsl(var(--primary) / 0.08);
+  }
+
+  .composer-pill input,
+  .composer-pill textarea {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    font-family: var(--font-sans);
+    font-size: 0.9375rem;
+    line-height: 1.5;
+    color: hsl(var(--foreground));
+    resize: none;
+  }
+
+  .composer-pill input::placeholder,
+  .composer-pill textarea::placeholder {
+    color: hsl(var(--muted-foreground));
+  }
+
+  /* Send / submit button inside the pill */
+  .composer-pill-send {
+    flex-shrink: 0;
+    width: 2rem;
+    height: 2rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
+    border-radius: 9999px;
+    border: none;
+    cursor: pointer;
+    transition: opacity 0.15s ease, transform 0.1s ease;
+  }
+
+  .composer-pill-send:hover {
+    opacity: 0.88;
+  }
+
+  .composer-pill-send:active {
+    transform: scale(0.94);
+  }
+
+  /* ── Logo chip — teal brand badge ─────────────────────────────── */
+  .logo-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    background: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
+    border-radius: 9999px;
+    padding: 0.25rem 0.75rem 0.25rem 0.5rem;
+    font-family: var(--font-sans);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    line-height: 1;
+  }
+
+  /* ── Companion top bar ─────────────────────────────────────────── */
+  .companion-topbar {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.875rem 1rem 0.5rem;
+  }
+
+  /* ── Companion page root ───────────────────────────────────────── */
+  .companion-root {
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: hsl(var(--background));
+  }
+
+  .companion-stage {
+    flex: 1;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem 1.25rem 1.5rem;
+    gap: 1rem;
   }
 }
 
@@ -335,5 +534,32 @@
   @keyframes fade-in-slow {
     from { opacity: 0; }
     to { opacity: 1; }
+  }
+
+  /* Companion-specific entrance for the room frame */
+  .frame-enter {
+    animation: frame-enter 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  @keyframes frame-enter {
+    from { opacity: 0; transform: translateY(14px) scale(0.97); }
+    to   { opacity: 1; transform: translateY(0)   scale(1); }
+  }
+
+  /* Soft float idle animation for the character */
+  .float-idle {
+    animation: float-idle 4s ease-in-out infinite;
+  }
+  @keyframes float-idle {
+    0%, 100% { transform: translateY(0px); }
+    50%       { transform: translateY(-5px); }
+  }
+
+  /* Presence line typing shimmer */
+  .presence-shimmer {
+    animation: presence-shimmer 1.8s ease-in-out infinite;
+  }
+  @keyframes presence-shimmer {
+    0%, 100% { opacity: 0.7; }
+    50%       { opacity: 1; }
   }
 }
