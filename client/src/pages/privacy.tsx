@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Header, Footnote } from "@/components/brand";
+import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,10 +29,12 @@ export default function PrivacyPage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <Header />
-      <main className="flex-1">
-        <div className="mx-auto max-w-xl px-6 md:px-8 pt-14 md:pt-20 pb-16">
+    <AppShell
+      header={<Header />}
+      footer={<Footnote />}
+      variant="narrow"
+      contentClassName="pt-14 md:pt-20"
+    >
           <p className="text-[11px] tracking-[0.25em] uppercase text-primary/80 font-medium mb-4">
             Privacy
           </p>
@@ -75,9 +78,6 @@ export default function PrivacyPage() {
               </Button>
             </div>
           </div>
-        </div>
-      </main>
-      <Footnote />
-    </div>
+    </AppShell>
   );
 }

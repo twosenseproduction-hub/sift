@@ -1,0 +1,20 @@
+# Copy to fly.toml and run `fly deploy` from this directory.
+# Use a distinct app name from your main Sift app.
+
+app = "your-app-kokoro-tts"
+primary_region = "sjc"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[http_service]
+  internal_port = 8888
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "2048mb"

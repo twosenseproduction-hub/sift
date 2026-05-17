@@ -39,7 +39,7 @@ export function TodayFromSiftCard({ onOpen, line }: TodayFromSiftCardProps) {
       data-testid="card-today-from-sift"
     >
       <div className="flex flex-col items-center text-center gap-4">
-        <div className="max-w-prose">
+        <div className="w-full max-w-prose">
           <p
             className="text-[10px] tracking-[0.2em] uppercase text-muted-foreground font-medium"
             data-testid="text-today-eyebrow"

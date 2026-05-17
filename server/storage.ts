@@ -35,6 +35,9 @@ import {
   type Theme,
   type SiftRevisionSnapshot,
   type DiscernmentProfileRow,
+  type SupportProfile,
+  type MemoryPreferences,
+  type UpdateSessionMemoryRequest,
   discernmentProfiles,
   sifts,
   users,
@@ -124,6 +127,9 @@ const siftCols = sqlite
   .all() as Array<{ name: string }>;
 if (!siftCols.some((c) => c.name === "user_id")) {
   sqlite.exec(`ALTER TABLE sifts ADD COLUMN user_id INTEGER;`);
+}
+if (!siftCols.some((c) => c.name === "guest_session_id")) {
+  sqlite.exec(`ALTER TABLE sifts ADD COLUMN guest_session_id TEXT;`);
 }
 // Safe migration: add status column + backfill existing rows to 'open'.
 if (!siftCols.some((c) => c.name === "status")) {
@@ -241,6 +247,27 @@ const siftColsMeta = sqlite
 if (!siftColsMeta.some((c) => c.name === "meta_sift")) {
   sqlite.exec(`ALTER TABLE sifts ADD COLUMN meta_sift INTEGER;`);
 }
+if (!siftColsMeta.some((c) => c.name === "ui_mode")) {
+  sqlite.exec(`ALTER TABLE sifts ADD COLUMN ui_mode TEXT;`);
+}
+if (!siftColsMeta.some((c) => c.name === "environment")) {
+  sqlite.exec(`ALTER TABLE sifts ADD COLUMN environment TEXT;`);
+}
+if (!siftColsMeta.some((c) => c.name === "support_profile_snapshot")) {
+  sqlite.exec(`ALTER TABLE sifts ADD COLUMN support_profile_snapshot TEXT;`);
+}
+if (!siftColsMeta.some((c) => c.name === "clarity_summary")) {
+  sqlite.exec(`ALTER TABLE sifts ADD COLUMN clarity_summary TEXT;`);
+}
+if (!siftColsMeta.some((c) => c.name === "memory_mode")) {
+  sqlite.exec(`ALTER TABLE sifts ADD COLUMN memory_mode TEXT NOT NULL DEFAULT 'full';`);
+}
+if (!siftColsMeta.some((c) => c.name === "pinned")) {
+  sqlite.exec(`ALTER TABLE sifts ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;`);
+}
+if (!siftColsMeta.some((c) => c.name === "transcript_expires_at")) {
+  sqlite.exec(`ALTER TABLE sifts ADD COLUMN transcript_expires_at INTEGER;`);
+}
 
 sqlite.exec(`
   CREATE TABLE IF NOT EXISTS discernment_profiles (
@@ -284,10 +311,20 @@ if (!userCols.some((c) => c.name === "consent_reflections")) {
     `ALTER TABLE users ADD COLUMN consent_reflections INTEGER NOT NULL DEFAULT 0;`
   );
 }
+if (!userCols.some((c) => c.name === "support_profile")) {
+  sqlite.exec(`ALTER TABLE users ADD COLUMN support_profile TEXT;`);
+}
+if (!userCols.some((c) => c.name === "memory_preferences")) {
+  sqlite.exec(`ALTER TABLE users ADD COLUMN memory_preferences TEXT;`);
+}
 
 sqlite.exec(
   `CREATE INDEX IF NOT EXISTS idx_sifts_user_created
      ON sifts(user_id, created_at DESC);`
+);
+sqlite.exec(
+  `CREATE INDEX IF NOT EXISTS idx_sifts_guest_created
+     ON sifts(guest_session_id, created_at DESC);`
 );
 
 export const db = drizzle(sqlite);
@@ -343,6 +380,7 @@ export interface IStorage {
     userId: number,
     microTasks: string[],
   ): Promise<boolean>;
+  updateSiftClaritySummary(id: string, summary: string): Promise<void>;
   getOrCreateDiscernmentProfile(userId: number): Promise<DiscernmentProfileRow>;
   updateDiscernmentProfile(
     userId: number,
@@ -386,6 +424,20 @@ export interface IStorage {
     userId: number,
     params: UpdateUserContactParams,
   ): Promise<User | undefined>;
+  updateUserSupportProfile(
+    userId: number,
+    params: UpdateUserSupportProfileParams,
+  ): Promise<User | undefined>;
+  updateUserMemoryPreferences(
+    userId: number,
+    memoryPreferences: MemoryPreferences,
+  ): Promise<User | undefined>;
+  updateSessionMemory(
+    id: string,
+    userId: number,
+    patch: UpdateSessionMemoryRequest,
+  ): Promise<Sift | undefined>;
+  deleteAllHistory(userId: number): Promise<void>;
   // V1 thread
   updateThread(id: string, userId: number, patch: UpdateThreadRequest): Promise<SiftListItem | undefined>;
   listThreads(userId: number): Promise<SiftListItem[]>;
@@ -450,6 +502,7 @@ export type CreateUserParams = {
   phone?: string | null;
   consentUpdates?: boolean;
   consentReflections?: boolean;
+  supportProfile?: SupportProfile | null;
 };
 
 export type UpdateUserContactParams = {
@@ -457,6 +510,10 @@ export type UpdateUserContactParams = {
   phone?: string | null;
   consentUpdates?: boolean;
   consentReflections?: boolean;
+};
+
+export type UpdateUserSupportProfileParams = {
+  supportProfile: SupportProfile | null;
 };
 
 export class DatabaseStorage implements IStorage {
@@ -517,11 +574,30 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteSift(id: string, userId: number): Promise<boolean> {
+    rawDb.prepare(`DELETE FROM thread_turns WHERE sift_id = ?`).run(id);
+    rawDb.prepare(`DELETE FROM thread_bookmarks WHERE sift_id = ?`).run(id);
+    rawDb.prepare(`DELETE FROM checkins WHERE sift_id = ?`).run(id);
     const res = db
       .delete(sifts)
       .where(and(eq(sifts.id, id), eq(sifts.userId, userId)))
       .run();
     return res.changes > 0;
+  }
+
+  async deleteAllHistory(userId: number): Promise<void> {
+    const rows = rawDb
+      .prepare(`SELECT id FROM sifts WHERE user_id = ?`)
+      .all(userId) as Array<{ id: string }>;
+    const tx = rawDb.transaction(() => {
+      for (const row of rows) {
+        rawDb.prepare(`DELETE FROM thread_turns WHERE sift_id = ?`).run(row.id);
+        rawDb.prepare(`DELETE FROM thread_bookmarks WHERE sift_id = ?`).run(row.id);
+        rawDb.prepare(`DELETE FROM checkins WHERE sift_id = ?`).run(row.id);
+      }
+      rawDb.prepare(`DELETE FROM sifts WHERE user_id = ?`).run(userId);
+      rawDb.prepare(`DELETE FROM discernment_profiles WHERE user_id = ?`).run(userId);
+    });
+    tx();
   }
 
   async updateSiftStatus(
@@ -656,6 +732,10 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(sifts.id, id), eq(sifts.userId, userId)))
       .run();
     return r.changes > 0;
+  }
+
+  async updateSiftClaritySummary(id: string, summary: string): Promise<void> {
+    db.update(sifts).set({ claritySummary: summary }).where(eq(sifts.id, id)).run();
   }
 
   async patchSiftClosurePrompt(
@@ -866,6 +946,9 @@ export class DatabaseStorage implements IStorage {
         phone: params.phone ?? null,
         consentUpdates: params.consentUpdates ? 1 : 0,
         consentReflections: params.consentReflections ? 1 : 0,
+        supportProfile: params.supportProfile
+          ? JSON.stringify(params.supportProfile)
+          : null,
         createdAt: Date.now(),
       })
       .returning()
@@ -905,6 +988,60 @@ export class DatabaseStorage implements IStorage {
       .where(eq(users.id, userId))
       .returning()
       .get();
+  }
+
+  async updateUserSupportProfile(
+    userId: number,
+    params: UpdateUserSupportProfileParams,
+  ): Promise<User | undefined> {
+    return db
+      .update(users)
+      .set({
+        supportProfile: params.supportProfile
+          ? JSON.stringify(params.supportProfile)
+          : null,
+      })
+      .where(eq(users.id, userId))
+      .returning()
+      .get();
+  }
+
+  async updateUserMemoryPreferences(
+    userId: number,
+    memoryPreferences: MemoryPreferences,
+  ): Promise<User | undefined> {
+    return db
+      .update(users)
+      .set({ memoryPreferences: JSON.stringify(memoryPreferences) })
+      .where(eq(users.id, userId))
+      .returning()
+      .get();
+  }
+
+  async updateSessionMemory(
+    id: string,
+    userId: number,
+    patch: UpdateSessionMemoryRequest,
+  ): Promise<Sift | undefined> {
+    const set: Partial<typeof sifts.$inferInsert> = {};
+    if (patch.memoryMode !== undefined) set.memoryMode = patch.memoryMode;
+    if (patch.pinned !== undefined) set.pinned = patch.pinned ? 1 : 0;
+    if (patch.transcriptExpiresAt !== undefined) {
+      set.transcriptExpiresAt = patch.transcriptExpiresAt;
+    }
+    if (Object.keys(set).length === 0) return this.getSift(id);
+
+    const updated = db
+      .update(sifts)
+      .set(set)
+      .where(and(eq(sifts.id, id), eq(sifts.userId, userId)))
+      .returning()
+      .get();
+
+    if (updated && patch.memoryMode === "clarity_only") {
+      rawDb.prepare(`DELETE FROM thread_turns WHERE sift_id = ?`).run(id);
+    }
+    return updated;
   }
 
   async listUserSiftsFull(userId: number): Promise<Sift[]> {

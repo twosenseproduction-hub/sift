@@ -1,3 +1,6 @@
+# Cursor MCP (machine-specific paths; keep local)
+.cursor/mcp.json
+
 node_modules/
 dist/
 .vite/

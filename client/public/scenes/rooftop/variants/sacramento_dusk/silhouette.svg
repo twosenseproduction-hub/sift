@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 220" preserveAspectRatio="xMidYMax meet" aria-hidden="true">
+  <title>sacramento-inspired skyline silhouette</title>
+  <rect width="1200" height="220" fill="transparent"/>
+  <!-- soft cluster + twin tower hint (stylized, not landmark-accurate) -->
+  <path fill="rgba(10,14,20,0.9)" d="M0 220 L0 125 L30 122 L48 100 L62 118 L90 112 L110 88 L128 105 L155 98 L175 78 L195 95 L220 88 L245 72 L268 90 L295 85 L320 68 L345 88 L370 82 L395 95 L420 75 L448 92 L475 85 L500 105 L530 78 L555 95 L580 88 L605 70 L635 92 L665 85 L695 98 L725 75 L755 92 L785 88 L815 105 L845 78 L875 95 L905 88 L935 72 L965 95 L995 88 L1025 100 L1055 85 L1085 98 L1115 92 L1145 108 L1175 100 L1200 108 L1200 220 Z"/>
+  <path fill="rgba(8,10,14,0.95)" d="M520 220 L522 95 L528 92 L532 95 L534 220 Z M556 220 L558 88 L568 85 L572 88 L574 220 Z"/>
+</svg>

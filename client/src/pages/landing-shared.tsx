@@ -1,7 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Moon, Sun } from "lucide-react";
 import { Logo } from "@/components/brand";
-import { useTheme } from "@/lib/theme";
 
 // Shared primitives used by both the landing page and the pricing page.
 // Lifted out of landing.tsx so multiple marketing surfaces can share the
@@ -125,12 +123,11 @@ export function Pill({ children }: { children: React.ReactNode }) {
 }
 
 // Sticky glass header — adds a faint border once the user scrolls past
-// the top. Theme toggle and CTA on the right. The `current` prop tells
+// the top. CTA on the right. The `current` prop tells
 // it whether we are already on the landing page (use bare anchors that
 // the smooth-scroll handler picks up) or somewhere else (build full
 // hash-route URLs to the landing page sections).
 export function LandingHeader({ current }: { current: "landing" | "other" }) {
-  const { theme, toggle } = useTheme();
   const [scrolled, setScrolled] = useState(false);
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 10);
@@ -199,19 +196,6 @@ export function LandingHeader({ current }: { current: "landing" | "other" }) {
           </a>
         </nav>
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={toggle}
-            aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
-            data-testid="button-theme"
-            className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-border/60 bg-card/70 backdrop-blur-md transition-transform hover:-translate-y-px"
-          >
-            {theme === "dark" ? (
-              <Sun className="h-4 w-4" />
-            ) : (
-              <Moon className="h-4 w-4" />
-            )}
-          </button>
           <a
             href={getAppHref()}
             className="hidden h-11 items-center justify-center rounded-full border border-border/60 bg-card/70 px-5 text-sm font-semibold backdrop-blur-md transition-transform hover:-translate-y-px md:inline-flex"

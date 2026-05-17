@@ -1,7 +1,7 @@
 import type { SiftResult } from "@shared/schema";
 
 /**
- * Static sift-shaped payload for UI preview (`#/demo-sift`).
+ * Static sift-shaped payload for UI previews and tests.
  * Not persisted — avoids API calls when browsing signal/noise layout.
  */
 export const DEMO_SIFT_PREVIEW: SiftResult = {

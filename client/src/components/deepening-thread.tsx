@@ -104,6 +104,9 @@ export function DeepeningThread({
         onCare();
         return;
       }
+      if (data.type === "summary") {
+        return;
+      }
       setTurns((prev) => [...prev, ...data.turns]);
       setText("");
       if (data.bookmark) {

@@ -15,6 +15,8 @@ import { CareScreen } from "./care-screen";
 interface Props {
   sift: SiftResult;
   readOnly?: boolean; // true when viewing someone else's shared sift
+  /** Nested in a single parent shell (e.g. /s/:id) — drop extra outer borders/margins. */
+  embedded?: boolean;
 }
 
 const STATUS_LABEL: Record<CheckinStatus, string> = {
@@ -29,7 +31,7 @@ const STATUS_NOTE: Record<CheckinStatus, string> = {
   in_progress: "Where are you right now with it?",
 };
 
-export function CheckinBlock({ sift, readOnly }: Props) {
+export function CheckinBlock({ sift, readOnly, embedded = false }: Props) {
   const [status, setStatus] = useState<CheckinStatus | null>(null);
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -91,7 +93,7 @@ export function CheckinBlock({ sift, readOnly }: Props) {
   if (careOpen) {
     return (
       <section
-        className="pt-12 mt-12 border-t border-border/60"
+        className={embedded ? "pt-0 mt-0" : "pt-12 mt-12 border-t border-border/60"}
         data-testid="section-checkin"
       >
         <CareScreen
@@ -112,12 +114,25 @@ export function CheckinBlock({ sift, readOnly }: Props) {
   }
 
   return (
-    <section className="pt-12 mt-12 border-t border-border/60" data-testid="section-checkin">
-      <div className="flex items-center gap-3 mb-6">
-        <span className="h-px w-6 bg-primary/40" />
-        <span className="text-[11px] tracking-[0.2em] uppercase font-medium text-primary/80">
-          Check in
-        </span>
+    <section
+      className={
+        embedded
+          ? "pt-8 border-t border-border/35"
+          : "pt-12 mt-12 border-t border-border/60"
+      }
+      data-testid="section-checkin"
+    >
+      <div className={embedded ? "mb-5" : "flex items-center gap-3 mb-6"}>
+        {embedded ? (
+          <h2 className="font-serif text-lg text-foreground">Check in</h2>
+        ) : (
+          <>
+            <span className="h-px w-6 bg-primary/40" />
+            <span className="text-[11px] tracking-[0.2em] uppercase font-medium text-primary/80">
+              Check in
+            </span>
+          </>
+        )}
       </div>
 
       {/* Past check-ins */}
@@ -132,6 +147,7 @@ export function CheckinBlock({ sift, readOnly }: Props) {
       {/* First-time check-in intro — owner only, first sift, not dismissed */}
       {showIntro && (
         <FirstCheckinIntro
+          embedded={embedded}
           response={introResponse}
           onAnswer={(answer) => {
             setIntroResponse(answer);
@@ -145,7 +161,13 @@ export function CheckinBlock({ sift, readOnly }: Props) {
 
       {/* New check-in composer (owner only) */}
       {!readOnly && !showIntro && (
-      <div className="rounded-2xl border border-border/70 bg-card/50 p-5 md:p-6">
+      <div
+        className={
+          embedded
+            ? "rounded-lg bg-muted/20 px-4 py-4 md:px-5 md:py-5"
+            : "rounded-2xl border border-border/70 bg-card/50 p-5 md:p-6"
+        }
+      >
         {checkins.length === 0 ? (
           <>
             <p className="text-[11px] tracking-[0.22em] uppercase font-medium text-muted-foreground/80 mb-2">
@@ -259,19 +281,25 @@ export function CheckinBlock({ sift, readOnly }: Props) {
 // ---------- First-time check-in intro ----------
 
 interface FirstCheckinIntroProps {
+  embedded?: boolean;
   response: null | "did_it" | "did_not";
   onAnswer: (answer: "did_it" | "did_not") => void;
   onContinue: () => void;
 }
 
 function FirstCheckinIntro({
+  embedded = false,
   response,
   onAnswer,
   onContinue,
 }: FirstCheckinIntroProps) {
   return (
     <div
-      className="fade-up rounded-2xl border border-primary/25 bg-primary/5 p-5 md:p-7 mb-6"
+      className={`fade-up mb-6 p-5 md:p-7 ${
+        embedded
+          ? "rounded-lg border border-primary/15 bg-primary/[0.03]"
+          : "rounded-2xl border border-primary/25 bg-primary/5"
+      }`}
       data-testid="first-checkin-intro"
     >
       <h3

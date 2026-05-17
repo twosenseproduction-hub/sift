@@ -21,6 +21,8 @@ interface BookmarkCardProps {
   onCloseLoop?: () => void;
   // When rendered at the top of a thread page we want it open by default.
   defaultOpen?: boolean;
+  /** Inside a parent panel (e.g. /s/:id) — no second heavy card frame. */
+  flush?: boolean;
 }
 
 export function BookmarkCard({
@@ -28,13 +30,18 @@ export function BookmarkCard({
   onKeepProcessing,
   onCloseLoop,
   defaultOpen = false,
+  flush = false,
 }: BookmarkCardProps) {
   const [open, setOpen] = useState(defaultOpen);
   const p = bookmark.payload;
 
   return (
     <section
-      className="rounded-2xl border border-border/60 bg-card/60 px-5 py-5 md:px-6 md:py-6"
+      className={
+        flush
+          ? "border-0 bg-transparent p-0 shadow-none"
+          : "rounded-2xl border border-border/60 bg-card/60 px-5 py-5 md:px-6 md:py-6"
+      }
       data-testid="card-bookmark"
     >
       {/* Header — tappable to toggle */}

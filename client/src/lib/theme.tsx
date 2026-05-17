@@ -1,37 +1,12 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { useEffect } from "react";
 
-type Theme = "light" | "dark";
-
-interface ThemeCtx {
-  theme: Theme;
-  toggle: () => void;
-}
-
-const Ctx = createContext<ThemeCtx>({ theme: "light", toggle: () => {} });
-
+/**
+ * Keeps the UI on the warm light palette (same tokens as the room home).
+ * Dark mode is not exposed in the product chrome.
+ */
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setTheme] = useState<Theme>(() => {
-    if (typeof window === "undefined") return "light";
-    return window.matchMedia("(prefers-color-scheme: dark)").matches
-      ? "dark"
-      : "light";
-  });
-
   useEffect(() => {
-    const root = document.documentElement;
-    root.classList.toggle("dark", theme === "dark");
-  }, [theme]);
-
-  return (
-    <Ctx.Provider
-      value={{
-        theme,
-        toggle: () => setTheme((t) => (t === "dark" ? "light" : "dark")),
-      }}
-    >
-      {children}
-    </Ctx.Provider>
-  );
+    document.documentElement.classList.remove("dark");
+  }, []);
+  return <>{children}</>;
 }
-
-export const useTheme = () => useContext(Ctx);

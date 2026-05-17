@@ -59,14 +59,14 @@ export function AuthDialog({ open, onOpenChange, initialMode = "signup" }: Props
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-h-[min(90dvh,760px)] max-w-md overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-serif text-2xl">
-            {mode === "signup" ? "Keep your thread" : "Welcome back"}
+            {mode === "signup" ? "Save your clarity" : "Welcome back"}
           </DialogTitle>
           <DialogDescription className="text-muted-foreground">
             {mode === "signup"
-              ? "Pick a handle and a passphrase. A quiet place for your sifts."
+              ? "Create your space to come back to this. Handle and passphrase only."
               : "Enter your handle and passphrase."}
           </DialogDescription>
         </DialogHeader>
@@ -115,7 +115,7 @@ export function AuthDialog({ open, onOpenChange, initialMode = "signup" }: Props
           {mode === "signup" && (
             <>
               <div className="space-y-1.5">
-                <Label htmlFor="contact" className="text-xs uppercase tracking-widest text-muted-foreground">Email or phone</Label>
+                <Label htmlFor="contact" className="text-xs uppercase tracking-widest text-muted-foreground">Email or phone optional</Label>
                 <Input
                   id="contact"
                   data-testid="input-contact"
@@ -126,11 +126,10 @@ export function AuthDialog({ open, onOpenChange, initialMode = "signup" }: Props
                   autoCorrect="off"
                   spellCheck={false}
                   placeholder="you@example.com or +15551234567"
-                  required
                   disabled={loading}
                 />
                 <p className="text-xs text-muted-foreground pt-1">
-                  Used only if you opt in below. Never shared.
+                  Add this only if you want reminders or updates later. Never shared.
                 </p>
               </div>
 
@@ -160,6 +159,7 @@ export function AuthDialog({ open, onOpenChange, initialMode = "signup" }: Props
                   </span>
                 </label>
               </div>
+
             </>
           )}
 
@@ -170,10 +170,10 @@ export function AuthDialog({ open, onOpenChange, initialMode = "signup" }: Props
               className="text-sm text-muted-foreground hover:text-foreground underline-offset-4 hover:underline transition-colors"
               data-testid="link-toggle-mode"
             >
-              {mode === "signin" ? "Create a thread" : "I already have one"}
+              {mode === "signin" ? "Create your space" : "I already have one"}
             </button>
             <Button type="submit" disabled={loading} data-testid="button-auth-submit">
-              {loading ? "…" : mode === "signin" ? "Sign in" : "Create thread"}
+              {loading ? "…" : mode === "signin" ? "Sign in" : "Keep this Sift"}
             </Button>
           </div>
         </form>

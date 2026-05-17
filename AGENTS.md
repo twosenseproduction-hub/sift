@@ -1,5 +1,7 @@
 # Sift — Development Context
 
+**Product direction** was reset from the **app concept design board**; see [`docs/PRODUCT-DIRECTION.md`](docs/PRODUCT-DIRECTION.md) and the reference image [`docs/assets/app-direction-board.png`](docs/assets/app-direction-board.png). This file remains the detailed voice, mode, and schema spec until the shipped app is aligned with that direction.
+
 ## Product
 Sift is a web app (app.siftnow.io) + marketing site (siftnow.io, deployed on Fly.io) that helps users separate signal from noise in what they're holding — emotionally or operationally — and gives them one next step.
 

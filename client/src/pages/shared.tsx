@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useRoute, Link } from "wouter";
 import { clearResume, readResume } from "@/lib/resume";
 import { Header, Footnote } from "@/components/brand";
+import { AppShell } from "@/components/app-shell";
 import { Result, Thinking } from "@/components/sift-ui";
 import { CheckinBlock } from "@/components/checkin";
 import { FeedbackPrompt } from "@/components/feedback-prompt";
@@ -52,11 +53,7 @@ export default function Shared() {
   }, [data?.id, data?.status]);
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <Header />
-
-      <main className="flex-1">
-        <div className="mx-auto max-w-3xl px-6 md:px-8 pb-16 pt-8 md:pt-12">
+    <AppShell header={<Header />} footer={<Footnote />} contentClassName="pt-8 md:pt-12">
           {isLoading && <Thinking />}
 
           {isError && (
@@ -97,12 +94,13 @@ export default function Shared() {
                 </p>
               </div>
 
-              {/* Owner re-entry path: bookmark first, thread underneath when
-                  the user chooses to keep processing. */}
-              {data.mine && activeBookmark && (
-                <div className="mb-10">
+              <div className="rounded-2xl border border-border/40 bg-card/50 px-5 py-8 md:px-8 md:py-10 space-y-10 md:space-y-12">
+                {/* Owner re-entry path: bookmark first, thread underneath when
+                    the user chooses to keep processing. */}
+                {data.mine && activeBookmark && (
                   <BookmarkCard
                     bookmark={activeBookmark}
+                    flush
                     defaultOpen={view === "bookmark"}
                     onKeepProcessing={() => setView("deepening")}
                     onCloseLoop={
@@ -111,39 +109,35 @@ export default function Shared() {
                         : () => setView("deepening")
                     }
                   />
-                </div>
-              )}
+                )}
 
-              {data.mine && view === "deepening" && (
-                <div className="mb-10">
-                  <p
-                    className="text-[11px] tracking-[0.25em] uppercase text-primary/80 mb-3 font-medium"
-                    data-testid="text-shared-deepen-eyebrow"
-                  >
-                    Keep going
-                  </p>
-                  <DeepeningThread
-                    siftId={data.id}
-                    initialTurns={data.turns ?? []}
-                    initialBookmark={activeBookmark}
-                    onCare={() => setView("care")}
-                    onBookmarkUpdate={(b) => setBookmarkOverride(b)}
-                  />
-                </div>
-              )}
+                {data.mine && view === "deepening" && (
+                  <div>
+                    <p
+                      className="text-[11px] tracking-[0.25em] uppercase text-primary/80 mb-3 font-medium"
+                      data-testid="text-shared-deepen-eyebrow"
+                    >
+                      Keep going
+                    </p>
+                    <DeepeningThread
+                      siftId={data.id}
+                      initialTurns={data.turns ?? []}
+                      initialBookmark={activeBookmark}
+                      onCare={() => setView("care")}
+                      onBookmarkUpdate={(b) => setBookmarkOverride(b)}
+                    />
+                  </div>
+                )}
 
-              {/* Full sift output — always visible. Owners with a bookmark still
-                  saw nothing unless they expanded “See the original sift”; that
-                  hid matters/noise and the next step by default. */}
-              <div className="mt-10">
-                <Result result={data} readOnly={!data.mine} />
+                {/* Full sift output — always visible. */}
+                <Result result={data} readOnly={!data.mine} quietChrome />
+
+                {data.mine && (
+                  <FeedbackPrompt compact stage="result" siftId={data.id} />
+                )}
+
+                <CheckinBlock sift={data} readOnly={!data.mine} embedded />
               </div>
-
-              {data.mine && (
-                <FeedbackPrompt stage="result" siftId={data.id} />
-              )}
-
-              <CheckinBlock sift={data} readOnly={!data.mine} />
 
               <div className="pt-12 mt-12 border-t border-border/60 text-center">
                 <p className="text-sm text-muted-foreground mb-4">
@@ -164,10 +158,6 @@ export default function Shared() {
               </div>
             </>
           )}
-        </div>
-      </main>
-
-      <Footnote />
-    </div>
+    </AppShell>
   );
 }

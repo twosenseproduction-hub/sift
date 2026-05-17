@@ -6,6 +6,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { storage, rawDb } from "./storage";
 import { selectDailyPrompt, type RecentSiftSignal } from "./daily-prompt";
 import { screenForCrisis, screenOutputForCrisis } from "./crisis-screen";
+import { registerKokoroTtsProxy } from "./kokoro-tts-proxy";
 import {
   analyzeRequestSchema,
   analysisSchema,
@@ -22,6 +23,11 @@ import {
   loginSchema,
   signupSchema,
   contactUpdateSchema,
+  supportProfileSchema,
+  supportProfileUpdateSchema,
+  memoryPreferencesSchema,
+  memoryPreferencesUpdateSchema,
+  defaultMemoryPreferences,
   classifyContact,
   checkinRequestSchema,
   checkinAnalysisSchema,
@@ -38,6 +44,8 @@ import {
   sortPromptPayloadSchema,
   sortRequestSchema,
   updateThreadSchema,
+  siftSummarySchema,
+  updateSessionMemorySchema,
   type Analysis,
   type OperatorArtifact,
   type CheckinAnalysis,
@@ -57,13 +65,34 @@ import {
   type SortResponse,
   type Bookmark,
   type Sift,
+  type SiftSummary,
+  type ClientTranscriptTurn,
   type ReEntryResponse,
   type FeedbackStats,
   type AdminReviewFeedback,
   type AdminReviewSift,
+  type SupportProfile,
+  type MemoryPreferences,
+  type LibraryResponse,
+  type LibraryRecurringTheme,
+  type LibrarySiftItem,
+  type LibrarySiftDetail,
+  type LibrarySiftPreview,
 } from "@shared/schema";
 
-const client = new Anthropic();
+type SiftClientAuthMode = "default" | "server-api-key";
+
+const defaultSiftClient = new Anthropic();
+let serverApiKeySiftClient: Anthropic | null = null;
+
+function getSiftClient(authMode: SiftClientAuthMode = "default"): Anthropic {
+  const serverApiKey = process.env.SIFT_API_KEY;
+  if (serverApiKey) {
+    serverApiKeySiftClient ??= new Anthropic({ apiKey: serverApiKey });
+    return serverApiKeySiftClient;
+  }
+  return defaultSiftClient;
+}
 
 // Model name. Defaults to a real Anthropic public model name so the app works
 // against api.anthropic.com out of the box. When running inside the Perplexity
@@ -620,25 +649,328 @@ const META_SIFT_SYSTEM_SUFFIX = `
 
 This is a meta-sift: the user is sifting a recurring pattern, not a single event. The goal is to identify the root dynamic beneath the pattern, not to restate the pattern. The next step should address the underlying structure, not any specific instance. Avoid restating the theme back to the user — compress toward the root cause and one structural move.`;
 
+const WARMUP_ANALYSIS_SYSTEM_SUFFIX = `
+
+Bedroom warmup phase:
+- For this message, act like a calm, smart friend named Sift.
+- The visible "reflection" must feel like a warm companion, not an analyst.
+- Write 1–2 short sentences that acknowledge the feeling or situation.
+- End with exactly one simple clarifying question.
+- Do not list "what matters", "noise", or "next step" inside the reflection.
+- Still return every required JSON field. Keep matters/noise/nextStep internally useful, but the user will only see the reflection during warmup.`;
+
+function greetingWarmupAnalysis(input: string): Analysis {
+  return {
+    themes: [
+      {
+        title: "Gentle Opening",
+        summary: "The user is arriving with a simple greeting.",
+      },
+    ],
+    coreIntent: "The user is opening the conversation.",
+    nextStep: "Share what has been loud on your mind when you are ready.",
+    reflection:
+      "Hey. I'm glad you're here.\n\nWhenever you're ready, tell me what's been loud on your mind.",
+    matters: ["the user is arriving", "making the space feel easy"],
+    noise: ["pushing for depth too soon"],
+    signalReason:
+      "A simple greeting calls for warmth and permission, not analysis.",
+    stepScope: {
+      durationEstimate: "~5 min",
+      stoppingCondition: "when something real has been named",
+    },
+  };
+}
+
+const WARMUP_DEEPEN_SYSTEM_PROMPT = `You are Sift in Bedroom warmup mode.
+
+Return JSON only matching this shape:
+{
+  "mirror": "1-2 warm sentences acknowledging what the user just said",
+  "question": "one simple clarifying question",
+  "matters": ["optional hidden structured signal if the exchange is substantive"]
+}
+
+Rules:
+- For this message, act like a calm, smart friend named Sift.
+- Do not list what matters, what is noise, or a next step.
+- Keep it brief and human.
+- Ask only one question.
+- Only include "matters" when the user's message gives enough substance to name what deserves attention.
+- Anchor the mirror and question in the user's newest words. Never reuse old examples or generic themes that are not in this thread.`;
+
+const SUMMARY_SYSTEM_PROMPT = `You are Sift summarizing an active thread.
+
+Return JSON only with this shape:
+{
+  "summary": "one paragraph tying the conversation together",
+  "themes": ["2-4 core themes"],
+  "constraints": ["optional realities or limits that matter"],
+  "canWait": ["optional things present but not urgent"],
+  "options": [
+    { "id": "short-kebab-id", "label": "short path name", "description": "optional 1-2 sentence elaboration" }
+  ],
+  "recommendedNextStep": { "id": "must match one option id", "label": "single recommended path", "description": "optional concrete next move" }
+}
+
+Rules:
+- The user's visible transcript is authoritative. If an earlier Sift reply seems generic or off-target, do not repeat its language.
+- Keep the summary grounded in what the user actually brought, especially the latest user exchange.
+- Name the real topic of the exchange in plain words. If the user named a person or relationship, preserve that context.
+- Themes are not diagnoses. Use plain, concrete language.
+- Avoid generic self-help abstractions like "what choosing closes", "keeping options alive", or "one project" unless the user actually talked about those things.
+- Options are distinct paths, not tiny tasks, but each option must be specific to this conversation.
+- The recommended next step should be one path Sift would choose right now, grounded in the actual relational, emotional, or operational issue raised.`;
+
+function renderSupportProfileInstructions(profile?: SupportProfile | null): string {
+  if (!profile?.mode && !profile?.startingSpace && !profile?.primaryIntent && !profile?.supportStyle) return "";
+
+  const modeMap: Record<NonNullable<SupportProfile["mode"]>, string> = {
+    base:
+      "The user chose Sift Base. Be more minimal, concise, structured, and utility-forward.",
+    companion:
+      "The user chose Sift Companion. Be warmer, more relational, more presence-oriented, and companion-led.",
+  };
+  const intentMap: Record<NonNullable<SupportProfile["primaryIntent"]>, string> = {
+    sort_thoughts:
+      "The user said what would help most is sorting their thoughts. Structure the reflection, organize signal vs noise, and help untangle the message.",
+    calm_noise:
+      "The user said what would help most is calming the noise. Lead by reducing overwhelm; keep complexity low and do not crowd the reply.",
+    understand_feelings:
+      "The user said what would help most is understanding what they are feeling. Emphasize naming, emotional clarity, and inner understanding.",
+    find_next_step:
+      "The user said what would help most is finding a next step. Move toward action sooner and shorten the path to a concrete recommendation.",
+  };
+
+  const styleMap: Record<NonNullable<SupportProfile["supportStyle"]>, string> = {
+    gentle:
+      "They asked to be supported gently. Use soft phrasing, more reassurance, and slower pacing.",
+    clear:
+      "They asked to be supported clearly. Use concise, clean language and structured replies.",
+    direct:
+      "They asked to be supported directly. Name the core issue precisely, use less cushioning, and move faster to the real point.",
+    step_by_step:
+      "They asked for step-by-step support. Break reflections into smaller moves and reduce cognitive leaps.",
+  };
+
+  return [
+    "Support profile — use this as active response strategy, not passive metadata:",
+    profile.mode ? `- ${modeMap[profile.mode]}` : null,
+    profile.startingSpace
+      ? `- The user chose ${profile.startingSpace} as their starting space. Treat this mostly as experiential context; lightly match the entry tone without over-explaining it.`
+      : null,
+    profile.primaryIntent ? `- ${intentMap[profile.primaryIntent]}` : null,
+    profile.supportStyle ? `- ${styleMap[profile.supportStyle]}` : null,
+    "- Do not mention these preferences unless the user asks. Let them shape tone, pacing, question style, summaries, and next-step recommendations.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function parseJsonArrayColumn(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is string => typeof item === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function parseThemesColumn(raw: string | null | undefined): Theme[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is Theme =>
+          item &&
+          typeof item === "object" &&
+          typeof (item as Theme).title === "string" &&
+          typeof (item as Theme).summary === "string",
+        )
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function parseSiftSummaryColumn(raw: string | null | undefined): SiftSummary | null {
+  if (!raw) return null;
+  try {
+    return siftSummarySchema.parse(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+
+function parseSupportProfileColumn(raw: string | null | undefined): SupportProfile | null {
+  if (!raw) return null;
+  try {
+    return supportProfileSchema.parse(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+
+function parseMemoryPreferencesColumn(raw: string | null | undefined): MemoryPreferences {
+  if (!raw) return defaultMemoryPreferences;
+  try {
+    return memoryPreferencesSchema.parse({
+      ...defaultMemoryPreferences,
+      ...JSON.parse(raw),
+    });
+  } catch {
+    return defaultMemoryPreferences;
+  }
+}
+
+function normalizedEnvironment(value: string | null | undefined): LibrarySiftItem["environment"] {
+  return value === "bedroom" || value === "desk" || value === "rooftop" || value === "library"
+    ? value
+    : null;
+}
+
+function libraryPreviewFor(args: {
+  sift: Sift;
+  themes: Theme[];
+  matters: string[];
+  noise: string[];
+  bookmark?: Bookmark | null;
+  clarity?: SiftSummary | null;
+}): LibrarySiftPreview {
+  if (args.clarity) {
+    const noiseItems = (args.clarity.canWait?.length
+      ? args.clarity.canWait
+      : args.clarity.constraints ?? []
+    ).slice(0, 3);
+    return {
+      summary: args.clarity.summary,
+      matters: args.clarity.themes.slice(0, 4),
+      noise: noiseItems,
+      nextStep: args.clarity.recommendedNextStep.label,
+    };
+  }
+  if (args.bookmark) {
+    return {
+      summary: args.bookmark.payload.unfolded || args.bookmark.payload.pointing,
+      matters: args.bookmark.payload.matters.slice(0, 4),
+      noise: args.bookmark.payload.noise.slice(0, 3),
+      nextStep: args.bookmark.payload.nextStep,
+    };
+  }
+  return {
+    summary: args.sift.reflection || args.sift.coreIntent,
+    matters: args.matters.length ? args.matters.slice(0, 4) : args.themes.map((t) => t.title).slice(0, 4),
+    noise: args.noise.slice(0, 3),
+    nextStep: args.sift.nextStep,
+  };
+}
+
+function libraryItemFor(args: {
+  sift: Sift;
+  bookmark?: Bookmark | null;
+}): LibrarySiftItem {
+  const themes = parseThemesColumn(args.sift.themes);
+  const matters = parseJsonArrayColumn(args.sift.matters);
+  const noise = parseJsonArrayColumn(args.sift.noise);
+  const clarity = parseSiftSummaryColumn(args.sift.claritySummary);
+  const supportProfile = parseSupportProfileColumn(args.sift.supportProfileSnapshot);
+  const preview = libraryPreviewFor({
+    sift: args.sift,
+    themes,
+    matters,
+    noise,
+    bookmark: args.bookmark,
+    clarity,
+  });
+  const title =
+    themes[0]?.title ||
+    args.sift.coreIntent ||
+    preview.summary.split(/[.!?]/)[0]?.trim() ||
+    "Untitled sift";
+  const tags = Array.from(
+    new Set([...themes.map((theme) => theme.title), ...matters].filter(Boolean)),
+  ).slice(0, 8);
+
+  return {
+    id: args.sift.id,
+    title,
+    createdAt: args.sift.createdAt,
+    summary: preview.summary,
+    tags,
+    hasNextStep: Boolean(preview.nextStep?.trim()),
+    pinned: args.sift.pinned === 1,
+    memoryMode:
+      args.sift.memoryMode === "clarity_only" || args.sift.memoryMode === "do_not_remember"
+        ? args.sift.memoryMode
+        : "full",
+    transcriptExpiresAt: args.sift.transcriptExpiresAt ?? null,
+    mode:
+      args.sift.uiMode === "base" || args.sift.uiMode === "companion"
+        ? args.sift.uiMode
+        : ((args.sift.mode as "personal" | "operator" | null) ?? null),
+    environment: normalizedEnvironment(args.sift.environment ?? supportProfile?.startingSpace),
+    preview,
+  };
+}
+
+function recurringThemesFor(items: LibrarySiftItem[]): LibraryRecurringTheme[] {
+  const counts = new Map<string, number>();
+  for (const item of items) {
+    for (const tag of item.tags.slice(0, 6)) {
+      const label = tag.trim();
+      if (!label) continue;
+      const key = label.toLowerCase();
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+  }
+  return Array.from(counts.entries())
+    .map(([key, count]) => ({
+      label: items.flatMap((item) => item.tags).find((tag) => tag.toLowerCase() === key) ?? key,
+      count,
+    }))
+    .filter((theme) => theme.count > 1)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 6);
+}
+
 async function runAnalysis(
   input: string,
-  opts?: { preSortContext?: string; metaSift?: boolean },
+  opts?: {
+    preSortContext?: string;
+    metaSift?: boolean;
+    authMode?: SiftClientAuthMode;
+    phase?: "warmup" | "structured";
+    intent?: "warmup-companion" | "greeting-warmup";
+    supportProfile?: SupportProfile | null;
+  },
 ): Promise<Analysis> {
+  if (opts?.intent === "greeting-warmup") {
+    return greetingWarmupAnalysis(input);
+  }
+
   const extra = opts?.preSortContext
     ? `\n\n${opts.preSortContext}\n`
     : "";
-  const system =
+  const baseSystem =
     opts?.metaSift === true
       ? `${SYSTEM_PROMPT}${META_SIFT_SYSTEM_SUFFIX}`
       : SYSTEM_PROMPT;
-  const msg = await client.messages.create({
+  const system =
+    opts?.phase === "warmup"
+      ? `${baseSystem}${WARMUP_ANALYSIS_SYSTEM_SUFFIX}`
+      : baseSystem;
+  const supportProfileContext = renderSupportProfileInstructions(opts?.supportProfile);
+  const msg = await getSiftClient(opts?.authMode).messages.create({
     model: MODEL,
     max_tokens: 1024,
     system,
     messages: [
       {
         role: "user",
-        content: `Here is what I'm holding right now:\n\n${input}${extra}\nSift it. Return JSON only.`,
+        content: `Here is what I'm holding right now:\n\n${input}${extra}${supportProfileContext ? `\n\n${supportProfileContext}\n` : ""}\nSift it. Return JSON only.`,
       },
     ],
   });
@@ -659,8 +991,9 @@ async function runAnalysis(
     parsed = JSON.parse(match[0]);
   }
   const analysis = analysisSchema.parse(parsed);
-  if (!analysis.stepScope) {
-    return {
+  const completeAnalysis = analysis.stepScope
+    ? analysis
+    : {
       ...analysis,
       stepScope: {
         durationEstimate: "~20 min",
@@ -668,8 +1001,10 @@ async function runAnalysis(
           "when you can name one concrete piece of this move that is finished",
       },
     };
+  if (!outputMatchesSource(analysisToText(completeAnalysis), input)) {
+    throw new Error("Generated sift did not match the current input closely enough.");
   }
-  return analysis;
+  return completeAnalysis;
 }
 
 // runOperatorAnalysis — Phase 3 helper. Mirrors runAnalysis but uses the
@@ -683,8 +1018,11 @@ async function runAnalysis(
 // union → throws a Zod validation error. Callers decide whether to fall back
 // to runAnalysis() or surface the failure. Nothing is persisted to the DB
 // from inside this function.
-async function runOperatorAnalysis(input: string): Promise<OperatorArtifact> {
-  const msg = await client.messages.create({
+async function runOperatorAnalysis(
+  input: string,
+  opts?: { authMode?: SiftClientAuthMode },
+): Promise<OperatorArtifact> {
+  const msg = await getSiftClient(opts?.authMode).messages.create({
     model: MODEL,
     max_tokens: 1024,
     system: OPERATOR_SYSTEM_PROMPT,
@@ -755,7 +1093,7 @@ async function runBreakdownMicroTasks(nextStep: string): Promise<string[]> {
     "[INSERT NEXT STEP HERE]",
     nextStep,
   );
-  const msg = await client.messages.create({
+  const msg = await getSiftClient().messages.create({
     model: MODEL,
     max_tokens: 400,
     system,
@@ -795,6 +1133,8 @@ Two variants:
 
 "different" — a different shape of move on the same signal. Same underlying tension, different angle of action (e.g. a conversation instead of writing, a constraint instead of a draft, a question instead of an answer).
 
+When the user also supplies a short "what felt off" note about the current step, treat that note as a hard constraint on the new move's shape. Do not invent facts about their life that are not in the original input, the core intent, the current step, or their note. Still return exactly one next step.
+
 Output STRICT JSON:
 {
   "nextStep": string,
@@ -817,9 +1157,14 @@ async function runStepRevision(args: {
   coreIntent: string;
   currentStep: string;
   variant: "smaller" | "different";
+  feedback?: string;
 }): Promise<{ nextStep: string; stepScope: StepScope }> {
-  const userMsg = `Original input:\n${args.input}\n\nWhat this is pointing to:\n${args.coreIntent}\n\nCurrent proposed next step:\n${args.currentStep}\n\nVariant requested: ${args.variant}\n\nReturn JSON only.`;
-  const msg = await client.messages.create({
+  const trimmed = args.feedback?.trim();
+  const note = trimmed
+    ? `\nWhat felt off about the current step (from the user — honor without inventing new facts):\n${trimmed}\n`
+    : "";
+  const userMsg = `Original input:\n${args.input}\n\nWhat this is pointing to:\n${args.coreIntent}\n\nCurrent proposed next step:\n${args.currentStep}\n\nVariant requested: ${args.variant}${note}\nReturn JSON only.`;
+  const msg = await getSiftClient().messages.create({
     model: MODEL,
     max_tokens: 400,
     system: STEP_REVISION_SYSTEM_PROMPT,
@@ -848,7 +1193,7 @@ ${SAFETY_CLAUSE}
 Output JSON only.`;
 
 async function runSiftFragments(input: string): Promise<string[]> {
-  const msg = await client.messages.create({
+  const msg = await getSiftClient().messages.create({
     model: MODEL,
     max_tokens: 400,
     system: FRAGMENTS_SYSTEM_PROMPT,
@@ -940,6 +1285,159 @@ function renderThreadForModel(args: {
   return lines.join("\n");
 }
 
+function renderClientTranscriptForSummary(args: {
+  originalInput: string;
+  coreIntent: string;
+  firstNextStep: string;
+  clientTranscript: ClientTranscriptTurn[];
+}): string {
+  const lines: string[] = [];
+  lines.push(`Original input:\n${args.originalInput}`);
+  lines.push("");
+  lines.push(`Original coreIntent: ${args.coreIntent}`);
+  lines.push(`Original next step: ${args.firstNextStep}`);
+  lines.push("");
+  lines.push("Visible current-session transcript (authoritative, oldest first):");
+  if (args.clientTranscript.length === 0) {
+    lines.push("  (no visible turns supplied)");
+  } else {
+    for (const turn of args.clientTranscript) {
+      lines.push(`${turn.role === "user" ? "USER" : "SIFT"}: ${turn.text}`);
+    }
+  }
+  return lines.join("\n");
+}
+
+function tokenizeForSpecificity(text: string): string[] {
+  return Array.from(
+    new Set(
+      text
+        .toLowerCase()
+        .match(/[a-z][a-z'-]{2,}/g)
+        ?.map((token) => token.replace(/'/g, ""))
+        .filter((token) => token.length >= 4 && !STOP_WORDS.has(token)) ?? [],
+    ),
+  );
+}
+
+function summaryToText(summary: SiftSummary): string {
+  return [
+    summary.summary,
+    ...summary.themes,
+    ...(summary.constraints ?? []),
+    ...(summary.canWait ?? []),
+    ...summary.options.flatMap((option) => [
+      option.label,
+      option.description ?? "",
+    ]),
+    summary.recommendedNextStep.label,
+    summary.recommendedNextStep.description ?? "",
+  ].join(" ");
+}
+
+function normalizeSummaryPayload(parsed: unknown, siftId: string): unknown {
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return parsed;
+  }
+
+  const payload = { ...(parsed as Record<string, unknown>) };
+  if (!Array.isArray(payload.options)) return payload;
+
+  const options = payload.options;
+  if (options.length <= 3) return payload;
+
+  console.warn("[summary] model returned too many options; trimming", {
+    siftId,
+    optionCount: options.length,
+  });
+
+  const recommended =
+    payload.recommendedNextStep &&
+    typeof payload.recommendedNextStep === "object" &&
+    !Array.isArray(payload.recommendedNextStep)
+      ? (payload.recommendedNextStep as Record<string, unknown>)
+      : null;
+  const recommendedId =
+    typeof recommended?.id === "string" ? recommended.id : null;
+
+  const recommendedOption = recommendedId
+    ? options.find(
+        (option) =>
+          option &&
+          typeof option === "object" &&
+          !Array.isArray(option) &&
+          (option as Record<string, unknown>).id === recommendedId,
+      )
+    : null;
+  const ranked = [
+    ...(recommendedOption ? [recommendedOption] : []),
+    ...options.filter((option) => option !== recommendedOption),
+  ];
+  const trimmed = ranked.slice(0, 3);
+
+  return {
+    ...payload,
+    options: trimmed,
+    recommendedNextStep:
+      recommendedOption && trimmed.includes(recommendedOption)
+        ? payload.recommendedNextStep
+        : trimmed[0] ?? payload.recommendedNextStep,
+  };
+}
+
+const STALE_GENERIC_SUMMARY_PHRASES = [
+  "what choosing seems to close",
+  "keeping every option alive",
+  "one real focus",
+  "one project",
+  "week less scattered",
+  "actual motion",
+];
+
+function summaryMatchesCurrentSession(summary: SiftSummary, sourceText: string): boolean {
+  const normalizedSource = sourceText.toLowerCase();
+  const normalizedSummary = summaryToText(summary).toLowerCase();
+  for (const phrase of STALE_GENERIC_SUMMARY_PHRASES) {
+    if (normalizedSummary.includes(phrase) && !normalizedSource.includes(phrase)) {
+      return false;
+    }
+  }
+
+  const sourceTokens = tokenizeForSpecificity(sourceText);
+  if (sourceTokens.length === 0) return true;
+  const summaryTokens = new Set(tokenizeForSpecificity(normalizedSummary));
+  const overlap = sourceTokens.filter((token) => summaryTokens.has(token));
+  return overlap.length >= Math.min(2, sourceTokens.length);
+}
+
+function analysisToText(analysis: Analysis): string {
+  return [
+    analysis.coreIntent,
+    analysis.nextStep,
+    analysis.reflection,
+    analysis.signalReason,
+    ...analysis.matters,
+    ...analysis.noise,
+    ...analysis.themes.flatMap((theme) => [theme.title, theme.summary]),
+  ].join(" ");
+}
+
+function outputMatchesSource(outputText: string, sourceText: string): boolean {
+  const normalizedSource = sourceText.toLowerCase();
+  const normalizedOutput = outputText.toLowerCase();
+  for (const phrase of STALE_GENERIC_SUMMARY_PHRASES) {
+    if (normalizedOutput.includes(phrase) && !normalizedSource.includes(phrase)) {
+      return false;
+    }
+  }
+
+  const sourceTokens = tokenizeForSpecificity(sourceText);
+  if (sourceTokens.length < 2) return true;
+  const outputTokens = new Set(tokenizeForSpecificity(normalizedOutput));
+  const overlap = sourceTokens.filter((token) => outputTokens.has(token));
+  return overlap.length >= 2;
+}
+
 // Generate the 6–8 thread-derived phrases for the sort activity. Items are
 // deduplicated post-hoc and capped to 8. We fall back to a minimal set only
 // if the model returns something unusable — never to generic words.
@@ -952,7 +1450,7 @@ async function runSortItems(args: {
   const userBlock =
     renderThreadForModel(args) +
     "\n\nProduce the Signal / Noise practice items. Return JSON only.";
-  const msg = await client.messages.create({
+  const msg = await getSiftClient().messages.create({
     model: MODEL,
     max_tokens: 512,
     system: SORT_ITEMS_SYSTEM_PROMPT,
@@ -990,14 +1488,33 @@ async function runDeepening(args: {
   firstNextStep: string;
   turns: ThreadTurn[];
   latestUserText: string;
+  authMode?: SiftClientAuthMode;
+  phase?: "warmup" | "structured";
+  intent?: "warmup-companion" | "greeting-warmup";
+  supportProfile?: SupportProfile | null;
 }): Promise<SiftTurnMessage> {
+  if (args.intent === "greeting-warmup") {
+    return {
+      mirror:
+        "Hey. I'm glad you're here.\n\nWhenever you're ready, tell me what's been loud on your mind.",
+    };
+  }
+
   const userBlock =
     renderThreadForModel(args) +
-    "\n\nRespond as Sift in Deepening Mode. Return JSON only.";
-  const msg = await client.messages.create({
+    (renderSupportProfileInstructions(args.supportProfile)
+      ? `\n\n${renderSupportProfileInstructions(args.supportProfile)}`
+      : "") +
+    (args.phase === "warmup"
+      ? "\n\nRespond as Sift in Bedroom warmup mode. Return JSON only."
+      : "\n\nRespond as Sift in Deepening Mode. Return JSON only.");
+  const msg = await getSiftClient(args.authMode).messages.create({
     model: MODEL,
     max_tokens: 512,
-    system: DEEPEN_SYSTEM_PROMPT,
+    system:
+      args.phase === "warmup"
+        ? WARMUP_DEEPEN_SYSTEM_PROMPT
+        : DEEPEN_SYSTEM_PROMPT,
     messages: [{ role: "user", content: userBlock }],
   });
   const textBlock = msg.content.find((b: any) => b.type === "text") as any;
@@ -1014,7 +1531,95 @@ async function runDeepening(args: {
   ) {
     return { question: "Say a little more about that." };
   }
+  const messageText = [
+    message.mirror,
+    message.question,
+    message.mini,
+    ...(message.matters ?? []),
+    ...(message.noise ?? []),
+  ]
+    .filter(Boolean)
+    .join(" ");
+  if (!outputMatchesSource(messageText, `${args.originalInput}\n${args.latestUserText}`)) {
+    return { question: "What part of that feels most important to name plainly?" };
+  }
   return message;
+}
+
+async function runThreadSummary(args: {
+  sift: Sift;
+  turns: ThreadTurn[];
+  clientTranscript?: ClientTranscriptTurn[];
+  authMode?: SiftClientAuthMode;
+  supportProfile?: SupportProfile | null;
+}): Promise<SiftSummary> {
+  const authoritativeSource =
+    args.clientTranscript && args.clientTranscript.length > 0
+      ? args.clientTranscript
+          .filter((turn) => turn.role === "user")
+          .map((turn) => turn.text)
+          .join("\n")
+      : [
+          args.sift.input,
+          ...args.turns
+            .filter((turn) => turn.role === "user" && turn.kind === "message")
+            .map((turn) => ("text" in turn ? turn.text : "")),
+        ].join("\n");
+
+  const baseThread =
+    args.clientTranscript && args.clientTranscript.length > 0
+      ? renderClientTranscriptForSummary({
+          originalInput: args.sift.input,
+          coreIntent: args.sift.coreIntent,
+          firstNextStep: args.sift.nextStep,
+          clientTranscript: args.clientTranscript,
+        })
+      : renderThreadForModel({
+          originalInput: args.sift.input,
+          coreIntent: args.sift.coreIntent,
+          firstNextStep: args.sift.nextStep,
+          turns: args.turns,
+        });
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const repair =
+      attempt === 0
+        ? ""
+        : "\n\nThe previous summary was too generic or mismatched. Regenerate it. It must name the concrete topic in the USER turns and avoid stale Sift phrasing.";
+    const userBlock =
+      baseThread +
+      (renderSupportProfileInstructions(args.supportProfile)
+        ? `\n\n${renderSupportProfileInstructions(args.supportProfile)}`
+        : "") +
+      "\n\nPull this thread together into the requested summary JSON. USER turns are the source of truth." +
+      repair;
+    const msg = await getSiftClient(args.authMode).messages.create({
+      model: MODEL,
+      max_tokens: 900,
+      system: SUMMARY_SYSTEM_PROMPT,
+      messages: [{ role: "user", content: userBlock }],
+    });
+    const textBlock = msg.content.find((b: any) => b.type === "text") as any;
+    const parsed = extractJson((textBlock?.text ?? "").trim());
+    const normalized = normalizeSummaryPayload(parsed, args.sift.id);
+    const parsedMeta =
+      typeof normalized === "object" && normalized && "meta" in normalized
+        ? (normalized as { meta?: Record<string, unknown> }).meta
+        : undefined;
+    const summary = siftSummarySchema.parse({
+      ...(normalized as Record<string, unknown>),
+      meta: {
+        ...parsedMeta,
+        generatedAt: new Date().toISOString(),
+        model: MODEL,
+      },
+    });
+    if (summaryMatchesCurrentSession(summary, authoritativeSource)) {
+      return summary;
+    }
+  }
+
+  throw new Error("Generated summary did not match the current session closely enough.");
 }
 
 async function runCheckpoint(args: {
@@ -1026,7 +1631,7 @@ async function runCheckpoint(args: {
   const userBlock =
     renderThreadForModel(args) +
     "\n\nProduce a Checkpoint. Return JSON only.";
-  const msg = await client.messages.create({
+  const msg = await getSiftClient().messages.create({
     model: MODEL,
     max_tokens: 1024,
     system: CHECKPOINT_SYSTEM_PROMPT,
@@ -1046,7 +1651,7 @@ async function runClosure(args: {
   const userBlock =
     renderThreadForModel(args) +
     "\n\nClose the loop. Return JSON only.";
-  const msg = await client.messages.create({
+  const msg = await getSiftClient().messages.create({
     model: MODEL,
     max_tokens: 300,
     system: CLOSE_SYSTEM_PROMPT,
@@ -1237,7 +1842,7 @@ Status: ${statusLabel}${note ? `\n\nWhat actually happened:\n${note}` : ""}
 
 Sift what this outcome reveals. Return JSON only.`;
 
-  const msg = await client.messages.create({
+  const msg = await getSiftClient().messages.create({
     model: MODEL,
     max_tokens: 1024,
     system: CHECKIN_SYSTEM_PROMPT,
@@ -1269,6 +1874,66 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
   }
   (req as any).userId = userId;
   next();
+}
+
+function allowAnonymousSiftRequests(): boolean {
+  return process.env.ALLOW_ANON_SIFT !== "false";
+}
+
+function hasAuthHeader(req: Request): boolean {
+  return Boolean(req.headers.authorization || req.headers["x-api-key"]);
+}
+
+function readGuestSessionId(req: Request): string | null {
+  const raw = req.headers["x-sift-guest-session-id"];
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  if (!value || typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return /^[a-zA-Z0-9_-]{12,80}$/.test(trimmed) ? trimmed : null;
+}
+
+function resolveSiftAuth(req: Request): { userId: number | null; anonymous: boolean; guestSessionId: string | null } | null {
+  const userId = readToken(req);
+  if (userId) return { userId, anonymous: false, guestSessionId: readGuestSessionId(req) };
+  if (allowAnonymousSiftRequests() && !hasAuthHeader(req)) {
+    return { userId: null, anonymous: true, guestSessionId: readGuestSessionId(req) };
+  }
+  return null;
+}
+
+const ANONYMOUS_SIFT_LIMIT = Number(process.env.ANON_SIFT_LIMIT ?? 3);
+const anonymousSiftWindowMs = 24 * 60 * 60 * 1000;
+
+function clientIpKey(req: Request): string {
+  const forwarded = req.headers["x-forwarded-for"];
+  const raw = Array.isArray(forwarded) ? forwarded[0] : forwarded;
+  return (raw?.split(",")[0]?.trim() || req.ip || "unknown").slice(0, 80);
+}
+
+function anonymousCountSince(guestSessionId: string | null, ipKey: string, since: number): number {
+  if (guestSessionId) {
+    const row = rawDb
+      .prepare(
+        `SELECT COUNT(*) AS n
+           FROM sifts
+          WHERE user_id IS NULL
+            AND guest_session_id = ?
+            AND created_at >= ?`,
+      )
+      .get(guestSessionId, since) as { n: number } | undefined;
+    return row?.n ?? 0;
+  }
+
+  const row = rawDb
+    .prepare(
+      `SELECT COUNT(*) AS n
+         FROM sifts
+        WHERE user_id IS NULL
+          AND guest_session_id = ?
+          AND created_at >= ?`,
+    )
+    .get(`ip:${ipKey}`, since) as { n: number } | undefined;
+  return row?.n ?? 0;
 }
 
 function checkinToResult(row: Checkin): CheckinResult {
@@ -2000,12 +2665,44 @@ export async function registerRoutes(
     return { email: null, phone: null };
   }
 
+  function normalizeSupportProfile(input?: {
+    mode?: SupportProfile["mode"] | null;
+    startingSpace?: SupportProfile["startingSpace"] | null;
+    theme?: SupportProfile["theme"] | null;
+    primaryIntent?: SupportProfile["primaryIntent"] | null;
+    supportStyle?: SupportProfile["supportStyle"] | null;
+    completedAt?: string | null;
+  } | null): SupportProfile | null {
+    if (!input?.mode && !input?.startingSpace && !input?.theme && !input?.primaryIntent && !input?.supportStyle) return null;
+    return supportProfileSchema.parse({
+      mode: input.mode ?? undefined,
+      startingSpace: input.startingSpace ?? undefined,
+      theme: input.theme ?? undefined,
+      primaryIntent: input.primaryIntent ?? undefined,
+      supportStyle: input.supportStyle ?? undefined,
+      completedAt: input.completedAt ?? new Date().toISOString(),
+    });
+  }
+
+  function parseSupportProfile(raw: string | null): SupportProfile | null {
+    if (!raw) return null;
+    try {
+      return supportProfileSchema.parse(JSON.parse(raw));
+    } catch {
+      return null;
+    }
+  }
+
   // Serialize a User row into the public `Me` shape.
   function toMe(user: User): Me {
     return {
       id: user.id,
       handle: user.handle,
+      email: user.email,
+      phone: user.phone,
       contactMissing: !user.email && !user.phone,
+      supportProfile: parseSupportProfile(user.supportProfile),
+      memoryPreferences: parseMemoryPreferencesColumn(user.memoryPreferences),
     };
   }
 
@@ -2029,6 +2726,7 @@ export async function registerRoutes(
       phone,
       consentUpdates: parsed.data.consentUpdates,
       consentReflections: parsed.data.consentReflections,
+      supportProfile: normalizeSupportProfile(parsed.data.supportProfile),
     });
     const token = issueToken(user.id);
     res.json({ me: toMe(user), token });
@@ -2068,6 +2766,29 @@ export async function registerRoutes(
     res.json({ ok: true });
   });
 
+  app.delete("/api/auth/account", requireAuth, async (req, res) => {
+    const userId = (req as any).userId as number;
+    const rows = rawDb
+      .prepare(`SELECT id FROM sifts WHERE user_id = ?`)
+      .all(userId) as Array<{ id: string }>;
+    const ids = rows.map((row) => row.id);
+
+    const tx = rawDb.transaction(() => {
+      for (const id of ids) {
+        rawDb.prepare(`DELETE FROM thread_turns WHERE sift_id = ?`).run(id);
+        rawDb.prepare(`DELETE FROM thread_bookmarks WHERE sift_id = ?`).run(id);
+        rawDb.prepare(`DELETE FROM checkins WHERE sift_id = ?`).run(id);
+      }
+      rawDb.prepare(`DELETE FROM feedback WHERE user_id = ?`).run(userId);
+      rawDb.prepare(`DELETE FROM discernment_profiles WHERE user_id = ?`).run(userId);
+      rawDb.prepare(`DELETE FROM sifts WHERE user_id = ?`).run(userId);
+      rawDb.prepare(`DELETE FROM sessions WHERE user_id = ?`).run(userId);
+      rawDb.prepare(`DELETE FROM users WHERE id = ?`).run(userId);
+    });
+    tx();
+    res.json({ ok: true });
+  });
+
   app.get("/api/auth/me", async (req, res) => {
     const userId = readToken(req);
     if (!userId) return res.json({ me: null });
@@ -2099,6 +2820,84 @@ export async function registerRoutes(
       return res.status(404).json({ error: "Account not found" });
     }
     res.json({ me: toMe(updated) });
+  });
+
+  app.post("/api/guest/claim", requireAuth, async (req, res) => {
+    const userId = (req as any).userId as number;
+    const guestSessionId = readGuestSessionId(req);
+    if (!guestSessionId) return res.json({ claimed: 0 });
+
+    const result = rawDb
+      .prepare(
+        `UPDATE sifts
+            SET user_id = ?
+          WHERE user_id IS NULL
+            AND guest_session_id = ?`,
+      )
+      .run(userId, guestSessionId);
+
+    res.json({ claimed: result.changes ?? 0 });
+  });
+
+  app.patch("/api/auth/support-profile", requireAuth, async (req, res) => {
+    const parsed = supportProfileUpdateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res
+        .status(400)
+        .json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+    }
+    const userId = (req as any).userId as number;
+    const updated = await storage.updateUserSupportProfile(userId, {
+      supportProfile: normalizeSupportProfile(parsed.data),
+    });
+    if (!updated) {
+      return res.status(404).json({ error: "Account not found" });
+    }
+    res.json({ me: toMe(updated) });
+  });
+
+  app.patch("/api/auth/memory-preferences", requireAuth, async (req, res) => {
+    const parsed = memoryPreferencesUpdateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res
+        .status(400)
+        .json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+    }
+    const userId = (req as any).userId as number;
+    const user = await storage.getUserById(userId);
+    if (!user) return res.status(404).json({ error: "Account not found" });
+    const current = parseMemoryPreferencesColumn(user.memoryPreferences);
+    const next = memoryPreferencesSchema.parse({ ...current, ...parsed.data });
+    const updated = await storage.updateUserMemoryPreferences(userId, next);
+    if (!updated) return res.status(404).json({ error: "Account not found" });
+    res.json({ me: toMe(updated) });
+  });
+
+  app.get("/api/auth/export", requireAuth, async (req, res) => {
+    const userId = (req as any).userId as number;
+    const user = await storage.getUserById(userId);
+    if (!user) return res.status(404).json({ error: "Account not found" });
+    const sifts = await storage.listUserSiftsFull(userId);
+    const sessions = await Promise.all(
+      sifts.map(async (sift) => ({
+        sift,
+        bookmark: await storage.getBookmark(sift.id),
+        turns: await storage.listTurns(sift.id),
+        checkins: await storage.listCheckins(sift.id),
+      })),
+    );
+    res.json({
+      exportedAt: new Date().toISOString(),
+      user: {
+        id: user.id,
+        handle: user.handle,
+        email: user.email,
+        phone: user.phone,
+        supportProfile: parseSupportProfile(user.supportProfile),
+        memoryPreferences: parseMemoryPreferencesColumn(user.memoryPreferences),
+      },
+      sessions,
+    });
   });
 
   // --- Admin ---
@@ -2587,7 +3386,7 @@ function routeThread(input: string): { mode: 'personal'|'operator', entrySignal:
     if (!parsed.success) {
       return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
     }
-    const { input, inputMode, fragmentSort, skippedFragmentSort, forceAnalysis, metaSift } =
+    const { input, inputMode, phase, intent, fragmentSort, skippedFragmentSort, forceAnalysis, metaSift } =
       parsed.data;
 
     // Crisis safeguard — before persistence, before LLM. If the input describes
@@ -2597,7 +3396,37 @@ function routeThread(input: string): { mode: 'personal'|'operator', entrySignal:
       return res.json({ type: "care" });
     }
 
-    const userId = readToken(req);
+    const auth = resolveSiftAuth(req);
+    if (!auth) {
+      return res.status(401).json({ error: "Not signed in" });
+    }
+    const userId = auth.userId;
+    const guestSessionId = auth.guestSessionId;
+    const guestSessionIdForStore = guestSessionId ?? `ip:${clientIpKey(req)}`;
+    if (auth.anonymous) {
+      const used = anonymousCountSince(
+        guestSessionId,
+        clientIpKey(req),
+        Date.now() - anonymousSiftWindowMs,
+      );
+      if (used >= ANONYMOUS_SIFT_LIMIT) {
+        return res.status(429).json({
+          error: "Create a free space to keep going with Sift.",
+          reason: "guest_limit",
+        });
+      }
+    }
+    const siftAuthMode: SiftClientAuthMode | undefined = auth.anonymous
+      ? "server-api-key"
+      : undefined;
+    const userForMemory = userId ? await storage.getUserById(userId) : undefined;
+    const memoryPreferences = parseMemoryPreferencesColumn(userForMemory?.memoryPreferences);
+    const storedSupportProfile =
+      userId && memoryPreferences.rememberTonePreferences
+        ? parseSupportProfile(userForMemory?.supportProfile ?? null)
+        : null;
+    const supportProfile =
+      storedSupportProfile ?? normalizeSupportProfile(parsed.data.supportProfile);
 
     try {
       let redundancyCheck: RedundancyLevel = { level: "none" };
@@ -2628,6 +3457,10 @@ function routeThread(input: string): { mode: 'personal'|'operator', entrySignal:
       const analysis = await runAnalysis(input, {
         preSortContext: preSortContext || undefined,
         metaSift: metaSift === true,
+        authMode: siftAuthMode,
+        phase,
+        intent,
+        supportProfile,
       });
 
       // Output safeguard — scan every string in the model's response. If it
@@ -2651,7 +3484,9 @@ function routeThread(input: string): { mode: 'personal'|'operator', entrySignal:
       let currentMoveOverride: string | undefined;
       if (mode === "operator") {
         try {
-          const op = await runOperatorAnalysis(input);
+          const op = await runOperatorAnalysis(input, {
+            authMode: siftAuthMode,
+          });
           artifactType = op.artifactType;
           operatorArtifact = JSON.stringify(op);
           currentMoveOverride = op.currentMove;
@@ -2689,6 +3524,7 @@ function routeThread(input: string): { mode: 'personal'|'operator', entrySignal:
           : null,
         baselineNextStep: analysis.nextStep,
         userId: userId ?? undefined,
+        guestSessionId: auth.anonymous ? guestSessionIdForStore : guestSessionId,
         input,
         inputMode,
         themes: JSON.stringify(analysis.themes),
@@ -2713,6 +3549,13 @@ function routeThread(input: string): { mode: 'personal'|'operator', entrySignal:
             ? redundancyCheck.priorSiftId
             : null,
         metaSift: metaSift === true ? 1 : null,
+        uiMode: supportProfile?.mode ?? null,
+        environment: supportProfile?.startingSpace ?? null,
+        supportProfileSnapshot: supportProfile ? JSON.stringify(supportProfile) : null,
+        claritySummary: null,
+        memoryMode: memoryPreferences.clarityOnly || !memoryPreferences.storeRawTranscript ? "clarity_only" : "full",
+        pinned: 0,
+        transcriptExpiresAt: null,
       } as any);
 
       if (sortScore != null) {
@@ -2952,6 +3795,97 @@ function routeThread(input: string): { mode: 'personal'|'operator', entrySignal:
     res.json({ threads });
   });
 
+  app.get("/api/library", requireAuth, async (req, res) => {
+    const userId = (req as any).userId as number;
+    const user = await storage.getUserById(userId);
+    if (!user) return res.status(404).json({ error: "Account not found" });
+    const memoryPreferences = parseMemoryPreferencesColumn(user.memoryPreferences);
+    const rows = await storage.listUserSiftsFull(userId);
+    const items: LibrarySiftItem[] = [];
+    for (const sift of rows) {
+      const bookmark = await storage.getBookmark(sift.id);
+      items.push(libraryItemFor({ sift, bookmark }));
+    }
+    const recurringThemes = memoryPreferences.rememberThemes
+      ? recurringThemesFor(items)
+      : [];
+    const payload: LibraryResponse = { items, recurringThemes, memoryPreferences };
+    res.json(payload);
+  });
+
+  app.get("/api/library/:id", requireAuth, async (req, res) => {
+    const userId = (req as any).userId as number;
+    const siftId = String(req.params.id);
+    const sift = await storage.getSift(siftId);
+    if (!sift) return res.status(404).json({ error: "Not found" });
+    if (sift.userId !== userId) {
+      return res.status(403).json({ error: "Not your sift" });
+    }
+
+    if (sift.transcriptExpiresAt && sift.transcriptExpiresAt <= Date.now()) {
+      await storage.updateSessionMemory(siftId, userId, { memoryMode: "clarity_only" });
+    }
+    const currentSift = (await storage.getSift(siftId)) ?? sift;
+    const user = await storage.getUserById(userId);
+    const memoryPreferences = parseMemoryPreferencesColumn(user?.memoryPreferences);
+    const [bookmark, turns, allSifts] = await Promise.all([
+      storage.getBookmark(siftId),
+      currentSift.memoryMode === "clarity_only" ? Promise.resolve([]) : storage.listTurns(siftId),
+      storage.listUserSiftsFull(userId),
+    ]);
+    const item = libraryItemFor({ sift: currentSift, bookmark });
+    const themes = parseThemesColumn(currentSift.themes);
+    const tagSet = new Set(item.tags.map((tag) => tag.toLowerCase()));
+    const related: LibrarySiftItem[] = [];
+    if (memoryPreferences.allowRelatedSuggestions) {
+      for (const other of allSifts) {
+        if (other.id === currentSift.id) continue;
+        const otherBookmark = await storage.getBookmark(other.id);
+        const otherItem = libraryItemFor({ sift: other, bookmark: otherBookmark });
+        if (otherItem.tags.some((tag) => tagSet.has(tag.toLowerCase()))) {
+          related.push(otherItem);
+        }
+        if (related.length >= 3) break;
+      }
+    }
+
+    const detail: LibrarySiftDetail = {
+      ...item,
+      input: currentSift.memoryMode === "clarity_only" ? "Raw opening input was not retained for this session." : currentSift.input,
+      themes,
+      reflection: currentSift.reflection,
+      transcript: turns,
+      related,
+    };
+    res.json({ item: detail });
+  });
+
+  app.patch("/api/library/:id/memory", requireAuth, async (req, res) => {
+    const userId = (req as any).userId as number;
+    const parsed = updateSessionMemorySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res
+        .status(400)
+        .json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+    }
+    const siftId = String(req.params.id);
+    if (parsed.data.memoryMode === "do_not_remember") {
+      const ok = await storage.deleteSift(siftId, userId);
+      if (!ok) return res.status(404).json({ error: "Not found" });
+      return res.json({ deleted: true });
+    }
+    const updated = await storage.updateSessionMemory(siftId, userId, parsed.data);
+    if (!updated) return res.status(404).json({ error: "Not found" });
+    const bookmark = await storage.getBookmark(siftId);
+    return res.json({ item: libraryItemFor({ sift: updated, bookmark }) });
+  });
+
+  app.delete("/api/library", requireAuth, async (req, res) => {
+    const userId = (req as any).userId as number;
+    await storage.deleteAllHistory(userId);
+    res.json({ ok: true });
+  });
+
   // Get a single thread by id (owner or public)
   app.get("/api/threads/:id", async (req, res) => {
     const thread = await storage.getThread(String(req.params.id));
@@ -3154,11 +4088,22 @@ function routeThread(input: string): { mode: 'personal'|'operator', entrySignal:
       return res.status(403).json({ error: "Not your sift" });
     }
     try {
+      const feedbackRaw =
+        typeof parsed.data.feedback === "string"
+          ? parsed.data.feedback.trim()
+          : "";
+      if (feedbackRaw) {
+        const merged = `${row.input}\n\nStep feedback:\n${feedbackRaw}`;
+        if (screenForCrisis(merged)) {
+          return res.json({ type: "care" });
+        }
+      }
       const revised = await runStepRevision({
         input: row.input,
         coreIntent: row.coreIntent,
         currentStep: row.nextStep,
         variant: parsed.data.variant,
+        feedback: feedbackRaw || undefined,
       });
       // Persist the revised step. We deliberately do not touch matters/noise
       // or coreIntent — the underlying read is unchanged, only the move
@@ -3221,19 +4166,68 @@ function routeThread(input: string): { mode: 'personal'|'operator', entrySignal:
   // bookmark. Returns the newly appended turns plus (if fresh) the updated
   // bookmark + convergence hint. If a sort_prompt is still unanswered, the
   // route returns 409 — the client must call /sort first.
-  app.post("/api/sift/:id/deepen", requireAuth, async (req, res) => {
-    const userId = (req as any).userId as number;
+  app.post("/api/sift/:id/deepen", async (req, res) => {
     const parsed = deepenRequestSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({
         error: parsed.error.issues[0]?.message ?? "Invalid input",
       });
     }
+    const auth = resolveSiftAuth(req);
+    if (!auth) {
+      return res.status(401).json({ error: "Not signed in" });
+    }
+    const userId = auth.userId;
+    const siftAuthMode: SiftClientAuthMode | undefined = auth.anonymous
+      ? "server-api-key"
+      : undefined;
+    const userForMemory = userId ? await storage.getUserById(userId) : undefined;
+    const memoryPreferences = parseMemoryPreferencesColumn(userForMemory?.memoryPreferences);
+    const storedSupportProfile =
+      userId && memoryPreferences.rememberTonePreferences
+        ? parseSupportProfile(userForMemory?.supportProfile ?? null)
+        : null;
+    const supportProfile =
+      storedSupportProfile ?? normalizeSupportProfile(parsed.data.supportProfile);
     const siftId = String(req.params.id);
     const sift = await storage.getSift(siftId);
     if (!sift) return res.status(404).json({ error: "Not found" });
-    if (sift.userId !== userId) {
+    if (sift.userId != null && sift.userId !== userId) {
       return res.status(403).json({ error: "Not your sift" });
+    }
+    if (
+      sift.userId == null &&
+      sift.guestSessionId &&
+      sift.guestSessionId !== (auth.guestSessionId ?? `ip:${clientIpKey(req)}`)
+    ) {
+      return res.status(403).json({ error: "Not your guest session" });
+    }
+
+    if (parsed.data.mode === "summary") {
+      try {
+        const turns = await storage.listTurns(siftId);
+        const summary = await runThreadSummary({
+          sift,
+          turns,
+          clientTranscript: parsed.data.clientTranscript,
+          authMode: siftAuthMode,
+          supportProfile,
+        });
+        if (screenOutputForCrisis(summary)) {
+          console.warn(
+            "[crisis-screen] output tripped on /api/sift/:id/deepen summary — discarding",
+          );
+          return res.json({ type: "care" });
+        }
+        await storage.updateSiftClaritySummary(siftId, JSON.stringify(summary));
+        const payload: DeepenResponse = { type: "summary", summary };
+        return res.json(payload);
+      } catch (err: any) {
+        console.error("summary error", err);
+        return res.status(500).json({
+          error: "Could not summarize that right now.",
+        });
+      }
     }
 
     // Block new user messages if a sort is still open. The client should be
@@ -3250,7 +4244,7 @@ function routeThread(input: string): { mode: 'personal'|'operator', entrySignal:
     }
 
     // Crisis safeguard on the new user reply — before persistence, before LLM.
-    if (screenForCrisis(parsed.data.text)) {
+    if (screenForCrisis(parsed.data.text!)) {
       const payload: DeepenResponse = { type: "care" };
       return res.json(payload);
     }
@@ -3261,7 +4255,7 @@ function routeThread(input: string): { mode: 'personal'|'operator', entrySignal:
         siftId,
         role: "user",
         kind: "message",
-        payload: JSON.stringify({ text: parsed.data.text }),
+        payload: JSON.stringify({ text: parsed.data.text! }),
       });
 
       const priorTurns = await storage.listTurns(siftId);
@@ -3288,6 +4282,7 @@ function routeThread(input: string): { mode: 'personal'|'operator', entrySignal:
         }, 0);
       const ENOUGH_MATERIAL_TO_SORT = 240; // ~3 short sentences across the thread.
       const shouldOfferSort =
+        parsed.data.phase !== "warmup" &&
         userMessageCount >= 3 &&
         userMessageCount % 3 === 0 &&
         messagesSinceLastSort >= 2 &&
@@ -3332,7 +4327,11 @@ function routeThread(input: string): { mode: 'personal'|'operator', entrySignal:
         coreIntent: sift.coreIntent,
         firstNextStep: sift.nextStep,
         turns: priorTurns,
-        latestUserText: parsed.data.text,
+        latestUserText: parsed.data.text!,
+        authMode: siftAuthMode,
+        phase: parsed.data.phase,
+        intent: parsed.data.intent,
+        supportProfile,
       };
 
       const message = await runDeepening(deepenArgs);
@@ -3652,6 +4651,8 @@ function routeThread(input: string): { mode: 'personal'|'operator', entrySignal:
       });
     }
   });
+
+  registerKokoroTtsProxy(app, requireAuth);
 
   return httpServer;
 }

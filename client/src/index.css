@@ -2,73 +2,445 @@
 @tailwind components;
 @tailwind utilities;
 
-/* LIGHT — warm paper & deep ink, single teal accent */
+/* Library Moss — Bedroom Session (/). Scoped so marketing/app shell can stay on HSL tokens. */
+.bedroom-session {
+  --color-bg: #f4f0e6;
+  --color-surface: #faf7f0;
+  --color-surface-alt: #e7e0d3;
+  --color-text: #29261f;
+  --color-text-muted: #6e685d;
+  --color-primary: #556b57;
+  --color-primary-deep: #2d3a30;
+  --color-warm: #b88a4a;
+  --color-walnut: #7a5e49;
+  --color-border-soft: rgb(122 94 73 / 0.11);
+  --bedroom-paper-shadow: 0 14px 40px -30px rgba(41, 38, 31, 0.14),
+    0 1px 10px -6px rgba(41, 38, 31, 0.08);
+  --bedroom-tray-shadow: 0 10px 30px -24px rgba(41, 38, 31, 0.12),
+    0 1px 0 rgba(122, 94, 73, 0.05);
+}
+
+.bedroom-session.sift-base-session {
+  --color-bg: #0c0e0d;
+  --color-surface: #f7f4ec;
+  --color-surface-alt: #ebe4d7;
+  --color-text: #24231f;
+  --color-text-muted: #676155;
+  --color-primary: #315f56;
+  --color-primary-deep: #17352f;
+  --color-warm: #9d7a4a;
+  --color-walnut: #75604d;
+  --color-border-soft: rgb(255 255 255 / 0.12);
+}
+
+.bedroom-session.sift-base-session.sift-base-light-session {
+  --color-bg: #f5f4f0;
+  --color-surface: #fbfaf6;
+  --color-surface-alt: #e9eee8;
+  --color-text: #283c37;
+  --color-text-muted: #66756f;
+  --color-primary: #587c73;
+  --color-primary-deep: #283c37;
+  --color-warm: #9d7a4a;
+  --color-walnut: #728179;
+  --color-border-soft: rgb(40 60 55 / 0.14);
+}
+
+.sift-base-background {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse at 50% 18%, rgba(120, 195, 110, 0.42), transparent 42%),
+    radial-gradient(ellipse at 20% 55%, rgba(90, 170, 85, 0.32), transparent 44%),
+    radial-gradient(ellipse at 78% 72%, rgba(110, 190, 100, 0.34), transparent 46%),
+    radial-gradient(ellipse at 50% 90%, rgba(130, 200, 115, 0.28), transparent 44%),
+    #2d6640;
+}
+
+.sift-base-background-light {
+  background:
+    radial-gradient(circle at 50% 50%, rgba(231, 224, 211, 0.62), transparent 72%),
+    radial-gradient(circle at 15% 15%, rgba(184, 138, 74, 0.09), transparent 36%),
+    radial-gradient(circle at 85% 82%, rgba(122, 94, 73, 0.07), transparent 34%),
+    radial-gradient(circle at 78% 12%, rgba(85, 107, 87, 0.06), transparent 30%),
+    #f4f0e6;
+}
+
+.sift-base-background::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at 50% 48%, rgba(0, 0, 0, 0) 14%, rgba(0, 0, 0, 0.32) 90%);
+  opacity: 1;
+}
+
+.sift-base-background-light::before {
+  background:
+    radial-gradient(ellipse at 50% 50%, rgba(0, 0, 0, 0) 22%, rgba(41, 38, 31, 0.12) 90%);
+  mix-blend-mode: multiply;
+}
+
+.sift-base-orb {
+  position: absolute;
+  border-radius: 9999px;
+  mix-blend-mode: screen;
+  filter: blur(2px);
+  will-change: transform;
+}
+
+.sift-base-background-light .sift-base-orb {
+  mix-blend-mode: multiply;
+  filter: blur(1px);
+}
+
+.sift-base-orb-a {
+  width: 58vmin;
+  height: 48vmin;
+  left: 24%;
+  top: -3%;
+  background: radial-gradient(
+    ellipse,
+    rgba(120, 195, 110, 0.72) 0%,
+    rgba(120, 195, 110, 0.27) 42%,
+    transparent 100%
+  );
+  animation: sift-drift-a 28s ease-in-out infinite alternate;
+}
+
+.sift-base-background-light .sift-base-orb-a {
+  width: 118vmin;
+  height: 118vmin;
+  left: -18%;
+  top: 20%;
+  background: radial-gradient(
+    circle,
+    rgba(231, 224, 211, 0.62) 0%,
+    rgba(231, 224, 211, 0.22) 45%,
+    transparent 100%
+  );
+  animation-name: sift-light-drift-a;
+  animation-duration: 32s;
+}
+
+.sift-base-orb-b {
+  width: 54vmin;
+  height: 44vmin;
+  left: 3%;
+  top: 45%;
+  background: radial-gradient(ellipse, rgba(90, 170, 85, 0.6) 0%, rgba(90, 170, 85, 0.23) 42%, transparent 100%);
+  animation: sift-drift-b 34s ease-in-out infinite alternate;
+}
+
+.sift-base-background-light .sift-base-orb-b {
+  width: 52vmin;
+  height: 52vmin;
+  left: 2%;
+  top: 2%;
+  background: radial-gradient(circle, rgba(184, 138, 74, 0.09) 0%, transparent 100%);
+  animation-name: sift-light-drift-b;
+  animation-duration: 38s;
+}
+
+.sift-base-orb-c {
+  width: 60vmin;
+  height: 48vmin;
+  left: 52%;
+  top: 62%;
+  background: radial-gradient(ellipse, rgba(110, 190, 100, 0.65) 0%, rgba(110, 190, 100, 0.25) 42%, transparent 100%);
+  animation: sift-drift-c 31s ease-in-out infinite alternate;
+}
+
+.sift-base-background-light .sift-base-orb-c {
+  width: 46vmin;
+  height: 46vmin;
+  left: 72%;
+  top: 66%;
+  background: radial-gradient(circle, rgba(122, 94, 73, 0.07) 0%, transparent 100%);
+  animation-name: sift-light-drift-c;
+  animation-duration: 44s;
+}
+
+.sift-base-orb-d {
+  width: 42vmin;
+  height: 42vmin;
+  left: 66%;
+  top: 0%;
+  background: radial-gradient(circle, rgba(85, 107, 87, 0.07) 0%, transparent 100%);
+  animation: sift-light-drift-d 36s ease-in-out infinite alternate;
+}
+
+.sift-base-noise {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.72' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+  background-size: 160px 160px;
+  mix-blend-mode: overlay;
+  opacity: 0.44;
+}
+
+.sift-base-background-light .sift-base-noise {
+  mix-blend-mode: multiply;
+  opacity: 0.28;
+}
+
+.sift-base-vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 50% 50%, transparent 15%, rgba(0, 0, 0, 0.32) 85%);
+  pointer-events: none;
+}
+
+.sift-base-background-light .sift-base-vignette {
+  background: radial-gradient(ellipse at 50% 50%, transparent 22%, rgba(41, 38, 31, 0.08) 82%);
+}
+
+@keyframes sift-drift-a {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+  33% {
+    transform: translate(-4%, 3%) scale(1.04);
+  }
+  66% {
+    transform: translate(5%, -2%) scale(0.97);
+  }
+  100% {
+    transform: translate(-2%, 5%) scale(1.02);
+  }
+}
+
+@keyframes sift-drift-b {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(6%, -4%) scale(1.06);
+  }
+  100% {
+    transform: translate(-3%, 6%) scale(0.95);
+  }
+}
+
+@keyframes sift-drift-c {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(-5%, 4%) scale(1.05);
+  }
+  100% {
+    transform: translate(4%, -3%) scale(0.98);
+  }
+}
+
+@keyframes sift-light-drift-a {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+  40% {
+    transform: translate(4%, -5%) scale(1.05);
+  }
+  100% {
+    transform: translate(-3%, 4%) scale(0.96);
+  }
+}
+
+@keyframes sift-light-drift-b {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(-5%, 4%) scale(1.07);
+  }
+  100% {
+    transform: translate(3%, -3%) scale(0.94);
+  }
+}
+
+@keyframes sift-light-drift-c {
+  0% {
+    transform: translate(0, 0);
+  }
+  100% {
+    transform: translate(4%, 6%);
+  }
+}
+
+@keyframes sift-light-drift-d {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+  100% {
+    transform: translate(4%, -5%) scale(1.03);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sift-base-orb {
+    animation: none;
+  }
+}
+
+/* Scene dimensions live on `.bedroom-scene-frame`; img fills that frame. */
+.bedroom-session .bedroom-scene-img {
+  object-fit: cover;
+  object-position: 50% 0%;
+}
+
+.bedroom-session .bedroom-atmosphere-feather {
+  background: linear-gradient(
+    180deg,
+    rgba(244, 240, 230, 0) 0%,
+    rgba(244, 240, 230, 0) 42%,
+    rgba(244, 240, 230, 0.28) 74%,
+    rgba(244, 240, 230, 0.94) 100%
+  );
+}
+
+/* Extra wash from lower scene / rug into writing area — sits above global feather, below avatar. */
+.bedroom-session .bedroom-scene-chat-bridge {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  pointer-events: none;
+  top: calc(min(68dvh, 560px) * 0.82);
+  background: linear-gradient(
+    180deg,
+    rgba(244, 240, 230, 0) 0%,
+    rgba(250, 247, 240, 0.09) 16%,
+    rgba(244, 240, 230, 0.28) 36%,
+    rgba(244, 240, 230, 0.52) 58%,
+    rgba(244, 240, 230, 0.78) 78%,
+    var(--color-bg) 100%
+  );
+}
+
+@media (min-width: 640px) {
+  .bedroom-session .bedroom-scene-chat-bridge {
+    top: calc(min(62dvh, 600px) * 0.82);
+  }
+}
+
+/* In-flow band between reserved scene height and chat column (backdrop remains fixed). */
+.bedroom-session .bedroom-session-handoff {
+  background: linear-gradient(
+    180deg,
+    rgba(244, 240, 230, 0) 0%,
+    rgba(244, 240, 230, 0.2) 45%,
+    rgba(244, 240, 230, 0.75) 100%
+  );
+}
+
+/* Scrollable bubbles: fade toward top + bottom of the scrollport so lines disappear into the shell edge and return when scrolled. */
+.bedroom-session .bedroom-conversation-messages {
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(0, 0, 0, 0.4) 5%,
+    #000 12%,
+    #000 88%,
+    rgba(0, 0, 0, 0.45) 95%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(0, 0, 0, 0.4) 5%,
+    #000 12%,
+    #000 88%,
+    rgba(0, 0, 0, 0.45) 95%,
+    transparent 100%
+  );
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+
+.bedroom-session .bedroom-writing-tray {
+  background: linear-gradient(
+    180deg,
+    rgba(244, 240, 230, 0) 0%,
+    rgba(244, 240, 230, 0.32) 45%,
+    rgba(244, 240, 230, 0.88) 100%
+  );
+}
+
+/* LIGHT — cozy journal board: cream canvas #F5F1E6 + forest teal #1D3D3D */
 :root {
-  --button-outline: rgba(30, 25, 18, 0.1);
-  --badge-outline: rgba(30, 25, 18, 0.06);
+  --button-outline: rgba(29, 61, 61, 0.1);
+  --badge-outline: rgba(29, 61, 61, 0.06);
   --opaque-button-border-intensity: -8;
-  --elevate-1: rgba(30, 25, 18, 0.035);
-  --elevate-2: rgba(30, 25, 18, 0.08);
+  --elevate-1: rgba(29, 61, 61, 0.035);
+  --elevate-2: rgba(29, 61, 61, 0.08);
 
-  /* Paper background, warm cream */
-  --background: 42 33% 94%;
-  --foreground: 30 18% 14%;
-  --border: 36 18% 82%;
-  --card: 42 36% 96%;
-  --card-foreground: 30 18% 14%;
-  --card-border: 36 18% 85%;
+  /* #F5F1E6 */
+  --background: 7 43% 93%;
+  /* Deep ink on cream */
+  --foreground: 180 32% 14%;
+  --border: 7 22% 84%;
+  --card: 7 48% 96%;
+  --card-foreground: 180 32% 14%;
+  --card-border: 7 18% 88%;
 
-  --sidebar: 42 30% 92%;
-  --sidebar-foreground: 30 18% 14%;
-  --sidebar-border: 36 18% 82%;
-  --sidebar-primary: 186 52% 22%;
-  --sidebar-primary-foreground: 42 40% 97%;
-  --sidebar-accent: 42 24% 88%;
-  --sidebar-accent-foreground: 30 18% 14%;
-  --sidebar-ring: 186 52% 22%;
+  --sidebar: 7 38% 94%;
+  --sidebar-foreground: 180 32% 14%;
+  --sidebar-border: 7 22% 86%;
+  /* #1D3D3D forest teal — CTAs, focus, active tab */
+  --sidebar-primary: 180 36% 18%;
+  --sidebar-primary-foreground: 7 50% 98%;
+  --sidebar-accent: 43 48% 92%;
+  --sidebar-accent-foreground: 180 30% 18%;
+  --sidebar-ring: 180 36% 18%;
 
-  --popover: 42 40% 97%;
-  --popover-foreground: 30 18% 14%;
-  --popover-border: 36 18% 82%;
+  --popover: 7 45% 97%;
+  --popover-foreground: 180 32% 14%;
+  --popover-border: 7 22% 88%;
 
-  /* Deep teal — introspective, steady */
-  --primary: 186 52% 22%;
-  --primary-foreground: 42 40% 97%;
+  --primary: 180 36% 18%;
+  --primary-foreground: 7 50% 98%;
 
-  --secondary: 42 24% 88%;
-  --secondary-foreground: 30 18% 14%;
+  --secondary: 7 22% 88%;
+  --secondary-foreground: 180 30% 16%;
 
-  --muted: 42 22% 89%;
-  --muted-foreground: 30 10% 40%;
+  --muted: 7 24% 90%;
+  --muted-foreground: 180 12% 38%;
 
-  --accent: 42 28% 85%;
-  --accent-foreground: 30 18% 14%;
+  --accent: 43 55% 92%;
+  --accent-foreground: 180 30% 16%;
 
-  --destructive: 8 52% 40%;
-  --destructive-foreground: 42 40% 97%;
+  --destructive: 2 48% 43%;
+  --destructive-foreground: 7 50% 98%;
 
-  --input: 36 16% 75%;
-  --ring: 186 52% 22%;
+  --input: 7 18% 82%;
+  --ring: 180 36% 18%;
 
-  --chart-1: 186 52% 22%;
-  --chart-2: 18 42% 42%;
-  --chart-3: 40 45% 50%;
-  --chart-4: 200 25% 35%;
-  --chart-5: 340 22% 45%;
+  --chart-1: 180 36% 18%;
+  --chart-2: 2 48% 43%;
+  --chart-3: 38 72% 52%;
+  --chart-4: 7 18% 62%;
+  --chart-5: 260 18% 48%;
 
   --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
   --font-serif: "Instrument Serif", Georgia, serif;
   --font-mono: ui-monospace, Menlo, monospace;
-  --radius: 0.75rem;
+  /* ~18px — soft cards & pills (board: heavy rounding) */
+  --radius: 1.125rem;
 
-  --shadow-2xs: 0px 1px 2px 0px hsl(30 18% 14% / 0.03);
-  --shadow-xs: 0px 1px 2px 0px hsl(30 18% 14% / 0.04);
-  --shadow-sm: 0px 1px 2px 0px hsl(30 18% 14% / 0.04), 0px 1px 2px -1px hsl(30 18% 14% / 0.04);
-  --shadow: 0px 2px 4px 0px hsl(30 18% 14% / 0.04), 0px 1px 2px -1px hsl(30 18% 14% / 0.04);
-  --shadow-md: 0px 4px 8px 0px hsl(30 18% 14% / 0.06), 0px 2px 4px -1px hsl(30 18% 14% / 0.04);
-  --shadow-lg: 0px 10px 20px 0px hsl(30 18% 14% / 0.08), 0px 4px 8px -2px hsl(30 18% 14% / 0.04);
-  --shadow-xl: 0px 20px 30px 0px hsl(30 18% 14% / 0.1), 0px 8px 12px -4px hsl(30 18% 14% / 0.06);
-  --shadow-2xl: 0px 24px 48px 0px hsl(30 18% 14% / 0.18);
+  --shadow-2xs: 0 1px 2px hsl(180 36% 18% / 0.04);
+  --shadow-xs: 0 1px 2px hsl(180 36% 18% / 0.045), 0 1px 1px hsl(180 36% 18% / 0.03);
+  --shadow-sm: 0 2px 4px hsl(180 36% 18% / 0.04), 0 1px 2px hsl(180 36% 18% / 0.035);
+  --shadow: 0 4px 8px hsl(180 36% 18% / 0.045), 0 1px 3px hsl(180 36% 18% / 0.03);
+  --shadow-md: 0 8px 20px hsl(180 36% 18% / 0.07), 0 2px 6px hsl(180 36% 18% / 0.04);
+  --shadow-lg: 0 16px 40px hsl(180 36% 18% / 0.09), 0 4px 12px hsl(180 36% 18% / 0.05);
+  --shadow-xl: 0 24px 56px hsl(180 36% 18% / 0.11), 0 8px 16px hsl(180 36% 18% / 0.06);
+  --shadow-2xl: 0 32px 64px hsl(180 36% 18% / 0.16);
 
   --tracking-normal: 0em;
   --spacing: 0.25rem;
@@ -116,66 +488,71 @@
   );
 }
 
-/* DARK — slate ink, same teal stays calm */
+/* DARK — Blue Fantastic + Abyssal base, flame & truffle accents (MP072 board) */
 .dark {
-  --button-outline: rgba(242, 235, 221, 0.1);
-  --badge-outline: rgba(242, 235, 221, 0.06);
+  --button-outline: rgba(238, 233, 223, 0.1);
+  --badge-outline: rgba(238, 233, 223, 0.06);
   --opaque-button-border-intensity: 9;
-  --elevate-1: rgba(242, 235, 221, 0.04);
-  --elevate-2: rgba(242, 235, 221, 0.09);
+  --elevate-1: rgba(238, 233, 223, 0.04);
+  --elevate-2: rgba(238, 233, 223, 0.09);
 
-  --background: 30 14% 10%;
-  --foreground: 42 28% 90%;
-  --border: 30 10% 20%;
-  --card: 30 12% 13%;
-  --card-foreground: 42 28% 90%;
-  --card-border: 30 10% 20%;
+  /* Abyssal #1B2632 */
+  --background: 211 30% 15%;
+  /* Palladian */
+  --foreground: 7 31% 90%;
+  --border: 213 22% 28%;
+  /* Blue Fantastic lifted */
+  --card: 213 27% 20%;
+  --card-foreground: 7 31% 92%;
+  --card-border: 213 22% 26%;
 
-  --sidebar: 30 12% 12%;
-  --sidebar-foreground: 42 28% 90%;
-  --sidebar-border: 30 10% 20%;
-  --sidebar-primary: 186 38% 50%;
-  --sidebar-primary-foreground: 30 14% 10%;
-  --sidebar-accent: 30 10% 18%;
-  --sidebar-accent-foreground: 42 28% 90%;
-  --sidebar-ring: 186 38% 50%;
+  --sidebar: 211 28% 17%;
+  --sidebar-foreground: 7 31% 90%;
+  --sidebar-border: 213 22% 28%;
+  /* Burning Flame — CTAs on dark */
+  --sidebar-primary: 5 100% 66%;
+  --sidebar-primary-foreground: 211 32% 14%;
+  --sidebar-accent: 213 22% 24%;
+  --sidebar-accent-foreground: 7 31% 90%;
+  --sidebar-ring: 5 100% 66%;
 
-  --popover: 30 12% 14%;
-  --popover-foreground: 42 28% 90%;
-  --popover-border: 30 10% 22%;
+  --popover: 211 28% 17%;
+  --popover-foreground: 7 31% 92%;
+  --popover-border: 213 22% 28%;
 
-  --primary: 186 38% 52%;
-  --primary-foreground: 30 14% 10%;
+  --primary: 5 100% 66%;
+  --primary-foreground: 211 32% 14%;
 
-  --secondary: 30 10% 18%;
-  --secondary-foreground: 42 28% 90%;
+  --secondary: 213 22% 24%;
+  --secondary-foreground: 7 31% 90%;
 
-  --muted: 30 10% 17%;
-  --muted-foreground: 42 10% 62%;
+  --muted: 213 18% 22%;
+  --muted-foreground: 7 15% 68%;
 
-  --accent: 30 10% 20%;
-  --accent-foreground: 42 28% 90%;
+  /* Truffle Trouble — secondary warmth */
+  --accent: 2 42% 32%;
+  --accent-foreground: 7 40% 96%;
 
-  --destructive: 8 52% 50%;
-  --destructive-foreground: 42 40% 97%;
+  --destructive: 2 52% 48%;
+  --destructive-foreground: 7 40% 97%;
 
-  --input: 30 10% 26%;
-  --ring: 186 38% 52%;
+  --input: 213 20% 28%;
+  --ring: 5 100% 66%;
 
-  --chart-1: 186 38% 52%;
-  --chart-2: 18 48% 58%;
-  --chart-3: 40 52% 62%;
-  --chart-4: 200 30% 55%;
-  --chart-5: 340 32% 62%;
+  --chart-1: 5 100% 66%;
+  --chart-2: 2 48% 52%;
+  --chart-3: 7 25% 72%;
+  --chart-4: 213 35% 45%;
+  --chart-5: 213 22% 55%;
 
-  --shadow-2xs: 0px 1px 2px 0px hsl(0 0% 0% / 0.2);
-  --shadow-xs: 0px 1px 2px 0px hsl(0 0% 0% / 0.25);
-  --shadow-sm: 0px 2px 4px 0px hsl(0 0% 0% / 0.3);
-  --shadow: 0px 4px 8px 0px hsl(0 0% 0% / 0.35);
-  --shadow-md: 0px 6px 12px 0px hsl(0 0% 0% / 0.4);
-  --shadow-lg: 0px 10px 20px 0px hsl(0 0% 0% / 0.45);
-  --shadow-xl: 0px 20px 30px 0px hsl(0 0% 0% / 0.5);
-  --shadow-2xl: 0px 24px 48px 0px hsl(0 0% 0% / 0.6);
+  --shadow-2xs: 0 1px 2px hsl(0 0% 0% / 0.22);
+  --shadow-xs: 0 1px 2px hsl(0 0% 0% / 0.28), 0 1px 1px hsl(0 0% 0% / 0.2);
+  --shadow-sm: 0 2px 6px hsl(0 0% 0% / 0.32), 0 1px 2px hsl(0 0% 0% / 0.22);
+  --shadow: 0 4px 12px hsl(0 0% 0% / 0.38), 0 1px 3px hsl(0 0% 0% / 0.25);
+  --shadow-md: 0 8px 24px hsl(0 0% 0% / 0.42), 0 2px 8px hsl(0 0% 0% / 0.28);
+  --shadow-lg: 0 16px 40px hsl(0 0% 0% / 0.48), 0 4px 12px hsl(0 0% 0% / 0.3);
+  --shadow-xl: 0 24px 56px hsl(0 0% 0% / 0.52), 0 8px 20px hsl(0 0% 0% / 0.35);
+  --shadow-2xl: 0 36px 72px hsl(0 0% 0% / 0.58);
 
   /* ─── Companion Canvas Tokens (dark) ──────────────────────────── */
   --glass-bg: hsl(30 14% 12% / 0.82);
@@ -223,17 +600,33 @@
     @apply bg-background text-foreground;
   }
 
+  /* Sit above body::before (fixed z-0 wash) so portals / fixed backdrops aren’t covered */
+  #root {
+    @apply relative z-[1] isolate min-h-screen;
+  }
+
   body {
     @apply font-sans antialiased;
     font-feature-settings: "ss01", "cv11";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::selection {
+    background: hsl(var(--primary) / 0.18);
+    color: hsl(var(--foreground));
+  }
+  .dark ::selection {
+    background: hsl(var(--primary) / 0.28);
+    color: hsl(var(--foreground));
   }
 
   .font-serif {
     font-family: var(--font-serif);
-    letter-spacing: -0.01em;
+    letter-spacing: -0.02em;
   }
 
-  /* Subtle paper grain */
+  /* Subtle depth wash — stays behind #root */
   body::before {
     content: "";
     position: fixed;
@@ -241,26 +634,29 @@
     pointer-events: none;
     z-index: 0;
     background-image: radial-gradient(
-      circle at 20% 10%,
-      hsl(42 40% 96% / 0.6) 0%,
-      transparent 40%
-    ), radial-gradient(
-      circle at 80% 90%,
-      hsl(186 28% 80% / 0.18) 0%,
+      ellipse 130% 90% at 15% -10%,
+      hsl(7 50% 98% / 0.88) 0%,
       transparent 45%
+    ), radial-gradient(
+      ellipse 100% 70% at 92% 100%,
+      hsl(180 28% 42% / 0.12) 0%,
+      transparent 52%
     );
     mix-blend-mode: normal;
+    opacity: 1;
   }
   .dark body::before {
     background-image: radial-gradient(
-      circle at 20% 10%,
-      hsl(186 40% 20% / 0.22) 0%,
-      transparent 45%
+      ellipse 120% 70% at 20% 0%,
+      hsl(213 35% 28% / 0.4) 0%,
+      transparent 48%
     ), radial-gradient(
-      circle at 80% 90%,
-      hsl(30 20% 20% / 0.35) 0%,
-      transparent 50%
+      ellipse 100% 80% at 85% 100%,
+      hsl(5 90% 40% / 0.18) 0%,
+      transparent 52%
     );
+    mix-blend-mode: normal;
+    opacity: 1;
   }
 
   #root {
@@ -510,6 +906,26 @@
   @keyframes pulse-dot {
     0%, 100% { opacity: 0.4; transform: scale(0.95); }
     50% { opacity: 1; transform: scale(1.1); }
+  }
+
+  .typing-dot {
+    animation: typing-dot 1.05s ease-in-out infinite;
+  }
+  .typing-dot-delay-1 {
+    animation-delay: 0.14s;
+  }
+  .typing-dot-delay-2 {
+    animation-delay: 0.28s;
+  }
+  @keyframes typing-dot {
+    0%, 60%, 100% {
+      opacity: 0.35;
+      transform: translateY(0);
+    }
+    30% {
+      opacity: 1;
+      transform: translateY(-3px);
+    }
   }
 
   .wave-bar {

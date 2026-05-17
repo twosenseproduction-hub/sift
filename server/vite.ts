@@ -9,8 +9,14 @@ import { nanoid } from "nanoid";
 const viteLogger = createLogger();
 
 export async function setupVite(server: Server, app: Express) {
+  const fromConfig =
+    viteConfig.server && typeof viteConfig.server === "object"
+      ? { ...viteConfig.server }
+      : {};
+  // Explicit middleware+HMR overrides (replacing `server` in vite.config would drop fs/watch otherwise).
   const serverOptions = {
-    middlewareMode: true,
+    ...fromConfig,
+    middlewareMode: true as const,
     hmr: { server, path: "/vite-hmr" },
     allowedHosts: true as const,
   };

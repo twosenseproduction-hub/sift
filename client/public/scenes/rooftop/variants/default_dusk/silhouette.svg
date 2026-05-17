@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 200" preserveAspectRatio="xMidYMax meet" aria-hidden="true">
+  <title>default skyline silhouette</title>
+  <rect width="1200" height="200" fill="transparent"/>
+  <path fill="rgba(12,8,16,0.92)" d="M0 200 L0 120 L40 115 L55 95 L70 110 L100 108 L120 85 L145 100 L180 88 L210 105 L250 75 L275 98 L310 90 L340 108 L380 82 L410 100 L450 78 L480 95 L520 70 L560 92 L600 80 L640 100 L680 72 L720 95 L760 88 L800 105 L840 78 L880 98 L920 85 L960 102 L1000 88 L1040 100 L1080 92 L1120 108 L1160 95 L1200 102 L1200 200 Z"/>
+</svg>

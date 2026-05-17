@@ -6,9 +6,13 @@ export default {
   theme: {
     extend: {
       borderRadius: {
-        lg: ".5625rem", /* 9px */
-        md: ".375rem", /* 6px */
-        sm: ".1875rem", /* 3px */
+        lg: "var(--radius)",
+        md: "calc(var(--radius) - 2px)",
+        sm: "calc(var(--radius) - 4px)",
+      },
+      transitionTimingFunction: {
+        smooth: "cubic-bezier(0.2, 0.75, 0.15, 1)",
+        settle: "cubic-bezier(0.25, 0.1, 0.25, 1)",
       },
       colors: {
         // Flat / base colors (regular buttons)
@@ -96,10 +100,40 @@ export default {
           from: { height: "var(--radix-accordion-content-height)" },
           to: { height: "0" },
         },
+        /** Lofi room — window sky (client/src/components/room-window-atmosphere.tsx) */
+        "room-cloud-a": {
+          "0%, 100%": { transform: "translateX(-10%) translateY(0)" },
+          "50%": { transform: "translateX(12%) translateY(-5%)" },
+        },
+        "room-cloud-b": {
+          "0%, 100%": { transform: "translateX(14%) translateY(0)" },
+          "50%": { transform: "translateX(-16%) translateY(4%)" },
+        },
+        "room-cloud-c": {
+          "0%, 100%": { transform: "translateX(-6%) translateY(2%)" },
+          "50%": { transform: "translateX(8%) translateY(-3%)" },
+        },
+        "room-bird-1": {
+          "0%, 5%": { opacity: "0", transform: "translate3d(-8%, 58%, 0) scale(0.9)" },
+          "7%": { opacity: "0.88", transform: "translate3d(4%, 50%, 0) scale(1)" },
+          "22%": { opacity: "0.88", transform: "translate3d(108%, 32%, 0) scale(0.92)" },
+          "26%, 100%": { opacity: "0", transform: "translate3d(115%, 28%, 0) scale(0.88)" },
+        },
+        "room-bird-2": {
+          "0%, 48%": { opacity: "0", transform: "translate3d(108%, 42%, 0) scaleX(-1) scale(0.9)" },
+          "50%": { opacity: "0.82", transform: "translate3d(88%, 38%, 0) scaleX(-1) scale(1)" },
+          "68%": { opacity: "0.82", transform: "translate3d(-12%, 55%, 0) scaleX(-1) scale(0.9)" },
+          "72%, 100%": { opacity: "0", transform: "translate3d(-18%, 58%, 0) scaleX(-1) scale(0.88)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
+        "room-cloud-a": "room-cloud-a 42s ease-in-out infinite",
+        "room-cloud-b": "room-cloud-b 56s ease-in-out infinite",
+        "room-cloud-c": "room-cloud-c 33s ease-in-out infinite",
+        "room-bird-1": "room-bird-1 72s linear infinite",
+        "room-bird-2": "room-bird-2 88s linear infinite",
       },
     },
   },

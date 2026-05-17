@@ -16,6 +16,8 @@ export const users = sqliteTable("users", {
   phone: text("phone"),
   consentUpdates: integer("consent_updates").notNull().default(0), // 0|1
   consentReflections: integer("consent_reflections").notNull().default(0), // 0|1
+  supportProfile: text("support_profile"),
+  memoryPreferences: text("memory_preferences"),
   createdAt: integer("created_at").notNull(),
 });
 
@@ -35,6 +37,7 @@ export type Session = typeof sessions.$inferSelect;
 export const sifts = sqliteTable("sifts", {
   id: text("id").primaryKey(), // short public share id
   userId: integer("user_id"), // nullable: anonymous sifts
+  guestSessionId: text("guest_session_id"), // nullable: anonymous browser session before account claim
   createdAt: integer("created_at").notNull(),
   input: text("input").notNull(),
   inputMode: text("input_mode").notNull(), // 'text' | 'voice'
@@ -90,6 +93,20 @@ export const sifts = sqliteTable("sifts", {
   microTasks: text("micro_tasks"),
   /** Meta-sift: pattern-level analysis across threads (nullable = false) */
   metaSift: integer("meta_sift"),
+  /** UI mode active when the sift was created: 'base' | 'companion' */
+  uiMode: text("ui_mode"),
+  /** Starting environment active when the sift was created: bedroom/desk/rooftop/library */
+  environment: text("environment"),
+  /** JSON SiftOnboardingProfile snapshot active when the sift was created */
+  supportProfileSnapshot: text("support_profile_snapshot"),
+  /** Latest generated Clarity Sheet summary JSON, if user requested one */
+  claritySummary: text("clarity_summary"),
+  /** 'full' | 'clarity_only' | 'do_not_remember' */
+  memoryMode: text("memory_mode").notNull().default("full"),
+  /** 0|1 — user-marked important in Library */
+  pinned: integer("pinned").notNull().default(0),
+  /** Optional transcript expiry timestamp. When elapsed, raw turns are removed. */
+  transcriptExpiresAt: integer("transcript_expires_at"),
 });
 
 // Rolling discernment metrics per user — server-internal only, no public API.
@@ -134,9 +151,67 @@ export const stepScopeSchema = z.object({
 });
 export type StepScope = z.infer<typeof stepScopeSchema>;
 
+export const siftOnboardingProfileSchema = z.object({
+  mode: z.enum(["base", "companion"]).optional(),
+  startingSpace: z.enum(["bedroom", "desk", "rooftop", "library"]).optional(),
+  theme: z.enum(["system", "light", "dark"]).optional(),
+  primaryIntent: z
+    .enum(["sort_thoughts", "calm_noise", "understand_feelings", "find_next_step"])
+    .optional(),
+  supportStyle: z
+    .enum(["gentle", "clear", "direct", "step_by_step"])
+    .optional(),
+  completedAt: z.string().optional(),
+  /** Legacy rows from the first preference pass. */
+  capturedAt: z.string().optional(),
+});
+export type SiftOnboardingProfile = z.infer<typeof siftOnboardingProfileSchema>;
+export const supportProfileSchema = siftOnboardingProfileSchema;
+export type SupportProfile = SiftOnboardingProfile;
+
+export const supportProfileUpdateSchema = z.object({
+  mode: supportProfileSchema.shape.mode.nullable().optional(),
+  startingSpace: supportProfileSchema.shape.startingSpace.nullable().optional(),
+  theme: supportProfileSchema.shape.theme.nullable().optional(),
+  primaryIntent: supportProfileSchema.shape.primaryIntent.nullable().optional(),
+  supportStyle: supportProfileSchema.shape.supportStyle.nullable().optional(),
+  completedAt: z.string().nullable().optional(),
+});
+export type SupportProfileUpdateRequest = z.infer<typeof supportProfileUpdateSchema>;
+
+export const memoryPreferencesSchema = z.object({
+  rememberThemes: z.boolean().default(true),
+  rememberTonePreferences: z.boolean().default(true),
+  allowRelatedSuggestions: z.boolean().default(true),
+  storeRawTranscript: z.boolean().default(true),
+  clarityOnly: z.boolean().default(false),
+});
+export type MemoryPreferences = z.infer<typeof memoryPreferencesSchema>;
+
+export const memoryPreferencesUpdateSchema = z.object({
+  rememberThemes: z.boolean().optional(),
+  rememberTonePreferences: z.boolean().optional(),
+  allowRelatedSuggestions: z.boolean().optional(),
+  storeRawTranscript: z.boolean().optional(),
+  clarityOnly: z.boolean().optional(),
+});
+export type MemoryPreferencesUpdateRequest = z.infer<typeof memoryPreferencesUpdateSchema>;
+
+export const defaultMemoryPreferences: MemoryPreferences = {
+  rememberThemes: true,
+  rememberTonePreferences: true,
+  allowRelatedSuggestions: true,
+  storeRawTranscript: true,
+  clarityOnly: false,
+};
+
 export const analyzeRequestSchema = z.object({
   input: z.string().min(1).max(8000),
   inputMode: z.enum(["text", "voice"]).default("text"),
+  /** Bedroom-only presentation phase. Warmup returns a softer first reply while still persisting structured fields. */
+  phase: z.enum(["warmup", "structured"]).optional(),
+  /** Bedroom-only prompt intent for non-structured warmup openings. */
+  intent: z.enum(["warmup-companion", "greeting-warmup"]).optional(),
   /** User sort of short fragments before the main analysis pass. */
   fragmentSort: z
     .array(
@@ -151,6 +226,8 @@ export const analyzeRequestSchema = z.object({
   forceAnalysis: z.boolean().optional(),
   /** Pattern-level sift from Garden — extra system prompt + persisted flag */
   metaSift: z.boolean().optional(),
+  /** First-run/anonymous onboarding profile. Signed-in server profile still wins. */
+  supportProfile: supportProfileUpdateSchema.optional(),
 });
 export type AnalyzeRequest = z.infer<typeof analyzeRequestSchema>;
 
@@ -213,6 +290,28 @@ export const analysisSchema = z.object({
   stepScope: stepScopeSchema.optional(),
 });
 export type Analysis = z.infer<typeof analysisSchema>;
+
+export const siftSummaryOptionSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  description: z.string().optional(),
+});
+
+export const siftSummarySchema = z.object({
+  summary: z.string(),
+  themes: z.array(z.string()).min(2).max(4),
+  constraints: z.array(z.string()).optional(),
+  canWait: z.array(z.string()).optional(),
+  options: z.array(siftSummaryOptionSchema).min(2).max(3),
+  recommendedNextStep: siftSummaryOptionSchema,
+  meta: z
+    .object({
+      generatedAt: z.string(),
+      model: z.string().optional(),
+    })
+    .optional(),
+});
+export type SiftSummary = z.infer<typeof siftSummarySchema>;
 
 // ────────────────────────────────────────────────────────────────────
 // Operator artifacts (Phase 3)
@@ -375,6 +474,8 @@ export type SiftResult = Analysis & {
   frontBurnerRank?: number | null;
   /** Operator artifact discriminator — used to render the right pill. */
   artifactType?: OperatorArtifactType | null;
+  /** Phase 2 conversation summary, returned on explicit summary requests. */
+  summary?: SiftSummary;
 };
 
 /** POST /api/sift may return this instead of a full SiftResult when redundancy is high */
@@ -431,12 +532,14 @@ export const siftBreakdownRequestSchema = z.object({
 });
 export type SiftBreakdownRequest = z.infer<typeof siftBreakdownRequestSchema>;
 
-// PATCH /api/sift/:id/revise-step — step negotiation. The step is a proposal,
+// POST /api/sift/:id/revise-step — step negotiation. The step is a proposal,
 // never final. "smaller" asks for a narrower variant that still passes the
 // scope/time tests. "different" asks for a different shape of move on the
-// same underlying signal.
+// same underlying signal. Optional `feedback` lets the user name what felt
+// off about the current step without re-sifting the whole read.
 export const siftStepRevisionRequestSchema = z.object({
   variant: z.enum(["smaller", "different"]),
+  feedback: z.string().max(600).optional(),
 });
 export type SiftStepRevisionRequest = z.infer<
   typeof siftStepRevisionRequestSchema
@@ -544,20 +647,18 @@ export const loginSchema = z.object({
 });
 export type LoginRequest = z.infer<typeof loginSchema>;
 
-// Signup requires a contact (email or phone) and two consent booleans.
+// Signup can be a light account first. Contact is optional and can be added later.
 export const signupSchema = z
   .object({
     handle: handleSchema,
     passphrase: passphraseSchema,
-    contact: z
-      .string()
-      .trim()
-      .min(1, "Enter your email or phone so we can reach you later"),
+    contact: z.string().trim().optional().default(""),
     consentUpdates: z.boolean().optional().default(false),
     consentReflections: z.boolean().optional().default(false),
+    supportProfile: supportProfileUpdateSchema.optional(),
   })
   .superRefine((data, ctx) => {
-    if (classifyContact(data.contact) === null) {
+    if (data.contact && classifyContact(data.contact) === null) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: "Enter a valid email or phone number",
@@ -596,7 +697,11 @@ export type Me =
   | {
       id: number;
       handle: string;
+      email: string | null;
+      phone: string | null;
       contactMissing: boolean;
+      supportProfile: SupportProfile | null;
+      memoryPreferences: MemoryPreferences;
     }
   | null;
 
@@ -841,6 +946,55 @@ export type Bookmark = {
   payload: BookmarkPayload;
 };
 
+export type LibrarySiftPreview = {
+  summary: string;
+  matters: string[];
+  noise: string[];
+  nextStep: string;
+};
+
+export type LibrarySiftItem = {
+  id: string;
+  title: string;
+  createdAt: number;
+  summary: string;
+  tags: string[];
+  hasNextStep: boolean;
+  pinned: boolean;
+  memoryMode: "full" | "clarity_only" | "do_not_remember";
+  transcriptExpiresAt: number | null;
+  mode: "base" | "companion" | "personal" | "operator" | null;
+  environment: "bedroom" | "desk" | "rooftop" | "library" | null;
+  preview: LibrarySiftPreview;
+};
+
+export type LibrarySiftDetail = LibrarySiftItem & {
+  input: string;
+  themes: Theme[];
+  reflection: string | null;
+  transcript: ThreadTurn[];
+  related: LibrarySiftItem[];
+};
+
+export type LibraryRecurringTheme = {
+  label: string;
+  count: number;
+};
+
+export type LibraryResponse = {
+  items: LibrarySiftItem[];
+  recurringThemes: LibraryRecurringTheme[];
+  memoryPreferences: MemoryPreferences;
+};
+
+export const sessionMemoryModeSchema = z.enum(["full", "clarity_only", "do_not_remember"]);
+export const updateSessionMemorySchema = z.object({
+  memoryMode: sessionMemoryModeSchema.optional(),
+  pinned: z.boolean().optional(),
+  transcriptExpiresAt: z.number().int().positive().nullable().optional(),
+});
+export type UpdateSessionMemoryRequest = z.infer<typeof updateSessionMemorySchema>;
+
 /** Owner-facing thread payload from GET /api/threads/:id (inner `thread` key). */
 export type ThreadDetail = {
   id: string;
@@ -863,8 +1017,24 @@ export type ThreadDetail = {
 };
 
 // ---- Deepen / close API ----
-export const deepenRequestSchema = z.object({
+export const clientTranscriptTurnSchema = z.object({
+  role: z.enum(["user", "sift"]),
   text: z.string().min(1).max(4000),
+});
+export type ClientTranscriptTurn = z.infer<typeof clientTranscriptTurnSchema>;
+
+export const deepenRequestSchema = z.object({
+  text: z.string().min(1).max(4000).optional(),
+  mode: z.literal("summary").optional(),
+  phase: z.enum(["warmup", "structured"]).optional(),
+  intent: z.enum(["warmup-companion", "greeting-warmup"]).optional(),
+  /** Bedroom summary guardrail: visible current-session transcript from the client. */
+  clientTranscript: z.array(clientTranscriptTurnSchema).max(24).optional(),
+  /** First-run/anonymous onboarding profile. Signed-in server profile still wins. */
+  supportProfile: supportProfileUpdateSchema.optional(),
+}).refine((v) => v.mode === "summary" || !!v.text?.trim(), {
+  message: "Text is required unless requesting a summary",
+  path: ["text"],
 });
 export type DeepenRequest = z.infer<typeof deepenRequestSchema>;
 
@@ -885,6 +1055,10 @@ export type DeepenResponse =
       // When true, the last turn in `turns` is a sort_prompt and the client
       // should render the practice activity before accepting more input.
       awaitingSort?: boolean;
+    }
+  | {
+      type: "summary";
+      summary: SiftSummary;
     };
 
 // Submit a completed (or skipped) signal/noise sort. The server persists it,

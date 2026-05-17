@@ -29,6 +29,16 @@ export function dismissMetaSiftStaging(): void {
   notifyMetaSiftBannerDismissed();
 }
 
+/** Prefill the home composer after navigation (Home reads this on mount). */
+export function stageComposerPrefill(text: string): void {
+  try {
+    if (typeof sessionStorage === "undefined") return;
+    sessionStorage.setItem(STORAGE_PREFILL, text.trim());
+  } catch {
+    /* ignore */
+  }
+}
+
 /**
  * Navigate home with composer pre-filled for a pattern-level sift (meta-sift).
  * POST /api/sift picks up `metaSift: true` via sessionStorage in apiRequest.

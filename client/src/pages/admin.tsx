@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Header, Footnote } from "@/components/brand";
+import { AppShell } from "@/components/app-shell";
 import { apiRequest } from "@/lib/queryClient";
 import { useMe } from "@/lib/auth";
 
@@ -232,10 +233,7 @@ export default function AdminPage() {
   const isUnauthorized = /^401/.test(errMsg);
 
   return (
-    <div className="min-h-screen flex flex-col bg-background">
-      <Header />
-      <main className="flex-1">
-        <div className="mx-auto max-w-3xl px-6 md:px-8 pt-8 md:pt-12 pb-16">
+    <AppShell className="bg-background" header={<Header />} footer={<Footnote />} contentClassName="pt-8 md:pt-12">
           <div className="mb-10 md:mb-12">
             <p className="text-xs uppercase tracking-widest text-muted-foreground">
               Admin
@@ -336,10 +334,7 @@ export default function AdminPage() {
               <UsersTable users={usersData?.users} loading={usersLoading} />
             </div>
           ) : null}
-        </div>
-      </main>
-      <Footnote />
-    </div>
+    </AppShell>
   );
 }
 

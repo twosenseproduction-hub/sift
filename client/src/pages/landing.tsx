@@ -1,14 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { Moon, Sun } from "lucide-react";
 import { Logo, LogoMark } from "@/components/brand";
-import { useTheme } from "@/lib/theme";
 import { EngineDemo } from "@/components/engine-demo";
 
 // The landing page is the marketing surface that lives at the apex.
 // It's modeled directly on the Sift deck — same sections, same copy,
 // same visual language — but rebuilt natively in React + Tailwind so
 // it shares the app's design system (Instrument Serif + DM Sans, the
-// warm cream and deep teal palette, the same dark mode tokens).
+// Palladian / navy / flame palette).
 //
 // CTA target is host-aware: on the marketing domain (siftnow.io /
 // www.siftnow.io) it cross-links to the app subdomain; on the app
@@ -233,9 +231,8 @@ function FaqItem({
 }
 
 // Sticky glass header — adds a faint border once the user scrolls past
-// the top. Theme toggle and CTA on the right.
+// the top. CTA on the right.
 function LandingHeader() {
-  const { theme, toggle } = useTheme();
   const [scrolled, setScrolled] = useState(false);
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 10);
@@ -303,19 +300,6 @@ function LandingHeader() {
           </a>
         </nav>
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={toggle}
-            aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
-            data-testid="button-theme"
-            className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-border/60 bg-card/70 backdrop-blur-md transition-transform hover:-translate-y-px"
-          >
-            {theme === "dark" ? (
-              <Sun className="h-4 w-4" />
-            ) : (
-              <Moon className="h-4 w-4" />
-            )}
-          </button>
           <a
             href={getAppHref()}
             className="hidden h-11 items-center justify-center rounded-full border border-border/60 bg-card/70 px-5 text-sm font-semibold backdrop-blur-md transition-transform hover:-translate-y-px md:inline-flex"

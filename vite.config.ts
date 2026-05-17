@@ -21,6 +21,12 @@ export default defineConfig({
     fs: {
       strict: true,
       deny: ["**/.*"],
+      // `CompanionAvatar` loads pixel poses from `Avatars and Scenes/Poses/` (outside `client/` root).
+      allow: [path.resolve(import.meta.dirname)],
+    },
+    // Used when merging into middleware-mode server (`server/vite.ts`). Helps file watcher ignore noisy dirs.
+    watch: {
+      ignored: ["**/node_modules/**", "**/dist/**"],
     },
   },
 });

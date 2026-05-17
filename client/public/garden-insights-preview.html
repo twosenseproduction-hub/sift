@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Garden insights — UI preview (static)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: hsl(42 42% 97%);
+      --card: hsl(40 35% 99%);
+      --fg: hsl(220 18% 14%);
+      --muted: hsl(220 10% 42%);
+      --border: hsl(38 20% 88%);
+      --primary: hsl(186 42% 32%);
+      --primary-soft: hsl(186 35% 94%);
+      --primary-border: hsl(186 30% 78%);
+      --shadow: 0 10px 36px -12px rgba(30, 25, 18, 0.12);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: hsl(220 16% 10%);
+        --card: hsl(220 14% 13%);
+        --fg: hsl(42 12% 94%);
+        --muted: hsl(220 8% 62%);
+        --border: hsl(220 10% 22%);
+        --primary: hsl(172 45% 48%);
+        --primary-soft: hsl(186 25% 16%);
+        --primary-border: hsl(186 20% 28%);
+        --shadow: 0 10px 36px -8px rgba(0, 0, 0, 0.45);
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "DM Sans", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+      line-height: 1.5;
+      min-height: 100vh;
+      padding: 2rem 1.25rem 4rem;
+    }
+    .wrap { max-width: 42rem; margin: 0 auto; }
+    .eyebrow {
+      font-size: 11px;
+      letter-spacing: 0.25em;
+      text-transform: uppercase;
+      color: var(--primary);
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+    h1 {
+      font-family: "Instrument Serif", Georgia, serif;
+      font-size: 1.75rem;
+      font-weight: 400;
+      margin: 0 0 1.5rem;
+    }
+    .note {
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 2rem;
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px dashed var(--border);
+      background: color-mix(in srgb, var(--card) 80%, transparent);
+    }
+    /* Snapshot */
+    .snapshot {
+      position: relative;
+      overflow: hidden;
+      border-radius: 1rem;
+      border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--border));
+      background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 9%, var(--card)), var(--card) 55%, color-mix(in srgb, var(--primary) 4%, var(--card)));
+      padding: 1.5rem 1.5rem 1.6rem;
+      margin-bottom: 2.5rem;
+      box-shadow: var(--shadow);
+    }
+    .snapshot::after {
+      content: "";
+      position: absolute;
+      right: -4rem;
+      top: -5rem;
+      width: 12rem;
+      height: 12rem;
+      border-radius: 50%;
+      background: color-mix(in srgb, var(--primary) 12%, transparent);
+      filter: blur(48px);
+      pointer-events: none;
+    }
+    .snapshot-inner { position: relative; z-index: 1; }
+    .snapshot-head {
+      display: flex;
+      gap: 0.75rem;
+      align-items: flex-start;
+      margin-bottom: 1rem;
+    }
+    .spark {
+      flex-shrink: 0;
+      width: 2.25rem;
+      height: 2.25rem;
+      border-radius: 999px;
+      border: 1px solid var(--primary-border);
+      background: color-mix(in srgb, var(--primary) 12%, transparent);
+      display: grid;
+      place-items: center;
+      color: var(--primary);
+      font-size: 14px;
+    }
+    .snap-title {
+      font-size: 10px;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      font-weight: 600;
+      color: color-mix(in srgb, var(--primary) 85%, var(--muted));
+      margin-bottom: 0.25rem;
+    }
+    .snap-lead {
+      font-family: "Instrument Serif", Georgia, serif;
+      font-size: 1.2rem;
+      line-height: 1.35;
+    }
+    .snap-echo {
+      font-size: 14px;
+      color: var(--muted);
+      margin: 1rem 0 0 2.75rem;
+      padding-left: 1rem;
+      border-left: 1px solid color-mix(in srgb, var(--primary) 35%, var(--border));
+    }
+    .snap-echo strong { color: var(--fg); font-weight: 500; }
+    .lesson {
+      margin: 1rem 0 0 2.75rem;
+      font-size: 13px;
+      font-style: italic;
+      border-left: 2px solid color-mix(in srgb, var(--primary) 40%, var(--border));
+      padding-left: 0.75rem;
+      color: color-mix(in srgb, var(--fg) 88%, var(--muted));
+    }
+    .snap-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.6rem;
+      margin-top: 1.1rem;
+      padding-left: 2.75rem;
+    }
+    .btn {
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 0.45rem 1rem;
+      border-radius: 999px;
+      border: 1px solid transparent;
+      cursor: default;
+    }
+    .btn-primary {
+      background: var(--primary);
+      color: hsl(0 0% 99%);
+      border-color: color-mix(in srgb, var(--primary) 70%, black);
+    }
+    .btn-outline {
+      background: transparent;
+      border-color: color-mix(in srgb, var(--primary) 40%, var(--border));
+      color: var(--fg);
+    }
+    /* Section label */
+    .sec-label {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      margin-bottom: 0.6rem;
+    }
+    .sec-label::before {
+      content: "";
+      width: 1.5rem;
+      height: 1px;
+      background: color-mix(in srgb, var(--primary) 45%, transparent);
+    }
+    .sec-label span {
+      font-size: 11px;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      font-weight: 600;
+      color: color-mix(in srgb, var(--primary) 88%, var(--muted));
+    }
+    .sec-desc { font-size: 12px; color: var(--muted); margin-bottom: 0.75rem; max-width: 36rem; }
+    /* Chips */
+    .chips { display: flex; flex-wrap: wrap; gap: 0.45rem; margin-bottom: 2rem; }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      font-size: 12px;
+      padding: 0.35rem 0.65rem;
+      border-radius: 999px;
+      border: 1px solid var(--primary-border);
+      background: color-mix(in srgb, var(--primary) 8%, var(--card));
+    }
+    .chip-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--primary); }
+    .chip-muted {
+      border-color: var(--border);
+      background: color-mix(in srgb, var(--muted) 12%, var(--card));
+      color: var(--muted);
+    }
+    .chip-muted .chip-dot { background: color-mix(in srgb, var(--muted) 55%, var(--border)); }
+    /* Connections */
+    .conn {
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: color-mix(in srgb, var(--card) 90%, transparent);
+      padding: 0.85rem 1rem;
+      font-size: 14px;
+      color: var(--muted);
+      margin-bottom: 2rem;
+    }
+    .conn strong { color: var(--fg); font-weight: 600; }
+    .conn a { color: var(--primary); font-size: 12px; font-weight: 600; }
+    /* Prose */
+    .prose-pin {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 0.5rem;
+      font-size: 10px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .prose-pin button {
+      font: inherit;
+      font-size: 11px;
+      letter-spacing: 0;
+      text-transform: none;
+      padding: 0.25rem 0.6rem;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--card);
+      color: var(--muted);
+    }
+    .prose-box {
+      min-height: 6rem;
+      font-size: 16px;
+      line-height: 1.55;
+      margin-bottom: 2rem;
+    }
+    .prose-sub { font-size: 14px; color: var(--muted); margin-top: 0.5rem; }
+    /* Month chips */
+    .months { display: flex; flex-wrap: wrap; gap: 0.45rem; margin-bottom: 0.5rem; }
+    .month {
+      font-size: 12px;
+      padding: 0.35rem 0.65rem;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--muted);
+    }
+    .month.on {
+      border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
+      background: color-mix(in srgb, var(--primary) 10%, transparent);
+      color: var(--primary);
+    }
+    .toggle {
+      margin: 1rem 0 2rem;
+      font-size: 12px;
+    }
+    .toggle button {
+      font: inherit;
+      color: var(--primary);
+      text-decoration: underline;
+      text-underline-offset: 3px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <p class="eyebrow">Static preview</p>
+    <h1>Sift · Garden</h1>
+    <p class="note">
+      This file is a <strong>layout mock</strong> of the new Garden insights (snapshot, clusters,
+      connections, prose pin, month filter). Open with the dev server for the live page:
+      <code style="font-size:12px">/#/garden</code> (signed in). Toggle below simulates <strong>All time</strong> vs <strong>month filter</strong>.
+    </p>
+
+    <div id="view-all">
+      <section class="snapshot">
+        <div class="snapshot-inner">
+          <div class="snapshot-head">
+            <div class="spark">✦</div>
+            <div>
+              <p class="snap-title">Snapshot</p>
+              <p class="snap-lead">3 open · 5 closed — load-bearing signal tends to be “what keeps pulling your attention”.</p>
+            </div>
+          </div>
+          <p class="snap-echo"><strong>Strongest echo:</strong> launch scope vs energy · appears across 4 threads</p>
+          <p class="lesson">“Closed the loop by naming one lane and sticking to it for a week.”</p>
+          <p class="lesson">“The fear was louder than the deadline.”</p>
+          <div class="snap-actions">
+            <span class="btn btn-primary">Sift one thing</span>
+            <span class="btn btn-outline">Sift strongest pattern</span>
+          </div>
+        </div>
+      </section>
+
+      <div class="sec-label"><span>Clusters</span></div>
+      <p class="sec-desc">Recurring themes (signal) and repeated noise lines from your threads—same geometry the garden uses under the hood.</p>
+      <div class="chips">
+        <span class="chip"><span class="chip-dot"></span> launch scope <span style="opacity:.75">×4</span></span>
+        <span class="chip"><span class="chip-dot"></span> money fog <span style="opacity:.75">×3</span></span>
+        <span class="chip chip-muted"><span class="chip-dot"></span> replaying worst case <span style="opacity:.75">×5</span></span>
+      </div>
+
+      <div class="conn">
+        <strong>6</strong> pairs of threads echo the same signal lines.
+        <a href="#">See recurring signals</a>
+      </div>
+    </div>
+
+    <div id="view-month" hidden>
+      <section class="snapshot">
+        <div class="snapshot-inner">
+          <div class="snapshot-head">
+            <div class="spark">✦</div>
+            <div>
+              <p class="snap-title">May · snapshot</p>
+              <p class="snap-lead">2 open · 1 closed in May. May added more threads than it closed.</p>
+            </div>
+          </div>
+          <p class="snap-echo"><strong>Strongest echo:</strong> launch scope vs energy · appears across 2 threads this month</p>
+          <p class="lesson">“Shipped the small slice first.”</p>
+          <div class="snap-actions">
+            <span class="btn btn-primary">Sift one thing</span>
+            <span class="btn btn-outline">Sift strongest pattern</span>
+          </div>
+        </div>
+      </section>
+
+      <div class="sec-label"><span>Clusters</span></div>
+      <p class="sec-desc">Signal themes that touch this month. Noise repeats stay all-time — switch to All time to see them.</p>
+      <div class="chips">
+        <span class="chip"><span class="chip-dot"></span> launch scope <span style="opacity:.75">×4</span></span>
+      </div>
+
+      <div class="conn">
+        <strong>1</strong> pair of threads echo the same signal lines.
+        <a href="#">See recurring signals</a>
+      </div>
+    </div>
+
+    <div class="prose-pin">
+      Read pinned
+      <button type="button">✕ Clear</button>
+    </div>
+    <div class="prose-box">
+      This thread is still asking something.
+      <p class="prose-sub">Something is waiting here.</p>
+    </div>
+
+    <div class="months">
+      <span class="month on">All time <span style="opacity:.65">8</span></span>
+      <span class="month">May <span style="opacity:.65">3</span></span>
+      <span class="month">Apr <span style="opacity:.65">2</span></span>
+    </div>
+
+    <p class="toggle">
+      <button type="button" id="btn-all">Show: All time</button>
+      ·
+      <button type="button" id="btn-month">Show: Month filter (May)</button>
+    </p>
+
+    <div class="sec-label"><span>Your threads</span></div>
+    <p class="sec-desc" style="margin-bottom:1rem">List rows pin prose on tap; pinned row gets a soft ring in the app.</p>
+    <div style="border-radius:12px;border:1px solid var(--border);padding:12px 14px;background:color-mix(in srgb,var(--card)85%,transparent);margin-bottom:8px;box-shadow:0 0 0 2px color-mix(in srgb,var(--primary)22%,transparent);">
+      <strong style="font-size:14px">Launch keeps ballooning</strong>
+      <span style="float:right;font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)">May</span>
+      <p style="margin:6px 0 0;font-size:12px;color:var(--muted)">Live · Next: Name one lane for the week</p>
+    </div>
+    <div style="border-radius:12px;border:1px solid var(--border);padding:12px 14px;background:color-mix(in srgb,var(--card)85%,transparent);">
+      <strong style="font-size:14px">Money conversation</strong>
+      <span style="float:right;font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)">Apr</span>
+      <p style="margin:6px 0 0;font-size:12px;color:var(--muted)">Closed · Next: —</p>
+    </div>
+  </div>
+  <script>
+    const all = document.getElementById("view-all");
+    const month = document.getElementById("view-month");
+    document.getElementById("btn-all").onclick = () => {
+      all.hidden = false;
+      month.hidden = true;
+    };
+    document.getElementById("btn-month").onclick = () => {
+      all.hidden = true;
+      month.hidden = false;
+    };
+  </script>
+</body>
+</html>

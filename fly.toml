@@ -17,6 +17,8 @@ primary_region = "sjc"   # San Jose — close to the Bay Area. Change if you pre
   # ANTHROPIC_MODEL is optional — the default works against api.anthropic.com.
   # Override only if you want a different Claude variant:
   # ANTHROPIC_MODEL = "claude-sonnet-4-5-20250929"
+  # Optional: self-hosted Kokoro (`services/kokoro-tts`). When unset, `/api/tts/kokoro` is disabled.
+  # KOKORO_TTS_URL = "https://your-kokoro-app.fly.dev"
 
 # Persistent volume for the SQLite database. Created separately with:
 #   fly volumes create sift_data --region sjc --size 1

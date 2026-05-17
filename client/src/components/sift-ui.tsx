@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { Mic, MicOff, Send, Copy, Link2, RotateCcw, Check, Sparkles, Clock, ArrowRight, Share2 } from "lucide-react";
+import { Mic, MicOff, Send, Copy, Link2, RotateCcw, Check, Sparkles, Clock, ArrowRight, Share2, ArrowUp } from "lucide-react";
 import { SharePromptDialog } from "./share-prompt-dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -23,6 +23,8 @@ import type { FragmentBucket } from "@shared/schema";
 import { isCareResponse, isRedundancyGateResult } from "@shared/schema";
 import { ClarifyPrompt } from "./clarify-prompt";
 import { previewModeFromInput } from "@/lib/routeThread";
+import { cn } from "@/lib/utils";
+import { SIFT_LUMA_MOOD_EVENT, type LumaMood } from "@/lib/lumaGrainEngine";
 
 // Deterministic thin-input heuristic. Returns true when the submission is
 // likely too sparse for a confident sift. Intentionally conservative — we
@@ -61,6 +63,10 @@ interface ComposerProps {
    * user taps "this wasn't what I meant".
    */
   onCare?: (originalInput: string) => void;
+  /** Room home: echo the user's line into the chat transcript on send. */
+  onRoomSubmitEcho?: (text: string) => void;
+  /** Room home: true during fragment fetch, fragment sort UI, or analysis. */
+  onRoomBusyChange?: (busy: boolean) => void;
   /**
    * Optional seed text. When `prefillToken` changes to a new value, the
    * composer's textarea is re-seeded with `initialText`. Lets callers
@@ -69,6 +75,10 @@ interface ComposerProps {
    */
   initialText?: string;
   prefillToken?: number;
+  /** Softer chrome when nested inside HomeStage so one tray owns the frame. */
+  embedded?: boolean;
+  /** Journal-style home: pill field + inline send + outer voice control. */
+  layout?: "default" | "journal" | "room";
 }
 
 // The first three are inner-monologue style — thoughts the user might
@@ -90,12 +100,19 @@ const SIFTING_SUBLINES = [
 
 const FRAGMENT_FETCH_LINE = "Pulling out threads…";
 
+const JOURNAL_PLACEHOLDER = "Start a conversation";
+const ROOM_PLACEHOLDER = "Share anything...";
+
 export function Composer({
   onResult,
   onRedundancyGate,
   onCare,
+  onRoomSubmitEcho,
+  onRoomBusyChange,
   initialText,
   prefillToken,
+  embedded = false,
+  layout = "default",
 }: ComposerProps) {
   // If the caller mounts this composer already holding a non-zero prefillToken
   // (e.g. the continuation composer in the expanding flow, which bumps the
@@ -134,7 +151,37 @@ export function Composer({
     null,
   );
 
+  useEffect(() => {
+    if (layout !== "room" || !onRoomBusyChange) return;
+    onRoomBusyChange(loading || sortPhase !== null);
+  }, [layout, loading, sortPhase, onRoomBusyChange]);
+
   useEffect(() => () => recRef.current?.stop(), []);
+
+  useEffect(() => {
+    const onFocusComposer = () => {
+      const el = textareaRef.current;
+      if (!el) return;
+      if (layout !== "room") {
+        try {
+          el.scrollIntoView({ behavior: "smooth", block: "center" });
+        } catch {
+          /* ignore */
+        }
+      }
+      requestAnimationFrame(() => {
+        el.focus();
+        const len = el.value.length;
+        try {
+          el.setSelectionRange(len, len);
+        } catch {
+          /* ignore */
+        }
+      });
+    };
+    window.addEventListener("sift:focus-composer", onFocusComposer);
+    return () => window.removeEventListener("sift:focus-composer", onFocusComposer);
+  }, [layout]);
 
   // Re-seed the composer whenever `prefillToken` changes. Using a token
   // (instead of keying on the text) lets callers prefill with the same seed
@@ -154,12 +201,12 @@ export function Composer({
     requestAnimationFrame(() => {
       const el = textareaRef.current;
       if (!el) return;
-      // Scroll into view on small screens so the keyboard doesn't hide the
-      // seeded text. "center" is friendlier than "start" on desktop too.
-      try {
-        el.scrollIntoView({ behavior: "smooth", block: "center" });
-      } catch {
-        // older browsers — ignore.
+      if (layout !== "room") {
+        try {
+          el.scrollIntoView({ behavior: "smooth", block: "center" });
+        } catch {
+          // older browsers — ignore.
+        }
       }
       el.focus();
       const len = initialText.length;
@@ -169,8 +216,7 @@ export function Composer({
         // ignore — some browsers may throw on readonly inputs.
       }
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prefillToken]);
+  }, [prefillToken, layout]);
 
   // Rotate the "Sifting…" subline every 2.2s while the full analysis runs.
   useEffect(() => {
@@ -185,15 +231,44 @@ export function Composer({
     return () => clearInterval(id);
   }, [loading, loadingStage]);
 
+  useEffect(() => {
+    if (!loading) return;
+    if (loadingStage === "fragments") {
+      window.dispatchEvent(
+        new CustomEvent(SIFT_LUMA_MOOD_EVENT, { detail: "think" as LumaMood }),
+      );
+    } else if (loadingStage === "full") {
+      window.dispatchEvent(
+        new CustomEvent(SIFT_LUMA_MOOD_EVENT, { detail: "process" as LumaMood }),
+      );
+    }
+  }, [loading, loadingStage]);
+
+  useEffect(() => {
+    if (loading) return;
+    if (sortPhase || clarifyInput) {
+      window.dispatchEvent(
+        new CustomEvent(SIFT_LUMA_MOOD_EVENT, { detail: "listen" as LumaMood }),
+      );
+      return;
+    }
+    window.dispatchEvent(
+      new CustomEvent(SIFT_LUMA_MOOD_EVENT, {
+        detail: (input.trim() ? "listen" : "idle") as LumaMood,
+      }),
+    );
+  }, [loading, loadingStage, input, sortPhase, clarifyInput]);
+
   // Rotate placeholder every 3s, but pause while focused or while user has typed something.
   useEffect(() => {
+    if (layout === "journal") return;
     if (focused || input || recording) return;
     const id = setInterval(
       () => setPlaceholderIdx((i) => (i + 1) % PLACEHOLDER_PROMPTS.length),
       3000,
     );
     return () => clearInterval(id);
-  }, [focused, input, recording]);
+  }, [focused, input, recording, layout]);
 
   const startVoice = () => {
     if (!voiceSupported) {
@@ -324,6 +399,7 @@ export function Composer({
     const text = input.trim();
     if (!text) return;
     if (recording) stopVoice();
+    if (layout === "room" && onRoomSubmitEcho) onRoomSubmitEcho(text);
     // Thin-input gate — show the clarification prompt instead of sending.
     // The original text stays in the composer state so "Edit my thought"
     // returns the user cleanly to what they typed.
@@ -340,6 +416,9 @@ export function Composer({
     // Merge the original thought with the clarification answer. Labeled so
     // the model sees both passes as one coherent submission.
     const merged = `${base}\n\nOne more angle: ${answer}`;
+    if (layout === "room" && onRoomSubmitEcho) {
+      onRoomSubmitEcho(`Add: ${answer.trim()}`);
+    }
     await beginFragmentSort(merged);
   };
 
@@ -349,6 +428,17 @@ export function Composer({
     if (skipped) {
       setSortPhase(null);
       void runSift(text, { skippedFragmentSort: true });
+      return;
+    }
+    const allAnswered = sortPhase.fragments.every(
+      (_, i) => sortPhase.classifications[i] !== null,
+    );
+    if (!allAnswered) {
+      toast({
+        title: "Sort each line",
+        description:
+          "Pick Matters, Noise, or Not sure for every line — or tap Skip sorting.",
+      });
       return;
     }
     const fragmentSort = sortPhase.fragments
@@ -381,6 +471,13 @@ export function Composer({
     });
   };
 
+  const pickFragmentBucket = (index: number, bucket: FragmentBucket) => {
+    if (!sortPhase) return;
+    const n = sortPhase.fragments.length;
+    if (index < 0 || index >= n) return;
+    setFragmentBucket(index, bucket);
+  };
+
   const handleKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
       e.preventDefault();
@@ -402,52 +499,140 @@ export function Composer({
   }
 
   if (sortPhase) {
+    const n = sortPhase.fragments.length;
+    const firstOpen = sortPhase.fragments.findIndex(
+      (_, i) => sortPhase.classifications[i] === null,
+    );
+    const allAnswered = firstOpen === -1;
+    const roomShell = embedded && layout === "room";
+
     return (
       <div className="relative" data-testid="composer">
-        <div className="rounded-2xl border border-border/70 bg-card/50 p-5 md:p-6 space-y-8">
-          <p className="text-sm text-muted-foreground leading-relaxed">
+        <div
+          className={cn(
+            "mx-auto w-full max-w-[min(92vw,52ch)] space-y-5 px-2 py-2 sm:px-3",
+            roomShell
+              ? "rounded-2xl border border-white/45 bg-card/80 py-5 shadow-lg shadow-black/12 backdrop-blur-md dark:border-white/12 dark:bg-black/45"
+              : "rounded-2xl border border-border/55 bg-card/65 p-5 shadow-[var(--shadow-md)] backdrop-blur-sm md:p-6",
+          )}
+        >
+          <p
+            className={cn("mb-1 w-full text-[12px] leading-snug text-muted-foreground")}
+          >
             Quick scan — tap what each line feels like.
           </p>
-          {sortPhase.fragments.map((frag, i) => {
-            const picked = sortPhase.classifications[i];
-            return (
-              <div key={i} className="space-y-3">
-                <p className="text-base md:text-[17px] text-foreground leading-snug">
-                  {frag}
-                </p>
-                <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm">
-                  {(["matters", "noise", "unsure"] as FragmentBucket[]).map(
-                    (b) => (
-                      <button
-                        type="button"
-                        key={b}
-                        data-testid={`fragment-${i}-${b}`}
-                        onClick={() => setFragmentBucket(i, b)}
-                        className={
-                          picked === b
-                            ? "text-foreground underline underline-offset-4 decoration-primary/60"
-                            : "text-muted-foreground/80 hover:text-foreground transition-colors"
-                        }
-                      >
-                        {b === "matters"
-                          ? "Matters"
-                          : b === "noise"
-                          ? "Noise"
-                          : "Not sure"}
-                      </button>
-                    ),
+
+          <div
+            className="flex items-center justify-between gap-3"
+            data-testid="fragment-sort-progress"
+          >
+            <p
+              className="text-[11px] font-medium uppercase tracking-[0.22em] text-muted-foreground/80"
+            >
+              {allAnswered
+                ? `Sorted · ${n} of ${n}`
+                : `Line ${firstOpen + 1} of ${n}`}
+            </p>
+            <div className="flex shrink-0 items-center gap-1.5" aria-hidden="true">
+              {sortPhase.fragments.map((_, i) => {
+                const assigned = sortPhase.classifications[i];
+                return (
+                  <span
+                    key={i}
+                    className={cn(
+                      "h-1.5 rounded-full transition-all duration-300",
+                      assigned === null ? "w-1.5 bg-border" : "w-2.5",
+                      assigned === "matters" && "bg-primary/75",
+                      assigned === "noise" && "bg-muted-foreground/50",
+                      assigned === "unsure" && "bg-muted-foreground/30",
+                    )}
+                  />
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="mx-auto w-full max-w-[46ch] space-y-1">
+            {sortPhase.fragments.map((fragment, lineIndex) => {
+              const picked = sortPhase.classifications[lineIndex];
+              const needsAttention =
+                firstOpen !== -1 &&
+                lineIndex === firstOpen &&
+                picked === null;
+              return (
+                <div
+                  key={lineIndex}
+                  className={cn(
+                    "mb-3 w-full space-y-1.5 last:mb-0",
+                    needsAttention &&
+                      "-mx-1 rounded-lg bg-primary/[0.06] px-2 py-2 ring-1 ring-primary/20 sm:-mx-0",
                   )}
+                  data-testid={`fragment-sort-row-${lineIndex}`}
+                >
+                  <p
+                    className={cn(
+                      "text-[12.5px] leading-snug text-foreground/85",
+                    )}
+                  >
+                    {fragment}
+                  </p>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
+                    {(["matters", "noise", "unsure"] as FragmentBucket[]).map(
+                      (b) => (
+                        <button
+                          type="button"
+                          key={b}
+                          data-testid={`fragment-${lineIndex}-${b}`}
+                          onClick={() => pickFragmentBucket(lineIndex, b)}
+                          disabled={loading}
+                          className={cn(
+                            "transition-colors disabled:opacity-50",
+                            picked === b
+                              ? "text-foreground underline decoration-primary/70 [text-decoration-thickness:1.5px] [text-underline-offset:4px]"
+                              : "text-muted-foreground/70 hover:text-foreground",
+                          )}
+                        >
+                          {b === "matters"
+                            ? "Matters"
+                            : b === "noise"
+                              ? "Noise"
+                              : "Not sure"}
+                        </button>
+                      ),
+                    )}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
-          <div className="flex flex-wrap items-center gap-5 pt-2 border-t border-border/60">
+              );
+            })}
+          </div>
+
+          {allAnswered ? (
+            <p
+              className="text-[12px] leading-relaxed text-muted-foreground"
+              data-testid="fragment-sort-wrap-up"
+            >
+              Every line has a sort. Continue when you are ready — tap any line
+              to change it.
+            </p>
+          ) : null}
+
+          <div
+            className={cn(
+              "flex flex-wrap items-center gap-5 border-t pt-3",
+              roomShell ? "border-border/40 dark:border-white/15" : "border-border/60",
+            )}
+          >
             <button
               type="button"
               onClick={() => finishFragmentSort(false)}
-              disabled={loading}
+              disabled={loading || !allAnswered}
               data-testid="button-fragment-continue"
-              className="text-sm text-foreground/85 hover:text-foreground underline underline-offset-4 decoration-border hover:decoration-foreground transition-colors disabled:opacity-50"
+              className={cn(
+                "text-sm underline underline-offset-4 transition-colors disabled:opacity-45",
+                roomShell
+                  ? "text-foreground decoration-primary/45 hover:decoration-primary"
+                  : "text-foreground/85 decoration-border hover:text-foreground hover:decoration-foreground",
+              )}
             >
               Continue
             </button>
@@ -456,7 +641,12 @@ export function Composer({
               onClick={() => finishFragmentSort(true)}
               disabled={loading}
               data-testid="button-fragment-skip"
-              className="text-xs text-muted-foreground/80 hover:text-foreground transition-colors disabled:opacity-50"
+              className={cn(
+                "text-xs transition-colors disabled:opacity-50",
+                roomShell
+                  ? "text-muted-foreground/85 hover:text-foreground"
+                  : "text-muted-foreground/80 hover:text-foreground",
+              )}
             >
               Skip sorting
             </button>
@@ -464,7 +654,12 @@ export function Composer({
               type="button"
               onClick={() => setSortPhase(null)}
               disabled={loading}
-              className="text-xs text-muted-foreground/60 hover:text-foreground transition-colors disabled:opacity-50"
+              className={cn(
+                "text-xs transition-colors disabled:opacity-50",
+                roomShell
+                  ? "text-muted-foreground/70 hover:text-foreground"
+                  : "text-muted-foreground/60 hover:text-foreground",
+              )}
             >
               Back
             </button>
@@ -474,14 +669,135 @@ export function Composer({
     );
   }
 
+  if (embedded && (layout === "journal" || layout === "room")) {
+    const room = layout === "room";
+    return (
+      <div className="relative w-full max-w-xl mx-auto" data-testid="composer">
+        <div
+          className={cn(
+            "flex min-h-[3rem] w-full items-end gap-0.5 px-1 py-1 transition-colors duration-200",
+            room
+              ? "rounded-full border border-white/55 bg-[#efe8dc]/92 pl-3.5 backdrop-blur-md shadow-[0_12px_40px_-12px_rgba(15,70,70,0.14),0_2px_12px_-6px_rgba(15,70,70,0.06)]"
+              : "rounded-full border bg-background/95 pl-3 shadow-sm",
+            !room && recording ? "border-primary/40" : !room && "border-border/50",
+            room && recording && "border-teal-600/35 ring-1 ring-teal-600/18",
+          )}
+        >
+          <Textarea
+            ref={textareaRef}
+            data-testid="input-thoughts"
+            value={displayText}
+            onChange={(e) => {
+              modeRef.current = recording ? "voice" : "text";
+              setInput(e.target.value);
+              setInterim("");
+            }}
+            onKeyDown={handleKey}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
+            disabled={loading}
+            placeholder={room ? ROOM_PLACEHOLDER : JOURNAL_PLACEHOLDER}
+            rows={1}
+            className={cn(
+              "min-h-[2.5rem] max-h-[7rem] flex-1 resize-none border-0 bg-transparent py-2.5 pr-1 text-[15px] leading-snug focus-visible:ring-0",
+              room
+                ? "text-teal-950 placeholder:text-teal-800/42"
+                : "placeholder:text-muted-foreground/55",
+            )}
+          />
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={recording ? stopVoice : startVoice}
+            disabled={loading || !voiceSupported}
+            data-testid="button-voice"
+            aria-label={recording ? "Stop recording" : "Start voice input"}
+            title={
+              voiceSupported
+                ? recording
+                  ? "Stop recording"
+                  : "Speak your thoughts"
+                : "Voice not supported in this browser"
+            }
+            className={cn(
+              "h-9 w-9 shrink-0 rounded-full",
+              room
+                ? "text-teal-900/40 hover:bg-teal-950/[0.06] hover:text-teal-900/75"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
+              recording && !room && "text-primary hover:text-primary hover:bg-primary/10",
+              recording && room && "text-teal-700 hover:text-teal-800",
+            )}
+          >
+            {recording ? (
+              <MicOff className="w-4 h-4" aria-hidden />
+            ) : (
+              <Mic className="w-4 h-4" aria-hidden />
+            )}
+          </Button>
+          <Button
+            type="button"
+            size="icon"
+            variant="default"
+            onClick={submit}
+            disabled={loading || !input.trim()}
+            data-testid="button-sift"
+            className={cn(
+              "h-9 w-9 shrink-0 rounded-full",
+              room &&
+                "border-0 bg-teal-600 text-white shadow-md shadow-teal-900/20 hover:bg-teal-700 hover:text-white focus-visible:ring-teal-500 disabled:bg-teal-600/35",
+            )}
+            aria-label="Send"
+          >
+            {loading ? (
+              <Sparkles className="w-4 h-4 animate-pulse" aria-hidden />
+            ) : room ? (
+              <Send className="w-4 h-4 translate-x-px translate-y-px" aria-hidden />
+            ) : (
+              <ArrowUp className="w-4 h-4" aria-hidden />
+            )}
+          </Button>
+        </div>
+        {loading && !(layout === "room" && onRoomBusyChange) ? (
+          <div
+            className="mt-4 flex items-center justify-center gap-2 text-sm text-muted-foreground"
+            data-testid="sifting-subline"
+            aria-live="polite"
+          >
+            <span className="pulse-dot h-1.5 w-1.5 rounded-full bg-primary inline-block" />
+            <span
+              key={loadingStage === "full" ? siftingIdx : "frag"}
+              className={loadingStage === "full" ? "fade-in-slow" : ""}
+            >
+              {loadingStage === "fragments"
+                ? FRAGMENT_FETCH_LINE
+                : SIFTING_SUBLINES[siftingIdx]}
+            </span>
+          </div>
+        ) : !loading ? (
+          <p
+            className={cn(
+              "mt-2.5 text-center text-[11px] leading-relaxed",
+              room ? "text-muted-foreground/75" : "text-muted-foreground/70",
+            )}
+          >
+            {room ? "Messy is fine · ⌘ Enter to send" : "⌘ Enter to sift · Messy is fine."}
+          </p>
+        ) : null}
+      </div>
+    );
+  }
+
   return (
     <div className="relative" data-testid="composer">
       <div
         className={[
-          "relative rounded-2xl border bg-card transition-all",
+          "relative rounded-2xl border bg-card transition-all duration-200 ease-smooth",
           recording
-            ? "border-primary/40 shadow-lg shadow-primary/5"
-            : "border-card-border shadow-sm",
+            ? "border-primary/40 shadow-xl shadow-primary/10 ring-1 ring-primary/15"
+            : embedded
+              ? "rounded-[1.35rem] border border-border/40 bg-muted/[0.12] dark:bg-muted/[0.14] shadow-inner shadow-black/[0.04] ring-1 ring-black/[0.03] dark:ring-white/[0.05]"
+              : "border-card-border shadow-md ring-1 ring-black/[0.02] dark:ring-white/[0.04]",
         ].join(" ")}
       >
         <Textarea
@@ -498,7 +814,7 @@ export function Composer({
           onBlur={() => setFocused(false)}
           disabled={loading}
           placeholder={PLACEHOLDER_PROMPTS[placeholderIdx]}
-          className="min-h-[220px] md:min-h-[260px] resize-none border-0 bg-transparent px-5 py-5 md:px-7 md:py-6 text-base md:text-[17px] leading-relaxed focus-visible:ring-0 placeholder:text-muted-foreground/60 placeholder:transition-opacity"
+          className="min-h-[11.5rem] md:min-h-[13.5rem] resize-none border-0 bg-transparent px-5 py-5 md:px-7 md:py-6 text-base md:text-[17px] leading-relaxed focus-visible:ring-0 placeholder:text-muted-foreground/60 placeholder:transition-opacity"
         />
 
         <div className="flex items-center justify-between gap-3 px-3 md:px-4 py-3 border-t border-border/60">
@@ -698,14 +1014,12 @@ export function ReEntryBlock({
 
   const primaryHref =
     action.type === "compare"
-      ? `/compare?current=${encodeURIComponent(action.currentSiftId)}&prior=${encodeURIComponent(action.priorSiftId)}`
-      : action.type === "checkin"
-        ? `/s/${action.threadId}`
-        : `/thread/${action.threadId}`;
+      ? `/s/${encodeURIComponent(action.currentSiftId)}`
+      : `/s/${encodeURIComponent(action.threadId)}`;
 
   const primaryLabel =
     action.type === "compare"
-      ? "See the comparison"
+      ? "Open this sift"
       : action.type === "checkin"
         ? "Pick it up"
         : "Take a look";
@@ -844,6 +1158,8 @@ interface ResultProps {
   onCheckInLater?: () => void;
   /** Secondary "Save this" link. Usually opens auth dialog. Omit to hide. */
   onSave?: () => void;
+  /** Saved-thread / permalink view: fewer nested boxes and borders. */
+  quietChrome?: boolean;
 }
 
 export function Result({
@@ -854,6 +1170,7 @@ export function Result({
   onExpand,
   onCheckInLater,
   onSave,
+  quietChrome = false,
 }: ResultProps) {
   const { toast } = useToast();
   const [copiedText, setCopiedText] = useState(false);
@@ -863,9 +1180,9 @@ export function Result({
   const [reflectionShareOpen, setReflectionShareOpen] = useState(false);
 
   // Soft interpretation state for "What this may be pointing to".
-  // `view` is the currently displayed analysis (themes, intent, next step,
-  // reflection). It starts as the original result and is replaced in place
-  // when the user submits a correction — themes and the rest of the result
+  // `view` is the currently displayed analysis (matters/noise, intent, next
+  // step, reflection). It starts as the original result and is replaced in place
+  // when the user submits a correction — the read and the rest of the result
   // refresh together so they stay coherent with the updated intent.
   // fitState tracks the small action row: null = show actions, "fits" = quietly
   // confirmed, "skipped" = hidden, "editing" = inline correction visible.
@@ -891,8 +1208,10 @@ export function Result({
   // while the model re-spins the move.
   const [stepCheck, setStepCheck] = useState<null | "fits">(null);
   const [stepRevising, setStepRevising] = useState<
-    null | "smaller" | "different"
+    null | "smaller" | "different" | "guided"
   >(null);
+  const [stepFeedbackOpen, setStepFeedbackOpen] = useState(false);
+  const [stepFeedbackDraft, setStepFeedbackDraft] = useState("");
   const [stepRevisionFadeIn, setStepRevisionFadeIn] = useState(false);
   // Signal/noise starts folded so the load-bearing move lands first; readers
   // open "Show signal & noise" when they want the split—not as an ambush.
@@ -913,6 +1232,8 @@ export function Result({
     setStepCheck(null);
     setStepRevising(null);
     setStepRevisionFadeIn(false);
+    setStepFeedbackOpen(false);
+    setStepFeedbackDraft("");
     setSignalExpanded(false);
   }, [
     result.id,
@@ -981,28 +1302,53 @@ export function Result({
     }
   };
 
-  const requestStepRevision = async (variant: "smaller" | "different") => {
+  const requestStepRevision = async (
+    variant: "smaller" | "different",
+    opts?: { feedback?: string },
+  ) => {
     if (!view.mine || readOnly || stepRevising) return;
-    setStepRevising(variant);
+    const fb = opts?.feedback?.trim();
+    const loadingKey: "smaller" | "different" | "guided" = fb
+      ? "guided"
+      : variant;
+    setStepRevising(loadingKey);
     setStepCheck(null);
     setStepRevisionFadeIn(false);
+    if (!fb) {
+      setStepFeedbackOpen(false);
+      setStepFeedbackDraft("");
+    }
     try {
+      const body: { variant: "smaller" | "different"; feedback?: string } = {
+        variant,
+      };
+      if (fb) body.feedback = fb;
       const res = await apiRequest(
         "POST",
         `/api/sift/${encodeURIComponent(view.id)}/revise-step`,
-        { variant },
+        body,
       );
-      const data = (await res.json()) as {
-        nextStep?: string;
-        stepScope?: { durationEstimate: string; stoppingCondition: string };
-        error?: string;
-      };
+      const data = (await res.json()) as
+        | {
+            nextStep?: string;
+            stepScope?: { durationEstimate: string; stoppingCondition: string };
+            error?: string;
+          }
+        | CareResponse;
+      if (isCareResponse(data)) {
+        toast({
+          title: "Let's take a breath",
+          description: "Try rephrasing gently, or use the footer link.",
+        });
+        setStepRevising(null);
+        return;
+      }
       if (!res.ok || !data.nextStep) {
         toast({
           title: "Couldn't revise that step",
           description:
-            typeof data.error === "string"
-              ? data.error
+            typeof (data as { error?: string }).error === "string"
+              ? (data as { error: string }).error
               : "Try again in a moment.",
         });
         setStepRevising(null);
@@ -1019,6 +1365,10 @@ export function Result({
       }));
       queryClient.invalidateQueries({ queryKey: ["/api/sift", view.id] });
       queryClient.invalidateQueries({ queryKey: ["/api/sifts"] });
+      if (fb) {
+        setStepFeedbackDraft("");
+        setStepFeedbackOpen(false);
+      }
     } catch (err: any) {
       toast({
         title: "Couldn't revise that step",
@@ -1033,7 +1383,7 @@ export function Result({
     const v = correction.trim();
     if (!v || correctionSubmitting) return;
     // Re-run analysis with the original input plus the user's reframe, so
-    // every section (themes, next step, reflection) realigns with the
+    // every section (the read, next step, reflection) realigns with the
     // updated intent. Falls back to a local intent-only update if the
     // re-analysis call fails.
     setCorrectionSubmitting(true);
@@ -1108,8 +1458,21 @@ export function Result({
       ? sortedCheckins[sortedCheckins.length - 1]
       : null;
 
+  /** Matters/noise read; older payloads only had `themes` — fold those in here. */
+  const mattersForRead =
+    (view.matters?.length ?? 0) > 0
+      ? (view.matters ?? [])
+      : (view.themes ?? [])
+          .map((t) =>
+            [t.title?.trim(), t.summary?.trim()].filter(Boolean).join(" — "),
+          )
+          .filter((line) => line.length > 0);
+
+  const hasSignalRead =
+    mattersForRead.length > 0 || (view.noise?.length ?? 0) > 0;
+
   const copyText = async () => {
-    const hasNewFraming = (view.matters?.length ?? 0) > 0;
+    const hasNewFraming = hasSignalRead;
     const connective = connectiveCaption;
     const lines = [
       `Sift — ${new Date(view.createdAt).toLocaleString()}`,
@@ -1121,7 +1484,9 @@ export function Result({
     if (hasNewFraming) {
       lines.push(
         "What matters now:",
-        ...view.matters.map((m, i) => `${i + 1}. ${m}`),
+        ...(mattersForRead.length > 0
+          ? mattersForRead.map((m, i) => `${i + 1}. ${m}`)
+          : ["— (not broken out separately on this sift)"]),
         "",
       );
       lines.push(
@@ -1134,12 +1499,6 @@ export function Result({
       if (view.signalReason) {
         lines.push("Why this may be the signal:", view.signalReason, "");
       }
-    } else {
-      lines.push(
-        "Themes:",
-        ...view.themes.map((t, i) => `${i + 1}. ${t.title} — ${t.summary}`),
-        "",
-      );
     }
     lines.push(
       `A possible next step:`,
@@ -1316,13 +1675,17 @@ export function Result({
         <section data-testid="section-next">
           <Label>A possible next step</Label>
           <p className="mt-2 text-xs text-muted-foreground/80 leading-relaxed max-w-xl">
-            A suggestion to react to—not an assignment. Use the buttons below
-            if it needs to shrink or shift.
+            A suggestion to react to—not an assignment. If the read above feels
+            off, use{" "}
+            <span className="text-foreground/80">Not quite</span> there. If the
+            move feels off, use the reactions below—or say what&apos;s missing.
           </p>
           <div
-            className={`mt-3 rounded-2xl border border-primary/25 bg-primary/5 p-5 md:p-6 transition-opacity ${
-              stepRevising ? "opacity-50" : "opacity-100"
-            }`}
+            className={`mt-3 transition-opacity ${
+              quietChrome
+                ? "rounded-lg border-l-[3px] border-l-primary/40 bg-primary/[0.04] pl-4 pr-3 py-4 md:pl-5 md:pr-4 md:py-5"
+                : "rounded-2xl border border-primary/25 bg-primary/5 p-5 md:p-6"
+            } ${stepRevising ? "opacity-50" : "opacity-100"}`}
             style={
               stepRevisionFadeIn && !stepRevising
                 ? {
@@ -1360,74 +1723,156 @@ export function Result({
               re-spin the move on the same signal. Hidden in read-only
               or non-owner views. */}
           {view.mine && !readOnly ? (
-            <div
-              className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm"
-              data-testid="row-step-check"
-              aria-live="polite"
-            >
-              {stepRevising ? (
-                <p
-                  className="text-xs text-muted-foreground/80"
-                  data-testid="text-step-revising"
-                >
-                  Finding a {stepRevising === "smaller" ? "smaller" : "different"} move…
-                </p>
-              ) : stepCheck === "fits" ? (
-                <p
-                  className="text-xs text-muted-foreground/70"
-                  data-testid="text-step-fits"
-                >
-                  Good. The move is yours to take.
-                </p>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => setStepCheck("fits")}
-                    data-testid="button-step-fits"
-                    className="text-foreground/85 hover:text-foreground transition-colors"
-                  >
-                    That works
-                  </button>
-                  <span aria-hidden="true" className="text-muted-foreground/40">·</span>
-                  <button
-                    type="button"
-                    onClick={() => void requestStepRevision("smaller")}
-                    data-testid="button-step-smaller"
-                    className="text-foreground/85 hover:text-foreground underline underline-offset-4 decoration-border hover:decoration-foreground transition-colors"
-                  >
-                    Smaller, please
-                  </button>
-                  <span aria-hidden="true" className="text-muted-foreground/40">·</span>
-                  <button
-                    type="button"
-                    onClick={() => void requestStepRevision("different")}
-                    data-testid="button-step-different"
-                    className="text-foreground/85 hover:text-foreground underline underline-offset-4 decoration-border hover:decoration-foreground transition-colors"
-                  >
-                    Different angle
-                  </button>
-                </>
-              )}
-            </div>
-          ) : null}
-
-          <div className="mt-4">
-            <Link href="/field-notes">
-              <a
-                data-testid="link-result-field-notes"
-                className="text-xs text-muted-foreground/70 hover:text-foreground underline underline-offset-4 decoration-border/60 hover:decoration-foreground transition-colors"
+            <>
+              <div
+                className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm"
+                data-testid="row-step-check"
+                aria-live="polite"
               >
-                Hard to pick a move? Field notes (optional)
-              </a>
-            </Link>
-          </div>
+                {stepRevising ? (
+                  <p
+                    className="text-xs text-muted-foreground/80"
+                    data-testid="text-step-revising"
+                  >
+                    {stepRevising === "guided"
+                      ? "Shaping the step from what you wrote…"
+                      : stepRevising === "smaller"
+                        ? "Finding a smaller move…"
+                        : "Finding a different angle…"}
+                  </p>
+                ) : stepCheck === "fits" ? (
+                  <p
+                    className="text-xs text-muted-foreground/70"
+                    data-testid="text-step-fits"
+                  >
+                    Good. The move is yours to take.
+                  </p>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setStepCheck("fits")}
+                      data-testid="button-step-fits"
+                      className="text-foreground/85 hover:text-foreground transition-colors"
+                    >
+                      That works
+                    </button>
+                    <span aria-hidden="true" className="text-muted-foreground/40">
+                      ·
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => void requestStepRevision("smaller")}
+                      data-testid="button-step-smaller"
+                      className="text-foreground/85 hover:text-foreground underline underline-offset-4 decoration-border hover:decoration-foreground transition-colors"
+                    >
+                      Smaller, please
+                    </button>
+                    <span aria-hidden="true" className="text-muted-foreground/40">
+                      ·
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => void requestStepRevision("different")}
+                      data-testid="button-step-different"
+                      className="text-foreground/85 hover:text-foreground underline underline-offset-4 decoration-border hover:decoration-foreground transition-colors"
+                    >
+                      Different angle
+                    </button>
+                  </>
+                )}
+              </div>
+              {!stepRevising && stepCheck !== "fits" ? (
+                <div
+                  className="mt-3 max-w-xl"
+                  data-testid="row-step-guided-feedback"
+                >
+                  {!stepFeedbackOpen ? (
+                    <button
+                      type="button"
+                      onClick={() => setStepFeedbackOpen(true)}
+                      data-testid="button-step-feedback-open"
+                      className="text-xs text-muted-foreground/80 hover:text-foreground underline underline-offset-4 decoration-border hover:decoration-foreground transition-colors"
+                    >
+                      The step still misses what I&apos;m carrying
+                    </button>
+                  ) : (
+                    <div
+                      className="space-y-2 rounded-lg border border-border/55 bg-card/45 p-3 md:p-4"
+                      data-testid="panel-step-feedback"
+                    >
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        A sentence or two is enough. Sift keeps the same read
+                        and only changes the move—unless the read is what feels
+                        off; then use{" "}
+                        <span className="text-foreground/75">Not quite</span>{" "}
+                        above.
+                      </p>
+                      <Textarea
+                        value={stepFeedbackDraft}
+                        onChange={(e) => setStepFeedbackDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (
+                            (e.metaKey || e.ctrlKey) &&
+                            e.key === "Enter" &&
+                            stepFeedbackDraft.trim()
+                          ) {
+                            e.preventDefault();
+                            void requestStepRevision("different", {
+                              feedback: stepFeedbackDraft,
+                            });
+                          }
+                        }}
+                        placeholder="e.g. That assumes I have energy tonight—I don’t. Or: it skips the conversation I’m actually avoiding."
+                        disabled={!!stepRevising}
+                        data-testid="input-step-feedback"
+                        className="min-h-[72px] resize-none text-sm leading-relaxed"
+                      />
+                      <div className="flex flex-wrap items-center gap-4 text-sm">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void requestStepRevision("different", {
+                              feedback: stepFeedbackDraft,
+                            })
+                          }
+                          disabled={
+                            !stepFeedbackDraft.trim() || !!stepRevising
+                          }
+                          data-testid="button-step-feedback-submit"
+                          className="text-foreground/85 hover:text-foreground underline underline-offset-4 decoration-border hover:decoration-foreground transition-colors disabled:opacity-50"
+                        >
+                          Revise from this
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setStepFeedbackOpen(false);
+                            setStepFeedbackDraft("");
+                          }}
+                          disabled={!!stepRevising}
+                          data-testid="button-step-feedback-cancel"
+                          className="text-muted-foreground/70 hover:text-foreground transition-colors disabled:opacity-50"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : null}
+            </>
+          ) : null}
 
           {view.mine && !readOnly ? (
             <>
               {view.microTasks?.length === 3 ? (
                 <div
-                  className="mt-4 rounded-xl border border-border/55 bg-muted/35 px-4 py-3.5 text-sm md:text-[15px] text-foreground leading-relaxed"
+                  className={`mt-4 px-4 py-3.5 text-sm md:text-[15px] text-foreground leading-relaxed ${
+                    quietChrome
+                      ? "rounded-lg bg-muted/25"
+                      : "rounded-xl border border-border/55 bg-muted/35"
+                  }`}
                   data-testid="panel-breakdown-microtasks"
                   style={
                     breakdownFadeIn
@@ -1513,10 +1958,8 @@ export function Result({
           ) : null}
         </section>
 
-        {/* The read — signal/noise framing demoted below the move, with a
-            quiet collapse so the next step stays load-bearing. New sifts
-            populate matters/noise; legacy rows fall back to themes. */}
-        {(view.matters?.length ?? 0) > 0 ? (
+        {/* The read — signal/noise; older payloads had themes only, folded into the matters list. */}
+        {hasSignalRead ? (
           <section data-testid="section-signal" className="space-y-5">
             <div className="flex items-center justify-between gap-4">
               <Label>The read underneath</Label>
@@ -1549,21 +1992,33 @@ export function Result({
                 >
                   <section data-testid="section-matters">
                     <Label>What matters now</Label>
-                    <ul className="mt-4 divide-y divide-border/70 border-y border-border/70">
-                      {view.matters.map((m, i) => (
-                        <li
-                          key={i}
-                          className="py-3.5 md:py-4 flex gap-4 md:gap-6"
-                          data-testid={`matters-${i}`}
-                        >
-                          <span className="font-mono text-xs text-muted-foreground pt-1 w-6">
-                            {String(i + 1).padStart(2, "0")}
-                          </span>
-                          <p className="flex-1 font-serif text-lg md:text-xl text-foreground leading-snug">
-                            {m}
-                          </p>
+                    <ul
+                      className={`mt-4 ${
+                        quietChrome
+                          ? "divide-y divide-border/45"
+                          : "divide-y divide-border/70 border-y border-border/70"
+                      }`}
+                    >
+                      {mattersForRead.length > 0 ? (
+                        mattersForRead.map((m, i) => (
+                          <li
+                            key={i}
+                            className="py-3.5 md:py-4 flex gap-4 md:gap-6"
+                            data-testid={`matters-${i}`}
+                          >
+                            <span className="font-mono text-xs text-muted-foreground pt-1 w-6">
+                              {String(i + 1).padStart(2, "0")}
+                            </span>
+                            <p className="flex-1 font-serif text-lg md:text-xl text-foreground leading-snug">
+                              {m}
+                            </p>
+                          </li>
+                        ))
+                      ) : (
+                        <li className="py-3.5 text-sm text-muted-foreground/70 leading-relaxed">
+                          Nothing singled out on this side for now.
                         </li>
-                      ))}
+                      )}
                     </ul>
                   </section>
 
@@ -1631,8 +2086,8 @@ export function Result({
                 className="text-xs text-muted-foreground/70 leading-relaxed"
                 data-testid="text-signal-summary"
               >
-                {view.matters.length}{" "}
-                {view.matters.length === 1 ? "thing matters" : "things matter"}
+                {mattersForRead.length}{" "}
+                {mattersForRead.length === 1 ? "thing matters" : "things matter"}
                 {(view.noise?.length ?? 0) > 0
                   ? `, ${view.noise!.length} may be noise`
                   : ""}
@@ -1640,33 +2095,7 @@ export function Result({
               </p>
             )}
           </section>
-        ) : (
-          /* Legacy fallback — themes view for sifts created before matters/noise existed. */
-          <section data-testid="section-themes">
-            <Label>Themes underneath</Label>
-            <ul className="mt-4 divide-y divide-border/70 border-y border-border/70">
-              {view.themes.map((t, i) => (
-                <li
-                  key={i}
-                  className="py-4 md:py-5 flex gap-4 md:gap-6"
-                  data-testid={`theme-${i}`}
-                >
-                  <span className="font-mono text-xs text-muted-foreground pt-1 w-6">
-                    {String(i + 1).padStart(2, "0")}
-                  </span>
-                  <div className="flex-1">
-                    <h3 className="font-serif text-lg md:text-xl text-foreground">
-                      {t.title}
-                    </h3>
-                    <p className="text-sm md:text-[15px] text-muted-foreground mt-1.5 leading-relaxed">
-                      {t.summary}
-                    </p>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
+        ) : null}
 
         {/* Reflection */}
         <section data-testid="section-reflection">
@@ -1720,7 +2149,13 @@ export function Result({
             className="pt-2 fade-in-slow"
             data-testid="panel-quiet-exhale"
           >
-            <div className="rounded-2xl border border-primary/20 bg-primary/5 px-6 py-7 md:px-8 md:py-8">
+            <div
+              className={
+                quietChrome
+                  ? "rounded-lg border border-primary/15 bg-primary/[0.03] px-5 py-6 md:px-6 md:py-7"
+                  : "rounded-2xl border border-primary/20 bg-primary/5 px-6 py-7 md:px-8 md:py-8"
+              }
+            >
               <p
                 className="text-[11px] tracking-[0.25em] uppercase text-primary/70 mb-3 font-medium"
                 data-testid="text-rest-eyebrow"

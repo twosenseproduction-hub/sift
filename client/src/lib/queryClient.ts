@@ -13,6 +13,7 @@ const API_BASE = "__PORT_5000__".startsWith("__") ? "" : "__PORT_5000__";
 // because storage can be blocked (private mode, sandboxed iframes) — in those
 // cases we silently fall back to in-memory only.
 const STORAGE_KEY = "sift.authToken";
+const GUEST_SESSION_KEY = "sift.guestSessionId";
 
 function readStoredToken(): string | null {
   try {
@@ -41,8 +42,30 @@ export function getAuthToken(): string | null {
   return authToken;
 }
 
+export function getGuestSessionId(): string {
+  try {
+    if (typeof localStorage !== "undefined") {
+      const existing = localStorage.getItem(GUEST_SESSION_KEY);
+      if (existing) return existing;
+      const next =
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : `guest_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+      localStorage.setItem(GUEST_SESSION_KEY, next);
+      return next;
+    }
+  } catch {
+    /* fall through to in-memory-ish value */
+  }
+  return `guest_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+}
+
 function authHeaders(): Record<string, string> {
   return authToken ? { Authorization: `Bearer ${authToken}` } : {};
+}
+
+function guestHeaders(): Record<string, string> {
+  return { "x-sift-guest-session-id": getGuestSessionId() };
 }
 
 async function throwIfResNotOk(res: Response) {
@@ -56,8 +79,13 @@ export async function apiRequest(
   method: string,
   url: string,
   data?: unknown | undefined,
+  options?: { auth?: boolean },
 ): Promise<Response> {
-  const headers: Record<string, string> = { ...authHeaders() };
+  const headers: Record<string, string> =
+    options?.auth === false ? {} : { ...authHeaders() };
+  if (url.startsWith("/api/sift") || url.startsWith("/api/guest")) {
+    Object.assign(headers, guestHeaders());
+  }
   let payload = data;
   if (
     method === "POST" &&

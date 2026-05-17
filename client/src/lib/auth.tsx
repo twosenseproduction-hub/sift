@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient, setAuthToken } from "./queryClient";
-import type { Me } from "@shared/schema";
+import type { Me, MemoryPreferencesUpdateRequest, SupportProfileUpdateRequest } from "@shared/schema";
 
 type MeResponse = { me: Me; token?: string };
 
@@ -11,8 +11,6 @@ function navigateToTodayUnlessDeepLinked() {
   const path = raw.split("?")[0];
   const deep =
     path.startsWith("/s/") ||
-    path.startsWith("/thread/") ||
-    path.startsWith("/compare") ||
     path.startsWith("/admin");
   if (!deep) {
     window.location.hash = "/";
@@ -38,6 +36,7 @@ export function useSignup() {
       contact: string;
       consentUpdates?: boolean;
       consentReflections?: boolean;
+      supportProfile?: SupportProfileUpdateRequest;
     }) => {
       const res = await apiRequest("POST", "/api/auth/signup", input);
       return (await res.json()) as MeResponse;
@@ -45,8 +44,58 @@ export function useSignup() {
     onSuccess: (data) => {
       if (data.token) setAuthToken(data.token);
       queryClient.setQueryData(["/api/auth/me"], { me: data.me });
+      void apiRequest("POST", "/api/guest/claim", {}).finally(() => {
+        queryClient.invalidateQueries({ queryKey: ["/api/library"] });
+      });
       queryClient.invalidateQueries({ queryKey: ["/api/sifts"] });
       navigateToTodayUnlessDeepLinked();
+    },
+  });
+}
+
+export function useUpdateSupportProfile() {
+  return useMutation({
+    mutationFn: async (input: SupportProfileUpdateRequest) => {
+      const res = await apiRequest("PATCH", "/api/auth/support-profile", input);
+      return (await res.json()) as MeResponse;
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(["/api/auth/me"], { me: data.me });
+    },
+  });
+}
+
+export function useUpdateMemoryPreferences() {
+  return useMutation({
+    mutationFn: async (input: MemoryPreferencesUpdateRequest) => {
+      const res = await apiRequest("PATCH", "/api/auth/memory-preferences", input);
+      return (await res.json()) as MeResponse;
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(["/api/auth/me"], { me: data.me });
+      queryClient.invalidateQueries({ queryKey: ["/api/library"] });
+    },
+  });
+}
+
+export function useExportData() {
+  return useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("GET", "/api/auth/export");
+      return await res.json();
+    },
+  });
+}
+
+export function useDeleteAllHistory() {
+  return useMutation({
+    mutationFn: async () => {
+      await apiRequest("DELETE", "/api/library", {});
+      return true;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/library"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/sifts"] });
     },
   });
 }
@@ -67,6 +116,20 @@ export function useUpdateContact() {
   });
 }
 
+export function useDeleteAccount() {
+  return useMutation({
+    mutationFn: async () => {
+      await apiRequest("DELETE", "/api/auth/account", {});
+      return true;
+    },
+    onSuccess: () => {
+      setAuthToken(null);
+      queryClient.setQueryData(["/api/auth/me"], { me: null });
+      queryClient.invalidateQueries({ queryKey: ["/api/sifts"] });
+    },
+  });
+}
+
 export function useLogin() {
   return useMutation({
     mutationFn: async (input: { handle: string; passphrase: string }) => {
@@ -76,6 +139,9 @@ export function useLogin() {
     onSuccess: (data) => {
       if (data.token) setAuthToken(data.token);
       queryClient.setQueryData(["/api/auth/me"], { me: data.me });
+      void apiRequest("POST", "/api/guest/claim", {}).finally(() => {
+        queryClient.invalidateQueries({ queryKey: ["/api/library"] });
+      });
       queryClient.invalidateQueries({ queryKey: ["/api/sifts"] });
       navigateToTodayUnlessDeepLinked();
     },

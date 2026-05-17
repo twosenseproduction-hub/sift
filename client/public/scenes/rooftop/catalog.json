@@ -1,0 +1,85 @@
+{
+  "scene": "rooftop",
+  "version": 1,
+  "defaultVariantId": "rooftop_skyline_default_dusk_v1",
+  "skyMode": "css-gradient",
+  "notes": "Sky is always CSS linear-gradient per variant. Optional silhouette SVG/PNG sits on the horizon. Swap silhouette files when art is ready — keep ids stable.",
+  "slots": {
+    "rooftop.skyline": {
+      "label": "Skyline",
+      "variants": [
+        {
+          "id": "rooftop_skyline_default_dusk_v1",
+          "displayName": "Default — dusk",
+          "aliases": ["default", "original", "home"],
+          "skyGradient": {
+            "angleDeg": 168,
+            "stops": [
+              { "pos": 0, "color": "#120810" },
+              { "pos": 0.35, "color": "#3a1530" },
+              { "pos": 0.62, "color": "#8b3828" },
+              { "pos": 0.88, "color": "#e8884a" },
+              { "pos": 1, "color": "#f4c08a" }
+            ]
+          },
+          "assets": {
+            "silhouette": "/scenes/rooftop/variants/default_dusk/silhouette.svg",
+            "thumb": "/scenes/rooftop/variants/default_dusk/thumb.svg"
+          }
+        },
+        {
+          "id": "rooftop_skyline_sacramento_dusk_v1",
+          "displayName": "Sacramento — dusk",
+          "aliases": [
+            "sacramento",
+            "sacramento ca",
+            "sacramento, ca",
+            "sacramento california",
+            "sactown",
+            "916",
+            "capital city california"
+          ],
+          "skyGradient": {
+            "angleDeg": 172,
+            "stops": [
+              { "pos": 0, "color": "#0c1018" },
+              { "pos": 0.4, "color": "#243a52" },
+              { "pos": 0.7, "color": "#b85a38" },
+              { "pos": 0.92, "color": "#e8a060" },
+              { "pos": 1, "color": "#ffd8a8" }
+            ]
+          },
+          "assets": {
+            "silhouette": "/scenes/rooftop/variants/sacramento_dusk/silhouette.svg",
+            "thumb": "/scenes/rooftop/variants/sacramento_dusk/thumb.svg"
+          }
+        },
+        {
+          "id": "rooftop_skyline_generic_valley_dusk_v1",
+          "displayName": "Valley city — dusk",
+          "aliases": [
+            "valley",
+            "central valley",
+            "generic",
+            "any city",
+            "not sure",
+            "surprise me"
+          ],
+          "skyGradient": {
+            "angleDeg": 165,
+            "stops": [
+              { "pos": 0, "color": "#101418" },
+              { "pos": 0.38, "color": "#2d2838" },
+              { "pos": 0.68, "color": "#7a4030" },
+              { "pos": 1, "color": "#e0a070" }
+            ]
+          },
+          "assets": {
+            "silhouette": "/scenes/rooftop/variants/generic_valley_dusk/silhouette.svg",
+            "thumb": "/scenes/rooftop/variants/generic_valley_dusk/thumb.svg"
+          }
+        }
+      ]
+    }
+  }
+}

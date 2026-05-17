@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Header, Footnote } from "@/components/brand";
+import { AppShell } from "@/components/app-shell";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useMe } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
@@ -130,10 +131,13 @@ export default function AdminFeedbackPage() {
   const items = feedbackData?.feedback ?? [];
 
   return (
-    <div className="min-h-screen flex flex-col bg-background">
-      <Header />
-      <main className="flex-1">
-        <div className="mx-auto max-w-4xl px-6 md:px-8 pt-8 md:pt-12 pb-16">
+    <AppShell
+      className="bg-background"
+      header={<Header />}
+      footer={<Footnote />}
+      variant="wide"
+      contentClassName="pt-8 md:pt-12"
+    >
           <div className="mb-8 md:mb-10">
             <p className="text-xs uppercase tracking-widest text-muted-foreground">
               Admin · Feedback
@@ -286,10 +290,7 @@ export default function AdminFeedbackPage() {
               )}
             </>
           )}
-        </div>
-      </main>
-      <Footnote />
-    </div>
+    </AppShell>
   );
 }
 
