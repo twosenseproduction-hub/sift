@@ -656,6 +656,8 @@ Bedroom warmup phase:
 - The visible "reflection" must feel like a warm companion, not an analyst.
 - Write 1–2 short sentences that acknowledge the feeling or situation.
 - End with exactly one simple clarifying question.
+- If the input is vague, short, or low-context, treat it as a valid opening. Do not say "not enough information" or ask for details generally.
+- Good low-context pattern: brief warmth, permission for unsorted expression, one grounding question.
 - Do not list "what matters", "noise", or "next step" inside the reflection.
 - Still return every required JSON field. Keep matters/noise/nextStep internally useful, but the user will only see the reflection during warmup.`;
 
@@ -670,7 +672,7 @@ function greetingWarmupAnalysis(input: string): Analysis {
     coreIntent: "The user is opening the conversation.",
     nextStep: "Share what has been loud on your mind when you are ready.",
     reflection:
-      "Hey. I'm glad you're here.\n\nWhenever you're ready, tell me what's been loud on your mind.",
+      "Yeah, we can start there. You don't have to have it sorted.\n\nWhat feels most loud right now?",
     matters: ["the user is arriving", "making the space feel easy"],
     noise: ["pushing for depth too soon"],
     signalReason:
@@ -678,6 +680,35 @@ function greetingWarmupAnalysis(input: string): Analysis {
     stepScope: {
       durationEstimate: "~5 min",
       stoppingCondition: "when something real has been named",
+    },
+  };
+}
+
+function gracefulStructureFallback(input: string): Analysis {
+  const compact = input
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 160);
+  const heard = compact || "something hard to name";
+  return {
+    themes: [
+      {
+        title: "A live thread",
+        summary: `Sift heard this as real material: ${heard}`,
+      },
+    ],
+    coreIntent: "The user brought something emotionally or operationally real that needs a first handle.",
+    nextStep:
+      "Write one sentence naming the part of this that feels most load-bearing right now.",
+    reflection:
+      `One thing I hear is that this is not empty, even if it is not fully sorted yet. One possible signal is the part that keeps pulling attention back.`,
+    matters: ["what keeps pulling attention"],
+    noise: ["needing the whole shape at once"],
+    signalReason:
+      "The repeated pull of attention may show where the first real handle is.",
+    stepScope: {
+      durationEstimate: "~10 min",
+      stoppingCondition: "when one load-bearing sentence is written",
     },
   };
 }
@@ -696,6 +727,8 @@ Rules:
 - Do not list what matters, what is noise, or a next step.
 - Keep it brief and human.
 - Ask only one question.
+- Treat greetings, one-word feelings, "I don't know", "can you help me", and "something is off" as valid openings.
+- For low-context input, avoid premature interpretation. Offer warmth and one grounded question.
 - Only include "matters" when the user's message gives enough substance to name what deserves attention.
 - Anchor the mirror and question in the user's newest words. Never reuse old examples or generic themes that are not in this thread.`;
 
@@ -893,6 +926,18 @@ function libraryItemFor(args: {
   const tags = Array.from(
     new Set([...themes.map((theme) => theme.title), ...matters].filter(Boolean)),
   ).slice(0, 8);
+  const movement = {
+    shifted:
+      args.bookmark?.payload.unfolded?.trim() ||
+      args.sift.signalReason?.trim() ||
+      "This started as something worth sorting.",
+    recurring: args.sift.recurringTheme?.trim() || null,
+    leftOff:
+      args.bookmark?.payload.lastLanded?.trim() ||
+      preview.nextStep ||
+      args.sift.currentMove ||
+      "No clear left-off point was captured yet.",
+  };
 
   return {
     id: args.sift.id,
@@ -912,6 +957,7 @@ function libraryItemFor(args: {
         ? args.sift.uiMode
         : ((args.sift.mode as "personal" | "operator" | null) ?? null),
     environment: normalizedEnvironment(args.sift.environment ?? supportProfile?.startingSpace),
+    movement,
     preview,
   };
 }
@@ -982,29 +1028,34 @@ async function runAnalysis(
     .replace(/\s*```\s*$/i, "")
     .trim();
 
-  let parsed: unknown;
   try {
-    parsed = JSON.parse(cleaned);
-  } catch (e) {
-    const match = cleaned.match(/\{[\s\S]*\}/);
-    if (!match) throw new Error("Model did not return JSON");
-    parsed = JSON.parse(match[0]);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(cleaned);
+    } catch (e) {
+      const match = cleaned.match(/\{[\s\S]*\}/);
+      if (!match) throw new Error("Model did not return JSON");
+      parsed = JSON.parse(match[0]);
+    }
+    const analysis = analysisSchema.parse(parsed);
+    const completeAnalysis = analysis.stepScope
+      ? analysis
+      : {
+        ...analysis,
+        stepScope: {
+          durationEstimate: "~20 min",
+          stoppingCondition:
+            "when you can name one concrete piece of this move that is finished",
+        },
+      };
+    if (!outputMatchesSource(analysisToText(completeAnalysis), input)) {
+      return gracefulStructureFallback(input);
+    }
+    return completeAnalysis;
+  } catch (err) {
+    console.warn("[sift] falling back to graceful structure", err);
+    return gracefulStructureFallback(input);
   }
-  const analysis = analysisSchema.parse(parsed);
-  const completeAnalysis = analysis.stepScope
-    ? analysis
-    : {
-      ...analysis,
-      stepScope: {
-        durationEstimate: "~20 min",
-        stoppingCondition:
-          "when you can name one concrete piece of this move that is finished",
-      },
-    };
-  if (!outputMatchesSource(analysisToText(completeAnalysis), input)) {
-    throw new Error("Generated sift did not match the current input closely enough.");
-  }
-  return completeAnalysis;
 }
 
 // runOperatorAnalysis — Phase 3 helper. Mirrors runAnalysis but uses the
@@ -2549,7 +2600,47 @@ async function computeReEntryPrompt(userId: number): Promise<ReEntryResponse> {
     return { prompt: null };
   }
 
-  // 1 — overdue check-in (48h since last check-in)
+  // 1 — active deepening lane. If the user was mid-thread, resume that before
+  // asking about an older next step.
+  let inProgress: {
+    s: Sift;
+    lastActivity: number;
+    bookmark?: Bookmark | null;
+    openSort?: boolean;
+  } | null = null;
+  for (const s of openThreads) {
+    const turns = await storage.listTurns(s.id);
+    if (!turns.length) continue;
+    const lastActivity = Math.max(s.createdAt, ...turns.map((t) => t.createdAt));
+    const latestTurn = turns[turns.length - 1];
+    const hasRecentUserLane =
+      latestTurn?.role === "user" ||
+      latestTurn?.kind === "sort_prompt" ||
+      Date.now() - lastActivity <= REENTRY_48H_MS;
+    if (!hasRecentUserLane) continue;
+    const bookmark = await storage.getBookmark(s.id);
+    const openSort = Boolean(findOpenSortPrompt(turns));
+    if (!inProgress || lastActivity > inProgress.lastActivity) {
+      inProgress = { s, lastActivity, bookmark, openSort };
+    }
+  }
+  if (inProgress) {
+    const leftOff = inProgress.bookmark?.payload.lastLanded?.trim();
+    return {
+      prompt: inProgress.openSort
+        ? "You were sorting signal from noise. Pick that thread back up?"
+        : leftOff
+          ? `You were mid-thread. Last place: ${leftOff}`
+          : "You were mid-thread. Want to keep going from where it left off?",
+      action: {
+        type: "revisit",
+        threadId: inProgress.s.id,
+        threadTitle: threadTitleFromSiftCore(inProgress.s),
+      },
+    };
+  }
+
+  // 2 — overdue check-in (48h since last check-in)
   let bestOverdue: { s: Sift; lastCi: number } | null = null;
   for (const s of openThreads) {
     const cis = await storage.listCheckins(s.id);
@@ -2571,7 +2662,7 @@ async function computeReEntryPrompt(userId: number): Promise<ReEntryResponse> {
     };
   }
 
-  // 2 — next step never acted on (no check-ins, sift older than 24h)
+  // 3 — next step never acted on (no check-ins, sift older than 24h)
   let staleNoCheckin: Sift | null = null;
   for (const s of openThreads) {
     const cis = await storage.listCheckins(s.id);
@@ -2595,7 +2686,7 @@ async function computeReEntryPrompt(userId: number): Promise<ReEntryResponse> {
     };
   }
 
-  // 3 — low redundancy sift pointing at a closed prior (within ~24h)
+  // 4 — low redundancy sift pointing at a closed prior (within ~24h)
   const sinceCompare = Date.now() - REENTRY_COMPARE_WINDOW_MS;
   for (const cur of rows) {
     if (!cur.redundancyPriorSiftId) continue;
@@ -2615,7 +2706,7 @@ async function computeReEntryPrompt(userId: number): Promise<ReEntryResponse> {
     };
   }
 
-  // 4 — open thread, no activity > 7 days
+  // 5 — open thread, no activity > 7 days
   let stalest: { s: Sift; lastAct: number } | null = null;
   for (const s of openThreads) {
     const cis = await storage.listCheckins(s.id);
@@ -3359,6 +3450,28 @@ function routeThread(input: string): { mode: 'personal'|'operator', entrySignal:
   return { mode: 'personal', entrySignal: 'none' };
 }
 
+async function persistOperatorArtifactForSift(
+  siftId: string,
+  input: string,
+  authMode: SiftClientAuthMode | undefined,
+) {
+  try {
+    const op = await runOperatorAnalysis(input, { authMode });
+    rawDb
+      .prepare(
+        `UPDATE sifts
+            SET artifact_type = ?,
+                operator_artifact = ?,
+                current_move = ?
+          WHERE id = ?`,
+      )
+      .run(op.artifactType, JSON.stringify(op), op.currentMove ?? null, siftId);
+    console.debug("[operator] artifact persisted:", op.artifactType);
+  } catch (err: unknown) {
+    console.warn("[operator] background runOperatorAnalysis failed", err);
+  }
+}
+
   app.post("/api/sift/fragments", async (req, res) => {
     const parsed = siftFragmentsRequestSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -3475,26 +3588,9 @@ function routeThread(input: string): { mode: 'personal'|'operator', entrySignal:
       const id = newId();
 
       const { mode, entrySignal } = routeThread(input);
-      // Step 4: persist Operator artifact fields when runOperatorAnalysis succeeds.
-      // The Personal-compatible columns (themes, coreIntent, nextStep, reflection,
-      // matters, noise, signalReason) are always written via runAnalysis below —
-      // this shadow step only adds operator_artifact + derived fields on top.
-      let artifactType: string | undefined;
-      let operatorArtifact: string | undefined;
-      let currentMoveOverride: string | undefined;
-      if (mode === "operator") {
-        try {
-          const op = await runOperatorAnalysis(input, {
-            authMode: siftAuthMode,
-          });
-          artifactType = op.artifactType;
-          operatorArtifact = JSON.stringify(op);
-          currentMoveOverride = op.currentMove;
-          console.debug("[operator] artifact persisted:", op.artifactType);
-        } catch (err: unknown) {
-          console.warn("[operator] runOperatorAnalysis failed, persisting Personal-only result", err);
-        }
-      }
+      // Operator artifact generation is additive. Keep it off the first-response
+      // path so the user receives the primary Sift as soon as it is ready.
+      const shouldPersistOperatorArtifact = mode === "operator";
 
       let sortScore: number | null = null;
       if (
@@ -3536,10 +3632,10 @@ function routeThread(input: string): { mode: 'personal'|'operator', entrySignal:
         entrySignal,
         threadState: 'open',
         frontBurnerRank: null,
-        currentMove: currentMoveOverride ?? null,
+        currentMove: null,
         closureCondition: null,
-        artifactType: artifactType ?? null,
-        operatorArtifact: operatorArtifact ?? null,
+        artifactType: null,
+        operatorArtifact: null,
         recurringSignal: recurring.detected ? 1 : 0,
         recurringTheme: recurring.theme,
         redundancyHintLevel:
@@ -3575,6 +3671,10 @@ function routeThread(input: string): { mode: 'personal'|'operator', entrySignal:
           ? await shouldShowClosurePrompt(userId, row)
           : false;
 
+      if (shouldPersistOperatorArtifact) {
+        void persistOperatorArtifactForSift(id, input, siftAuthMode);
+      }
+
       const result: SiftResult = {
         id,
         input,
@@ -3589,7 +3689,7 @@ function routeThread(input: string): { mode: 'personal'|'operator', entrySignal:
         recurringSignal: recurring.detected,
         mode,
         frontBurnerRank: null,
-        artifactType: (artifactType as SiftResult["artifactType"]) ?? null,
+        artifactType: null,
         ...(redundancyCheck.level === "low"
           ? {
               redundancyHint: {

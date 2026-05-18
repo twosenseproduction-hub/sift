@@ -12,6 +12,7 @@ export function SessionComposer({
   disabled,
   placeholder = "Share anything that feels loud right now.",
   onVoiceClick,
+  onFocus,
   className,
   variant = "sticky",
 }: {
@@ -21,6 +22,7 @@ export function SessionComposer({
   disabled?: boolean;
   placeholder?: string;
   onVoiceClick: () => void;
+  onFocus?: () => void;
   className?: string;
   /** sticky: page footer tray. Embedded: bottom of conversation shell (non-sticky, no page gradient). */
   variant?: "sticky" | "embedded";
@@ -91,6 +93,7 @@ export function SessionComposer({
           value={value}
           disabled={disabled}
           rows={1}
+          onFocus={onFocus}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {

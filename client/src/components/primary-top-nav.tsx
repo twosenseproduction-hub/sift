@@ -39,7 +39,6 @@ export function PrimaryTopNav({
 
     setLocation("/sift");
     window.setTimeout(() => {
-      window.dispatchEvent(new CustomEvent("sift:home-reset"));
       window.dispatchEvent(new CustomEvent("sift:focus-composer", { detail: { select: true } }));
     }, 80);
   };

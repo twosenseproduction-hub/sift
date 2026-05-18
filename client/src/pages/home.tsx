@@ -31,9 +31,12 @@ import {
   type ChatBubble,
 } from "@/components/bedroom-session/conversation-card";
 import type { RecapModel } from "@/components/bedroom-session/recap-card";
-import { SessionComposer } from "@/components/bedroom-session/session-composer";
+import {
+  Composer,
+  EmptyConversationState,
+  SiftReadyPrompt,
+} from "@/components/bedroom-session/first-use-flow";
 import { BedroomSortPromptCard } from "@/components/bedroom-session/bedroom-sort-prompt";
-import { BedroomSummaryPrompt } from "@/components/bedroom-session/bedroom-summary-prompt";
 import {
   BedroomSummarySheet,
   type ActiveStepState,
@@ -51,10 +54,9 @@ import {
 import { cn } from "@/lib/utils";
 import { useLocation } from "wouter";
 
-const WELCOME_COPY =
-  "Hey, I'm here. What's been loud in your mind lately?" as const;
 const REQUEST_FALLBACK_COPY =
   "I missed that for a second. Send it once more, and I'll stay with the thread." as const;
+const LIVE_SESSION_STORAGE_KEY = "sift.liveSession.v1";
 
 /** In-flow spacer height — matches `.bedroom-scene-img` in `index.css`. */
 const BEDROOM_SCENE_BLOCK_H =
@@ -75,6 +77,27 @@ type SiftUiVariant = "companion" | "base";
 type SiftBaseMode = "dark" | "light";
 type CompanionScene = "bedroom" | "desk" | "rooftop" | "library";
 type OnboardingStep = "welcome" | "mode" | "space" | "personalize";
+type LiveSessionSnapshot = {
+  siftId: string | null;
+  bubbles: ChatBubble[];
+  composer: string;
+  chatOpen: boolean;
+  uiVariant: SiftUiVariant;
+  baseMode: SiftBaseMode;
+  companionScene: CompanionScene;
+  recap: RecapModel | null;
+  summary: SiftSummary | null;
+  summarySheetMinimized: boolean;
+  activeStep: ActiveStepState | null;
+  phase: SessionPhase;
+  sortIntro: SortPromptPayload | null;
+  meaningfulUserMessageCount: number;
+  meaningfulSiftReplyCount: number;
+  latestSiftCanSummarize: boolean;
+  summaryPromptHidden: boolean;
+  nextStepDone: boolean;
+  savedAt: number;
+};
 
 const CHAT_REVEAL_DELAY_MS = 420;
 const SCENE_OPTIONS = [
@@ -290,6 +313,31 @@ function handleInitial(handle: string): string {
   return t.slice(0, 1).toUpperCase();
 }
 
+function readLiveSessionSnapshot(): LiveSessionSnapshot | null {
+  try {
+    const raw = localStorage.getItem(LIVE_SESSION_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as LiveSessionSnapshot;
+    if (!parsed || typeof parsed.savedAt !== "number") return null;
+    if (Date.now() - parsed.savedAt > 1000 * 60 * 60 * 24 * 7) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeLiveSessionSnapshot(snapshot: LiveSessionSnapshot | null) {
+  try {
+    if (!snapshot) {
+      localStorage.removeItem(LIVE_SESSION_STORAGE_KEY);
+      return;
+    }
+    localStorage.setItem(LIVE_SESSION_STORAGE_KEY, JSON.stringify(snapshot));
+  } catch {
+    /* ignore */
+  }
+}
+
 function siftMessageFromTurns(turns: ThreadTurn[]): SiftTurnMessage | null {
   for (let i = turns.length - 1; i >= 0; i--) {
     const t = turns[i];
@@ -313,9 +361,7 @@ export default function Home() {
   const onboardingComplete = Boolean(effectiveSupportProfile?.completedAt);
   const startingSpace = effectiveSupportProfile?.startingSpace ?? "bedroom";
 
-  const [bubbles, setBubbles] = useState<ChatBubble[]>(() => [
-    { id: "welcome", role: "sift", text: WELCOME_COPY },
-  ]);
+  const [bubbles, setBubbles] = useState<ChatBubble[]>(() => []);
   const [composer, setComposer] = useState("");
   const [thinking, setThinking] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
@@ -350,6 +396,8 @@ export default function Home() {
   const [careRestore, setCareRestore] = useState<string | null>(null);
 
   const [nextStepDone, setNextStepDone] = useState(false);
+  const [showReturnStepStrip, setShowReturnStepStrip] = useState(false);
+  const [nextStepLoopBusy, setNextStepLoopBusy] = useState(false);
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
   const [unsavedGuestSiftId, setUnsavedGuestSiftId] = useState<string | null>(null);
@@ -365,9 +413,10 @@ export default function Home() {
       supportStyle: effectiveSupportProfile?.supportStyle,
     }),
   );
+  const liveSessionRestoredRef = useRef(false);
 
   const resetSession = useCallback(() => {
-    setBubbles([{ id: "welcome", role: "sift", text: WELCOME_COPY }]);
+    setBubbles([]);
     setComposer("");
     setThinking(false);
     setChatOpen(false);
@@ -396,8 +445,11 @@ export default function Home() {
     setCareMode(false);
     setCareRestore(null);
     setNextStepDone(false);
+    setShowReturnStepStrip(false);
+    setNextStepLoopBusy(false);
     setUnsavedGuestSiftId(null);
     setGuestSavePromptDismissed(false);
+    writeLiveSessionSnapshot(null);
   }, [startingSpace]);
 
   useEffect(() => {
@@ -405,6 +457,105 @@ export default function Home() {
     window.addEventListener("sift:home-reset", onReset);
     return () => window.removeEventListener("sift:home-reset", onReset);
   }, [resetSession]);
+
+  useEffect(() => {
+    if (liveSessionRestoredRef.current) return;
+    liveSessionRestoredRef.current = true;
+    const snapshot = readLiveSessionSnapshot();
+    if (!snapshot) return;
+    const hasLiveState = Boolean(
+      snapshot.siftId ||
+      snapshot.bubbles.length > 0 ||
+      snapshot.composer.trim() ||
+      snapshot.recap ||
+      snapshot.sortIntro,
+    );
+    if (!hasLiveState) return;
+
+    setSiftId(snapshot.siftId);
+    setBubbles(snapshot.bubbles);
+    setComposer(snapshot.composer);
+    setChatOpen(snapshot.chatOpen || hasLiveState);
+    setChatRevealed(snapshot.chatOpen || hasLiveState);
+    setUiVariant(snapshot.uiVariant);
+    setBaseMode(snapshot.baseMode);
+    setCompanionScene(snapshot.companionScene);
+    setRecap(snapshot.recap);
+    setSummary(snapshot.summary);
+    setSummarySheetMinimized(snapshot.summarySheetMinimized);
+    setActiveStep(snapshot.activeStep);
+    setPhase(snapshot.phase);
+    setSortIntro(snapshot.sortIntro);
+    setMeaningfulUserMessageCount(snapshot.meaningfulUserMessageCount);
+    setMeaningfulSiftReplyCount(snapshot.meaningfulSiftReplyCount);
+    setLatestSiftCanSummarize(snapshot.latestSiftCanSummarize);
+    setSummaryPromptHidden(snapshot.summaryPromptHidden);
+    setNextStepDone(snapshot.nextStepDone);
+    setShowReturnStepStrip(Boolean(snapshot.recap?.nextStep?.trim()));
+
+    window.setTimeout(() => {
+      window.dispatchEvent(
+        new CustomEvent("sift:focus-composer", {
+          detail: { select: Boolean(snapshot.composer.trim()) },
+        }),
+      );
+    }, CHAT_REVEAL_DELAY_MS);
+  }, []);
+
+  useEffect(() => {
+    const hasLiveState =
+      siftId ||
+      bubbles.length > 0 ||
+      composer.trim() ||
+      recap ||
+      sortIntro ||
+      summary ||
+      activeStep;
+    if (!hasLiveState) {
+      writeLiveSessionSnapshot(null);
+      return;
+    }
+    writeLiveSessionSnapshot({
+      siftId,
+      bubbles,
+      composer,
+      chatOpen,
+      uiVariant,
+      baseMode,
+      companionScene,
+      recap,
+      summary,
+      summarySheetMinimized,
+      activeStep,
+      phase,
+      sortIntro,
+      meaningfulUserMessageCount,
+      meaningfulSiftReplyCount,
+      latestSiftCanSummarize,
+      summaryPromptHidden,
+      nextStepDone,
+      savedAt: Date.now(),
+    });
+  }, [
+    activeStep,
+    baseMode,
+    bubbles,
+    chatOpen,
+    companionScene,
+    composer,
+    latestSiftCanSummarize,
+    meaningfulSiftReplyCount,
+    meaningfulUserMessageCount,
+    nextStepDone,
+    phase,
+    recap,
+    siftId,
+    sortIntro,
+    summary,
+    summaryPromptHidden,
+    summarySheetMinimized,
+    uiVariant,
+  ]);
 
   useEffect(() => {
     if (effectiveSupportProfile?.mode) {
@@ -655,20 +806,64 @@ export default function Home() {
     }
   }, []);
 
+  const selectStarterPrompt = useCallback((prompt: string) => {
+    setComposer(prompt);
+    window.setTimeout(
+      () =>
+        window.dispatchEvent(
+          new CustomEvent("sift:focus-composer", { detail: { select: false } }),
+        ),
+      0,
+    );
+  }, []);
+
+  const handleNextStepLoop = useCallback(
+    async (status: "did_it" | "did_not" | "in_progress") => {
+      if (status === "in_progress") {
+        setShowReturnStepStrip(false);
+        window.dispatchEvent(new CustomEvent("sift:focus-composer"));
+        return;
+      }
+      if (!siftId || !me) {
+        setNextStepDone(status === "did_it");
+        setShowReturnStepStrip(false);
+        window.dispatchEvent(new CustomEvent("sift:focus-composer"));
+        return;
+      }
+      setNextStepLoopBusy(true);
+      try {
+        const res = await apiRequest("POST", `/api/sift/${encodeURIComponent(siftId)}/checkin`, {
+          status,
+          note: "",
+        });
+        const data = (await res.json()) as { checkin?: { nextStep?: string } };
+        if (data.checkin?.nextStep) {
+          setRecap((current) =>
+            current ? { ...current, nextStep: data.checkin!.nextStep! } : current,
+          );
+        }
+        queryClient.invalidateQueries({ queryKey: ["/api/reentry"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/sifts"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/library"] });
+        setNextStepDone(status === "did_it");
+        setShowReturnStepStrip(false);
+      } catch (err: unknown) {
+        toast({
+          title: "Couldn't save that update",
+          description: err instanceof Error ? err.message : "Try again in a moment.",
+        });
+      } finally {
+        setNextStepLoopBusy(false);
+      }
+    },
+    [me, siftId, toast],
+  );
+
   const submit = useCallback(async () => {
     const text = composer.trim();
     if (composerLocked) return;
     if (!text) return;
     const intent = bedroomIntentFor(text, phase);
-
-    if (import.meta.env.PROD && !me) {
-      toast({
-        title: "Sign in to use Sift",
-        description: "Create a quiet account so this thread belongs to you.",
-      });
-      setAuthOpen(true);
-      return;
-    }
 
     const uid =
       typeof crypto !== "undefined" && crypto.randomUUID
@@ -1168,6 +1363,14 @@ export default function Home() {
                 nextStepDone={nextStepDone}
                 onToggleNextStep={() => setNextStepDone((v) => !v)}
                 footerVisible={shouldShowSummaryPrompt}
+                emptyState={
+                  !thinking ? (
+                    <EmptyConversationState
+                      disabled={composerLocked}
+                      onStarterSelect={selectStarterPrompt}
+                    />
+                  ) : null
+                }
               />
               {!me && unsavedGuestSiftId && !guestSavePromptDismissed ? (
                 <GuestSavePrompt
@@ -1175,15 +1378,23 @@ export default function Home() {
                   onDismiss={() => setGuestSavePromptDismissed(true)}
                 />
               ) : null}
+              {showReturnStepStrip && recap?.nextStep && siftId && !thinking ? (
+                <NextStepReturnStrip
+                  nextStep={recap.nextStep}
+                  busy={nextStepLoopBusy}
+                  onDidIt={() => void handleNextStepLoop("did_it")}
+                  onDidNot={() => void handleNextStepLoop("did_not")}
+                  onKeepGoing={() => void handleNextStepLoop("in_progress")}
+                />
+              ) : null}
               {shouldShowSummaryPrompt ? (
-                <BedroomSummaryPrompt
+                <SiftReadyPrompt
                   busy={thinking}
-                  phase={phase}
                   onRequestSummary={() => void onRequestSummary()}
                   onDismiss={() => setSummaryPromptHidden(true)}
                 />
               ) : null}
-              <SessionComposer
+              <Composer
                 className="w-full shrink-0"
                 variant="embedded"
                 value={composer}
@@ -1241,6 +1452,57 @@ export default function Home() {
           </DialogDescription>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+function NextStepReturnStrip({
+  nextStep,
+  busy,
+  onDidIt,
+  onDidNot,
+  onKeepGoing,
+}: {
+  nextStep: string;
+  busy?: boolean;
+  onDidIt: () => void;
+  onDidNot: () => void;
+  onKeepGoing: () => void;
+}) {
+  return (
+    <div className="mx-3 mb-2 shrink-0 rounded-2xl border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)]/90 px-3 py-2 shadow-[var(--bedroom-tray-shadow)] sm:mx-4">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[color:var(--color-text-muted)]">
+        Where this left off
+      </p>
+      <p className="mt-1 line-clamp-2 text-[13px] leading-snug text-[color:var(--color-text)]">
+        {nextStep}
+      </p>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={onDidIt}
+          className="rounded-full bg-[color:var(--color-primary)] px-3 py-1.5 text-[11px] font-medium text-[color:var(--color-surface)] transition hover:opacity-[0.96] disabled:opacity-45"
+        >
+          Did it
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={onDidNot}
+          className="rounded-full border border-[color:var(--color-border-soft)] px-3 py-1.5 text-[11px] font-medium text-[color:var(--color-text-muted)] transition hover:text-[color:var(--color-text)] disabled:opacity-45"
+        >
+          Didn&apos;t get to it
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={onKeepGoing}
+          className="rounded-full border border-transparent px-3 py-1.5 text-[11px] font-medium text-[color:var(--color-text-muted)] transition hover:text-[color:var(--color-text)] disabled:opacity-45"
+        >
+          Keep going
+        </button>
+      </div>
     </div>
   );
 }

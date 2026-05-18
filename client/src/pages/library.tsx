@@ -280,6 +280,11 @@ function LibraryCard({
           <p className="mt-1 line-clamp-2 text-[13px] leading-relaxed text-[#5f5548]">
             {item.summary}
           </p>
+          {item.movement ? (
+            <p className="mt-2 line-clamp-1 text-[11px] font-medium text-[#1f6f72]">
+              Left off: {item.movement.leftOff}
+            </p>
+          ) : null}
           {item.tags.length ? (
             <div className="mt-3 flex flex-wrap gap-1.5">
               {item.tags.slice(0, 3).map((tag) => (
@@ -330,6 +335,13 @@ function LibraryCard({
                   title="Suggested next step"
                   body={item.preview.nextStep || "No next step was captured for this sift."}
                 />
+                {item.movement ? (
+                  <PreviewRow
+                    icon="spark"
+                    title="What shifted"
+                    body={item.movement.shifted}
+                  />
+                ) : null}
               </div>
               <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[#eadfd0] bg-[#f7f1e8] px-4 py-3">
                 <div className="flex flex-wrap gap-3">
@@ -407,6 +419,19 @@ function PreviewRow({
   );
 }
 
+function MovementNote({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-[#eadfd0] bg-[#fbf7ef] p-3">
+      <p className="text-[9px] font-semibold uppercase tracking-[0.16em] text-[#726656]">
+        {label}
+      </p>
+      <p className="mt-1 line-clamp-3 text-[12px] leading-relaxed text-[#4c4439]">
+        {value}
+      </p>
+    </div>
+  );
+}
+
 function LibraryDetail({
   item,
   loading,
@@ -467,6 +492,17 @@ function LibraryDetail({
             <p className="mt-2 text-sm font-medium leading-relaxed text-[#25301f]">
               {item.preview.nextStep}
             </p>
+          </div>
+        ) : null}
+
+        {item.movement ? (
+          <div className="mt-4 grid gap-2 sm:grid-cols-3">
+            <MovementNote label="What shifted" value={item.movement.shifted} />
+            <MovementNote label="Where you left off" value={item.movement.leftOff} />
+            <MovementNote
+              label="What recurred"
+              value={item.movement.recurring ?? "No recurring pattern yet."}
+            />
           </div>
         ) : null}
       </article>

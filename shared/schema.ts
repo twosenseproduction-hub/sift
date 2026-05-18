@@ -965,6 +965,11 @@ export type LibrarySiftItem = {
   transcriptExpiresAt: number | null;
   mode: "base" | "companion" | "personal" | "operator" | null;
   environment: "bedroom" | "desk" | "rooftop" | "library" | null;
+  movement?: {
+    shifted: string;
+    recurring: string | null;
+    leftOff: string;
+  };
   preview: LibrarySiftPreview;
 };
 

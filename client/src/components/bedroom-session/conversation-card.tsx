@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef } from "react";
+import { Fragment, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { CompanionAvatar } from "@/components/bedroom-session/companion-avatar";
 import type { RecapModel } from "./recap-card";
@@ -26,6 +26,7 @@ export function ConversationCard({
   nextStepDone,
   onToggleNextStep,
   footerVisible = false,
+  emptyState,
 }: {
   bubbles: ChatBubble[];
   thinking: boolean;
@@ -35,6 +36,7 @@ export function ConversationCard({
   nextStepDone: boolean;
   onToggleNextStep: () => void;
   footerVisible?: boolean;
+  emptyState?: ReactNode;
 }) {
   const hasSift = useMemo(
     () => bubbles.some((b) => b.role === "sift"),
@@ -57,6 +59,7 @@ export function ConversationCard({
           "bedroom-conversation-messages flex-1 min-h-0 overflow-y-auto overflow-x-hidden touch-pan-y space-y-2.5 overscroll-y-contain px-3 py-2 [-webkit-overflow-scrolling:touch] sm:space-y-3 sm:px-4 sm:py-2.5",
         )}
       >
+        {bubbles.length === 0 ? emptyState : null}
         {bubbles.map((b, i) => (
           <Fragment key={b.id}>
             <div className="w-full space-y-1">
