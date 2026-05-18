@@ -694,6 +694,8 @@ export default function Home() {
 
   const inSummaryMode = Boolean(summary && !summarySheetMinimized);
   const isCompanionVariant = uiVariant === "companion";
+  const isSiftRoute = location === "/sift";
+  const activeSiftOwnsSurface = isSiftRoute || chatOpen;
 
   const composerLocked =
     thinking || !!gate || !!sortIntro || careMode;
@@ -1191,10 +1193,10 @@ export default function Home() {
   }, [location, openChat, setLocation]);
 
   useEffect(() => {
-    if (location === "/sift" && !chatOpen) {
+    if (isSiftRoute && !chatOpen) {
       openChat(false);
     }
-  }, [chatOpen, location, openChat]);
+  }, [chatOpen, isSiftRoute, openChat]);
 
   const finishOnboarding = useCallback(async () => {
     const profile = completeOnboardingProfile({
@@ -1242,6 +1244,7 @@ export default function Home() {
         "bedroom-session relative flex min-h-[100dvh] flex-col overflow-x-hidden bg-[color:var(--color-bg)] text-[color:var(--color-text)]",
         uiVariant === "base" && "sift-base-session",
         uiVariant === "base" && baseMode === "light" && "sift-base-light-session",
+        activeSiftOwnsSurface && "sift-active-session",
       )}
     >
       {uiVariant === "base" ? <SiftBaseBackground mode={baseMode} /> : null}
@@ -1305,7 +1308,7 @@ export default function Home() {
         />
       ) : null}
 
-      {!chatOpen ? (
+      {!activeSiftOwnsSurface ? (
         isCompanionVariant ? (
           <div className="pointer-events-none fixed inset-x-0 bottom-[max(calc(env(safe-area-inset-bottom,0px)+1.25rem),1.5rem)] z-[25] flex justify-center px-5">
             <button
@@ -1322,11 +1325,11 @@ export default function Home() {
         )
       ) : null}
 
-      {chatOpen ? (
+      {activeSiftOwnsSurface ? (
         /* Chat column: top pinned to feather/paper boundary; shell holds transcript + composer. */
         <div
           className={cn(
-            "bedroom-chat-dock pointer-events-none fixed inset-x-0 bottom-0 z-[15] flex flex-col items-stretch transition-[opacity,transform] duration-500 ease-out",
+            "bedroom-chat-dock pointer-events-none fixed inset-x-0 bottom-0 z-[25] flex flex-col items-stretch transition-[opacity,transform] duration-500 ease-out",
             chatRevealed
               ? "translate-y-0 opacity-100"
               : "translate-y-[calc(100%+2rem)] opacity-0",
