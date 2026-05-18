@@ -18,12 +18,6 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { AuthDialog } from "@/components/auth-dialog";
 import { CareScreen } from "@/components/care-screen";
-import {
-  Dialog,
-  DialogContent,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
 import { BedroomBackdrop } from "@/components/bedroom-session/bedroom-backdrop";
 import { BedroomHeader } from "@/components/bedroom-session/bedroom-header";
 import {
@@ -77,6 +71,28 @@ type SiftUiVariant = "companion" | "base";
 type SiftBaseMode = "dark" | "light";
 type CompanionScene = "bedroom" | "desk" | "rooftop" | "library";
 type OnboardingStep = "welcome" | "mode" | "space" | "personalize";
+type SpeechRecognitionResultLike = {
+  transcript: string;
+};
+type SpeechRecognitionEventLike = {
+  resultIndex: number;
+  results: ArrayLike<{
+    isFinal: boolean;
+    0: SpeechRecognitionResultLike;
+  }>;
+};
+type SpeechRecognitionInstance = {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  onend: (() => void) | null;
+  onerror: ((event: { error?: string }) => void) | null;
+};
+type SpeechRecognitionConstructor = new () => SpeechRecognitionInstance;
 type LiveSessionSnapshot = {
   siftId: string | null;
   bubbles: ChatBubble[];
@@ -142,7 +158,7 @@ function bedroomIntentFor(text: string, phase: SessionPhase): BedroomIntent | un
 
 function isMeaningfulUserMessage(text: string): boolean {
   const trimmed = text.trim();
-  return trimmed.length >= 40 || trimmed.split(/\s+/).filter(Boolean).length >= 7;
+  return trimmed.length >= 10 || trimmed.split(/\s+/).filter(Boolean).length >= 3;
 }
 
 function transcriptFromBubbles(bubbles: ChatBubble[]): ClientTranscriptTurn[] {
@@ -265,7 +281,7 @@ function hasMeaningfulSiftResult(result: SiftResult): boolean {
 }
 
 function hasMeaningfulTurnMessage(message: SiftTurnMessage): boolean {
-  return Boolean(message.matters?.length);
+  return Boolean(message.matters?.length || message.mini?.trim());
 }
 
 function formatSiftTurnMessage(m: SiftTurnMessage): string {
@@ -338,6 +354,15 @@ function writeLiveSessionSnapshot(snapshot: LiveSessionSnapshot | null) {
   }
 }
 
+function getSpeechRecognitionConstructor(): SpeechRecognitionConstructor | null {
+  if (typeof window === "undefined") return null;
+  const speechWindow = window as Window & {
+    SpeechRecognition?: SpeechRecognitionConstructor;
+    webkitSpeechRecognition?: SpeechRecognitionConstructor;
+  };
+  return speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition ?? null;
+}
+
 function siftMessageFromTurns(turns: ThreadTurn[]): SiftTurnMessage | null {
   for (let i = turns.length - 1; i >= 0; i--) {
     const t = turns[i];
@@ -398,7 +423,9 @@ export default function Home() {
   const [nextStepDone, setNextStepDone] = useState(false);
   const [showReturnStepStrip, setShowReturnStepStrip] = useState(false);
   const [nextStepLoopBusy, setNextStepLoopBusy] = useState(false);
-  const [voiceOpen, setVoiceOpen] = useState(false);
+  const [voiceListening, setVoiceListening] = useState(false);
+  const voiceRecognitionRef = useRef<SpeechRecognitionInstance | null>(null);
+  const voiceBaseTextRef = useRef("");
   const [authOpen, setAuthOpen] = useState(false);
   const [unsavedGuestSiftId, setUnsavedGuestSiftId] = useState<string | null>(null);
   const [guestSavePromptDismissed, setGuestSavePromptDismissed] = useState(false);
@@ -447,6 +474,9 @@ export default function Home() {
     setNextStepDone(false);
     setShowReturnStepStrip(false);
     setNextStepLoopBusy(false);
+    voiceRecognitionRef.current?.abort();
+    voiceRecognitionRef.current = null;
+    setVoiceListening(false);
     setUnsavedGuestSiftId(null);
     setGuestSavePromptDismissed(false);
     writeLiveSessionSnapshot(null);
@@ -819,6 +849,89 @@ export default function Home() {
     );
   }, []);
 
+  const stopVoiceInput = useCallback(() => {
+    voiceRecognitionRef.current?.stop();
+    voiceRecognitionRef.current = null;
+    setVoiceListening(false);
+  }, []);
+
+  const toggleVoiceInput = useCallback(() => {
+    if (voiceListening) {
+      stopVoiceInput();
+      return;
+    }
+
+    const Recognition = getSpeechRecognitionConstructor();
+    if (!Recognition) {
+      toast({
+        title: "Voice input is not available here",
+        description: "Use Chrome or Safari speech input, or type the thread.",
+      });
+      return;
+    }
+
+    try {
+      const recognition = new Recognition();
+      voiceBaseTextRef.current = composer.trim();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = "en-US";
+      recognition.onresult = (event) => {
+        let finalText = "";
+        let interimText = "";
+        for (let i = event.resultIndex; i < event.results.length; i += 1) {
+          const result = event.results[i];
+          const transcript = result?.[0]?.transcript?.trim();
+          if (!transcript) continue;
+          if (result.isFinal) {
+            finalText = [finalText, transcript].filter(Boolean).join(" ");
+          } else {
+            interimText = [interimText, transcript].filter(Boolean).join(" ");
+          }
+        }
+        const nextText = [
+          voiceBaseTextRef.current,
+          finalText || interimText,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .trim();
+        if (nextText) setComposer(nextText);
+        if (finalText) voiceBaseTextRef.current = nextText;
+      };
+      recognition.onerror = (event) => {
+        setVoiceListening(false);
+        voiceRecognitionRef.current = null;
+        if (event.error === "no-speech" || event.error === "aborted") return;
+        toast({
+          title: "Voice input stopped",
+          description: "I could not keep listening. You can tap the mic and try again.",
+        });
+      };
+      recognition.onend = () => {
+        setVoiceListening(false);
+        voiceRecognitionRef.current = null;
+      };
+      voiceRecognitionRef.current = recognition;
+      recognition.start();
+      setVoiceListening(true);
+    } catch {
+      setVoiceListening(false);
+      voiceRecognitionRef.current = null;
+      toast({
+        title: "Voice input could not start",
+        description: "Check microphone permission, then tap the mic again.",
+      });
+    }
+  }, [composer, stopVoiceInput, toast, voiceListening]);
+
+  useEffect(() => {
+    return () => {
+      voiceRecognitionRef.current?.abort();
+      voiceRecognitionRef.current = null;
+    };
+  }, []);
+
   const handleNextStepLoop = useCallback(
     async (status: "did_it" | "did_not" | "in_progress") => {
       if (status === "in_progress") {
@@ -865,6 +978,7 @@ export default function Home() {
     const text = composer.trim();
     if (composerLocked) return;
     if (!text) return;
+    stopVoiceInput();
     const intent = bedroomIntentFor(text, phase);
 
     const uid =
@@ -1012,6 +1126,7 @@ export default function Home() {
     phase,
     recordMeaningfulExchange,
     siftId,
+    stopVoiceInput,
     toast,
   ]);
 
@@ -1404,7 +1519,8 @@ export default function Home() {
                 onChange={setComposer}
                 onSubmit={() => void submit()}
                 disabled={composerLocked}
-                onVoiceClick={() => setVoiceOpen(true)}
+                onVoiceClick={toggleVoiceInput}
+                voiceListening={voiceListening}
               />
             </div>
           </div>
@@ -1443,18 +1559,6 @@ export default function Home() {
         }}
         me={me ?? null}
       />
-
-      <Dialog open={voiceOpen} onOpenChange={setVoiceOpen}>
-        <DialogContent className="border-[color:var(--color-walnut)]/25 bg-[color:var(--color-surface)]">
-          <DialogTitle className="text-[color:var(--color-text)]">
-            Voice mode
-          </DialogTitle>
-          <DialogDescription className="text-[color:var(--color-text-muted)]">
-            Voice input is coming soon. For now you can share what feels loud by
-            typing.
-          </DialogDescription>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

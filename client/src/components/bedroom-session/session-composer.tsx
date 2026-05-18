@@ -13,6 +13,7 @@ export function SessionComposer({
   placeholder = "Share anything that feels loud right now.",
   onVoiceClick,
   onFocus,
+  voiceListening = false,
   className,
   variant = "sticky",
 }: {
@@ -23,6 +24,7 @@ export function SessionComposer({
   placeholder?: string;
   onVoiceClick: () => void;
   onFocus?: () => void;
+  voiceListening?: boolean;
   className?: string;
   /** sticky: page footer tray. Embedded: bottom of conversation shell (non-sticky, no page gradient). */
   variant?: "sticky" | "embedded";
@@ -82,8 +84,14 @@ export function SessionComposer({
           type="button"
           disabled={disabled}
           onClick={onVoiceClick}
-          className="mb-[1px] flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[color:var(--color-walnut)]/11 bg-transparent text-[color:var(--color-text-muted)] transition hover:border-[color:var(--color-walnut)]/18 hover:bg-[color:var(--color-text)]/[0.04] hover:text-[color:var(--color-text)] disabled:opacity-45"
-          aria-label="Voice mode"
+          className={cn(
+            "mb-[1px] flex h-8 w-8 shrink-0 items-center justify-center rounded-full border transition disabled:opacity-45",
+            voiceListening
+              ? "border-[color:var(--color-primary)]/35 bg-[color:var(--color-primary)]/10 text-[color:var(--color-primary)]"
+              : "border-[color:var(--color-walnut)]/11 bg-transparent text-[color:var(--color-text-muted)] hover:border-[color:var(--color-walnut)]/18 hover:bg-[color:var(--color-text)]/[0.04] hover:text-[color:var(--color-text)]",
+          )}
+          aria-label={voiceListening ? "Stop voice input" : "Start voice input"}
+          aria-pressed={voiceListening}
         >
           <Mic className="h-3.5 w-3.5 stroke-[1.75]" />
         </button>
@@ -122,7 +130,7 @@ export function SessionComposer({
           isEmbedded ? "w-full" : "max-w-[640px]",
         )}
       >
-        ⌘ Enter to send
+        {voiceListening ? "Listening..." : "⌘ Enter to send"}
       </p>
     </div>
   );

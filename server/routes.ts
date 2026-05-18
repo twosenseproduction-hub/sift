@@ -446,6 +446,9 @@ Rules:
 - Never greet, never praise, never validate generically. No "that makes sense". No "I hear you".
 - No exclamation points. No emojis. No corporate language.
 - If the user seems to be landing or repeating, prefer a short mini or question that names the landing, rather than pushing them further.
+- Never repeat a prior question verbatim or near-verbatim. If the user answered it, advance from the answer.
+- Short direct replies are valid answers when they respond to your question.
+- If the user says you repeated yourself, missed them, or are not listening, acknowledge it briefly and change direction.
 
 ${SAFETY_CLAUSE}
 
@@ -729,6 +732,9 @@ Rules:
 - Ask only one question.
 - Treat greetings, one-word feelings, "I don't know", "can you help me", and "something is off" as valid openings.
 - For low-context input, avoid premature interpretation. Offer warmth and one grounded question.
+- Never repeat the same question already visible in the thread. If the user answers a question, advance from their answer.
+- Short direct replies can be real answers. Treat replies like "i hate how it might look" as meaningful, not as non-answers.
+- If the user says Sift repeated itself, misunderstood, or is not listening, acknowledge the miss and change direction.
 - Only include "matters" when the user's message gives enough substance to name what deserves attention.
 - Anchor the mirror and question in the user's newest words. Never reuse old examples or generic themes that are not in this thread.`;
 
@@ -1336,6 +1342,163 @@ function renderThreadForModel(args: {
   return lines.join("\n");
 }
 
+function visibleSiftTurnText(message: SiftTurnMessage): string {
+  return [message.mirror, message.question, message.mini]
+    .filter((part): part is string => Boolean(part?.trim()))
+    .join("\n\n")
+    .trim();
+}
+
+function normalizeLoopText(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function textSimilarity(a: string, b: string): number {
+  const aa = normalizeLoopText(a);
+  const bb = normalizeLoopText(b);
+  if (!aa || !bb) return 0;
+  if (aa === bb) return 1;
+  const aTokens = new Set(aa.split(" ").filter(Boolean));
+  const bTokens = new Set(bb.split(" ").filter(Boolean));
+  if (!aTokens.size || !bTokens.size) return 0;
+  let overlap = 0;
+  for (const token of Array.from(aTokens)) if (bTokens.has(token)) overlap++;
+  return overlap / Math.max(aTokens.size, bTokens.size);
+}
+
+function lastSiftMessage(turns: ThreadTurn[]): SiftTurnMessage | null {
+  for (let i = turns.length - 1; i >= 0; i--) {
+    const t = turns[i];
+    if (t.role === "sift" && t.kind === "message") return t.message;
+  }
+  return null;
+}
+
+function previousUserMessage(turns: ThreadTurn[]): string | null {
+  let sawLatest = false;
+  for (let i = turns.length - 1; i >= 0; i--) {
+    const t = turns[i];
+    if (t.role !== "user" || t.kind !== "message") continue;
+    if (!sawLatest) {
+      sawLatest = true;
+      continue;
+    }
+    const text = t.text.trim();
+    if (text) return text;
+  }
+  return null;
+}
+
+function isRepairModeText(text: string): boolean {
+  const t = normalizeLoopText(text);
+  if (t === "no") return true;
+  return [
+    "you already said that",
+    "already said that",
+    "you asked that",
+    "you already asked",
+    "that s not what i mean",
+    "thats not what i mean",
+    "not what i mean",
+    "you re not listening",
+    "youre not listening",
+    "not listening",
+  ].some((phrase) => t === phrase || t.includes(phrase));
+}
+
+function isPlausibleAnswerToQuestion(text: string, question?: string): boolean {
+  const trimmed = text.trim();
+  if (!question?.trim() || !trimmed) return false;
+  if (isRepairModeText(trimmed)) return false;
+  const words = trimmed.split(/\s+/).filter(Boolean);
+  const lower = normalizeLoopText(trimmed);
+  const greetingOnly = /^(hi|hey|hello|yo|sup)$/.test(lower);
+  if (greetingOnly) return false;
+  return trimmed.length >= 10 || words.length >= 3;
+}
+
+function answerSignalFromText(text: string): string {
+  const compact = text.replace(/\s+/g, " ").trim();
+  if (!compact) return "what the user named";
+  return compact.length > 72 ? `${compact.slice(0, 69)}...` : compact;
+}
+
+function advancingFallbackMessage(args: {
+  latestUserText: string;
+  turns: ThreadTurn[];
+  reason: "repeat" | "repair" | "source_mismatch" | "empty";
+}): SiftTurnMessage {
+  const priorAnswer = previousUserMessage(args.turns);
+  const repair = args.reason === "repair";
+  const answer = repair ? priorAnswer || args.latestUserText : args.latestUserText;
+  const signal = answerSignalFromText(answer);
+  return {
+    mirror: repair
+      ? `You're right. You did answer. What I'm hearing is that ${signal} is the part with weight.`
+      : `Got it. What I'm hearing is that ${signal} is carrying some of the charge here.`,
+    question: repair
+      ? "What feels most at risk if it is seen that way?"
+      : "What feels most at risk around that?",
+    matters: [signal],
+  };
+}
+
+function guardDeepeningMessage(args: {
+  message: SiftTurnMessage;
+  latestUserText: string;
+  turns: ThreadTurn[];
+}): SiftTurnMessage {
+  const prior = lastSiftMessage(args.turns);
+  const priorText = prior ? visibleSiftTurnText(prior) : "";
+  const nextText = visibleSiftTurnText(args.message);
+  const repeated =
+    Boolean(priorText && nextText && textSimilarity(priorText, nextText) >= 0.82) ||
+    Boolean(prior?.question && args.message.question && textSimilarity(prior.question, args.message.question) >= 0.82);
+  const repair = isRepairModeText(args.latestUserText);
+  const answered = isPlausibleAnswerToQuestion(args.latestUserText, prior?.question);
+
+  console.debug("[deepening] answer classification", {
+    answered,
+    repair,
+    repeated,
+    latestChars: args.latestUserText.trim().length,
+  });
+
+  if (repair) {
+    console.debug("[deepening] repair mode triggered");
+    return advancingFallbackMessage({
+      latestUserText: args.latestUserText,
+      turns: args.turns,
+      reason: "repair",
+    });
+  }
+
+  if (repeated) {
+    console.warn("[deepening] repeated assistant prompt blocked", {
+      previous: priorText,
+      next: nextText,
+    });
+    return advancingFallbackMessage({
+      latestUserText: args.latestUserText,
+      turns: args.turns,
+      reason: "repeat",
+    });
+  }
+
+  if (answered && !args.message.matters?.length) {
+    return {
+      ...args.message,
+      matters: [answerSignalFromText(args.latestUserText)],
+    };
+  }
+
+  return args.message;
+}
+
 function renderClientTranscriptForSummary(args: {
   originalInput: string;
   coreIntent: string;
@@ -1580,7 +1743,15 @@ async function runDeepening(args: {
     !message.noise?.length &&
     !message.mini
   ) {
-    return { question: "Say a little more about that." };
+    return guardDeepeningMessage({
+      message: advancingFallbackMessage({
+        latestUserText: args.latestUserText,
+        turns: args.turns,
+        reason: "empty",
+      }),
+      latestUserText: args.latestUserText,
+      turns: args.turns,
+    });
   }
   const messageText = [
     message.mirror,
@@ -1592,9 +1763,24 @@ async function runDeepening(args: {
     .filter(Boolean)
     .join(" ");
   if (!outputMatchesSource(messageText, `${args.originalInput}\n${args.latestUserText}`)) {
-    return { question: "What part of that feels most important to name plainly?" };
+    console.warn("[deepening] source mismatch fallback", {
+      latestChars: args.latestUserText.trim().length,
+    });
+    return guardDeepeningMessage({
+      message: advancingFallbackMessage({
+        latestUserText: args.latestUserText,
+        turns: args.turns,
+        reason: "source_mismatch",
+      }),
+      latestUserText: args.latestUserText,
+      turns: args.turns,
+    });
   }
-  return message;
+  return guardDeepeningMessage({
+    message,
+    latestUserText: args.latestUserText,
+    turns: args.turns,
+  });
 }
 
 async function runThreadSummary(args: {
