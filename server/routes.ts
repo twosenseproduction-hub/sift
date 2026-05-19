@@ -449,6 +449,7 @@ Rules:
 - Never repeat a prior question verbatim or near-verbatim. If the user answered it, advance from the answer.
 - Short direct replies are valid answers when they respond to your question.
 - If the user says you repeated yourself, missed them, or are not listening, acknowledge it briefly and change direction.
+- When the user is uncertain or low-detail ("idk", "maybe", "not sure", "just off", "weird", "nothing exactly"), match their plainness: short acknowledgment, one direct question. No metaphors, no "charge", "weight", "underneath", or therapy phrasing. Do not echo their filler words back as insight.
 
 ${SAFETY_CLAUSE}
 
@@ -661,6 +662,7 @@ Bedroom warmup phase:
 - End with exactly one simple clarifying question.
 - If the input is vague, short, or low-context, treat it as a valid opening. Do not say "not enough information" or ask for details generally.
 - Good low-context pattern: brief warmth, permission for unsorted expression, one grounding question.
+- For uncertain tiny replies ("idk", "maybe", "not sure"), use plain words only — no metaphors like "charge", "weight", or "underneath".
 - Do not list "what matters", "noise", or "next step" inside the reflection.
 - Still return every required JSON field. Keep matters/noise/nextStep internally useful, but the user will only see the reflection during warmup.`;
 
@@ -736,7 +738,8 @@ Rules:
 - Short direct replies can be real answers. Treat replies like "i hate how it might look" as meaningful, not as non-answers.
 - If the user says Sift repeated itself, misunderstood, or is not listening, acknowledge the miss and change direction.
 - Only include "matters" when the user's message gives enough substance to name what deserves attention.
-- Anchor the mirror and question in the user's newest words. Never reuse old examples or generic themes that are not in this thread.`;
+- Anchor the mirror and question in the user's newest words. Never reuse old examples or generic themes that are not in this thread.
+- Low-information replies ("idk", "maybe", "not sure", "just off", "weird", "nothing exactly"): use simple grounded language only. Example mirror shapes: "That's okay.", "Fair.", "No rush." Example questions: "What feels hardest to name?", "What feels most unclear?", "If you had to guess, what feels closest?" Never say things like "carrying the charge", "holding weight", or interpret their uncertainty as depth.`;
 
 const SUMMARY_SYSTEM_PROMPT = `You are Sift summarizing an active thread.
 
@@ -1427,6 +1430,138 @@ function answerSignalFromText(text: string): string {
   return compact.length > 72 ? `${compact.slice(0, 69)}...` : compact;
 }
 
+const POETIC_MIRROR_PHRASES = [
+  "carrying some of the charge",
+  "carrying the charge",
+  "carrying the edge",
+  "part with weight",
+  "holding weight",
+  "weight in the room",
+  "sitting underneath",
+  "humming beneath",
+  "beneath that",
+  "the charge here",
+];
+
+function mirrorSoundsPoetic(mirror?: string): boolean {
+  if (!mirror?.trim()) return false;
+  const t = normalizeLoopText(mirror);
+  return POETIC_MIRROR_PHRASES.some((phrase) => t.includes(phrase));
+}
+
+function isLowInformationReply(text: string): boolean {
+  const t = normalizeLoopText(text);
+  if (!t) return true;
+  const exact = new Set([
+    "idk",
+    "i dont know",
+    "i don t know",
+    "not sure",
+    "unsure",
+    "maybe",
+    "umm",
+    "um",
+    "hmm",
+    "hm",
+    "meh",
+    "nothing",
+    "nothing really",
+    "nothing exactly",
+    "no idea",
+    "dunno",
+    "just off",
+    "weird",
+    "idk yet",
+    "i guess",
+    "sort of",
+    "kind of",
+    "not really",
+    "hard to say",
+    "hard to tell",
+  ]);
+  if (exact.has(t)) return true;
+  const uncertainFragments = [
+    "not sure",
+    "dont know",
+    "don t know",
+    "no clue",
+    "who knows",
+    "can t tell",
+    "cant tell",
+    "don t know yet",
+  ];
+  const words = t.split(/\s+/).filter(Boolean);
+  if (words.length <= 4 && uncertainFragments.some((p) => t === p || t.includes(p))) {
+    return true;
+  }
+  return false;
+}
+
+function pickPlainFollowUpQuestion(seed: string): string {
+  const options = [
+    "What feels hardest to name?",
+    "What feels most unclear?",
+    "What feels most off?",
+    "If you had to guess, what feels closest?",
+    "Is it more fear, pressure, or confusion?",
+    "No rush. What feels most loud?",
+    "Fair. What's the part you keep circling?",
+  ];
+  const idx = Math.abs(seed.split("").reduce((n, c) => n + c.charCodeAt(0), 0)) % options.length;
+  return options[idx]!;
+}
+
+function plainFollowUpMessage(args: {
+  latestUserText: string;
+  reason: "low_info" | "repair" | "repeat" | "source_mismatch" | "empty";
+}): SiftTurnMessage {
+  const question = pickPlainFollowUpQuestion(args.latestUserText);
+  if (args.reason === "repair") {
+    return {
+      mirror: "You're right. Let me say that better.",
+      question,
+    };
+  }
+  const mirror =
+    args.reason === "repeat"
+      ? "Fair."
+      : args.reason === "empty" || args.reason === "source_mismatch"
+        ? "Okay."
+        : "That's okay.";
+  return { mirror, question };
+}
+
+function plainifyDeepeningTurn(args: {
+  message: SiftTurnMessage;
+  latestUserText: string;
+}): SiftTurnMessage {
+  const fallback = plainFollowUpMessage({
+    latestUserText: args.latestUserText,
+    reason: "low_info",
+  });
+  const modelQ = args.message.question?.trim();
+  const question =
+    modelQ &&
+    modelQ.length <= 90 &&
+    !mirrorSoundsPoetic(modelQ) &&
+    !mirrorSoundsPoetic(args.message.mirror ?? "")
+      ? modelQ
+      : fallback.question;
+  const mirror =
+    args.message.mirror?.trim() &&
+    !mirrorSoundsPoetic(args.message.mirror) &&
+    !isLowInformationReply(args.message.mirror)
+      ? args.message.mirror
+      : fallback.mirror;
+  return {
+    ...args.message,
+    mirror,
+    question,
+    matters: undefined,
+    mini: args.message.mini && mirrorSoundsPoetic(args.message.mini) ? undefined : args.message.mini,
+  };
+}
+
 function advancingFallbackMessage(args: {
   latestUserText: string;
   turns: ThreadTurn[];
@@ -1435,14 +1570,18 @@ function advancingFallbackMessage(args: {
   const priorAnswer = previousUserMessage(args.turns);
   const repair = args.reason === "repair";
   const answer = repair ? priorAnswer || args.latestUserText : args.latestUserText;
+  if (isLowInformationReply(answer)) {
+    return plainFollowUpMessage({
+      latestUserText: answer,
+      reason: repair ? "repair" : args.reason === "repeat" ? "repeat" : "low_info",
+    });
+  }
   const signal = answerSignalFromText(answer);
   return {
-    mirror: repair
-      ? `You're right. You did answer. What I'm hearing is that ${signal} is the part with weight.`
-      : `Got it. What I'm hearing is that ${signal} is carrying some of the charge here.`,
+    mirror: repair ? "You're right. You did answer." : "Okay.",
     question: repair
       ? "What feels most at risk if it is seen that way?"
-      : "What feels most at risk around that?",
+      : `What feels most at risk around ${signal}?`,
     matters: [signal],
   };
 }
@@ -1468,6 +1607,34 @@ function guardDeepeningMessage(args: {
     latestChars: args.latestUserText.trim().length,
   });
 
+  if (isLowInformationReply(args.latestUserText)) {
+    console.debug("[deepening] low-information reply mode");
+    if (repair) {
+      return plainFollowUpMessage({
+        latestUserText: args.latestUserText,
+        reason: "repair",
+      });
+    }
+    if (repeated) {
+      return plainFollowUpMessage({
+        latestUserText: args.latestUserText,
+        reason: "repeat",
+      });
+    }
+    return plainifyDeepeningTurn({
+      message: args.message,
+      latestUserText: args.latestUserText,
+    });
+  }
+
+  if (mirrorSoundsPoetic(args.message.mirror)) {
+    console.debug("[deepening] poetic mirror replaced");
+    return plainifyDeepeningTurn({
+      message: args.message,
+      latestUserText: args.latestUserText,
+    });
+  }
+
   if (repair) {
     console.debug("[deepening] repair mode triggered");
     return advancingFallbackMessage({
@@ -1489,7 +1656,7 @@ function guardDeepeningMessage(args: {
     });
   }
 
-  if (answered && !args.message.matters?.length) {
+  if (answered && !args.message.matters?.length && !isLowInformationReply(args.latestUserText)) {
     return {
       ...args.message,
       matters: [answerSignalFromText(args.latestUserText)],
