@@ -20,6 +20,7 @@ import {
 } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { DailyPromptEmailSettings } from "@/components/daily-prompt-email-settings";
 
 type PrimaryIntent = SupportProfileUpdateRequest["primaryIntent"];
 type SupportStyle = SupportProfileUpdateRequest["supportStyle"];
@@ -307,6 +308,13 @@ export function SupportProfileDialog({
                 Delete all history
               </Button>
             </div>
+          </SettingsSection>
+
+          <SettingsSection
+            title="Daily check-in"
+            description="Optional email prompt to return when a thread is still alive."
+          >
+            <DailyPromptEmailSettings me={me} canPersist={canPersist} />
           </SettingsSection>
 
           <SettingsSection title="Appearance" description="Visual theme. System can expand as the app grows.">

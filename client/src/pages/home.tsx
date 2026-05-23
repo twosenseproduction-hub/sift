@@ -46,6 +46,10 @@ import { SiftBaseBackground } from "@/components/bedroom-session/sift-base-backg
 import { ToastAction } from "@/components/ui/toast";
 import { useMe, useUpdateSupportProfile } from "@/lib/auth";
 import {
+  clearHashSearchParam,
+  parseHashSearchParams,
+} from "@/lib/notifications";
+import {
   mergeSupportProfiles,
   readLocalSupportProfile,
   writeLocalSupportProfile,
@@ -386,6 +390,11 @@ export default function Home() {
   const [unsavedGuestSiftId, setUnsavedGuestSiftId] = useState<string | null>(null);
   const [guestSavePromptDismissed, setGuestSavePromptDismissed] = useState(false);
   const [supportProfileOpen, setSupportProfileOpen] = useState(false);
+  const [dailyPromptHandoff, setDailyPromptHandoff] = useState<{
+    text: string;
+    themeName?: string;
+  } | null>(null);
+  const dailyPromptDeepLinkHandled = useRef(false);
   const [onboardingStep, setOnboardingStep] = useState<OnboardingStep>("welcome");
   const [onboardingDraft, setOnboardingDraft] = useState<SupportProfileUpdateRequest>(
     () => ({
@@ -771,6 +780,7 @@ export default function Home() {
 
   const selectStarterPrompt = useCallback((prompt: string) => {
     setComposer(prompt);
+    setDailyPromptHandoff(null);
     window.setTimeout(
       () =>
         window.dispatchEvent(
@@ -778,6 +788,48 @@ export default function Home() {
         ),
       0,
     );
+  }, []);
+
+  useEffect(() => {
+    if (dailyPromptDeepLinkHandled.current) return;
+    const params = parseHashSearchParams();
+    if (params.get("dailyPrompt") !== "1") return;
+    const promptId = params.get("promptId");
+    if (!promptId) return;
+    dailyPromptDeepLinkHandled.current = true;
+
+    const hour = new Date().getHours();
+    void (async () => {
+      try {
+        const res = await apiRequest(
+          "GET",
+          `/api/daily-prompt?promptId=${encodeURIComponent(promptId)}&hour=${hour}`,
+        );
+        const data = await res.json();
+        if (data?.prompt?.text) {
+          setComposer(data.prompt.text);
+          setDailyPromptHandoff({
+            text: data.prompt.text,
+            themeName: data.theme?.name,
+          });
+          setChatOpen(true);
+          setChatRevealed(true);
+          window.setTimeout(
+            () =>
+              window.dispatchEvent(
+                new CustomEvent("sift:focus-composer", {
+                  detail: { select: false },
+                }),
+              ),
+            0,
+          );
+        }
+      } catch {
+        // Land quietly on home if the handoff fails.
+      } finally {
+        clearHashSearchParam("dailyPrompt", "promptId");
+      }
+    })();
   }, []);
 
   const stopVoiceInput = useCallback(() => {
@@ -1395,6 +1447,26 @@ export default function Home() {
                   onRequestSummary={() => void onRequestSummary()}
                   onDismiss={() => setSummaryPromptHidden(true)}
                 />
+              ) : null}
+              {dailyPromptHandoff ? (
+                <div className="mx-3 mb-2 shrink-0 rounded-2xl border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)]/88 px-3 py-2.5 shadow-[var(--bedroom-tray-shadow)] sm:mx-4">
+                  <p className="text-[11px] font-medium uppercase tracking-[0.05em] text-[color:var(--color-text-muted)]">
+                    Today&apos;s check-in
+                    {dailyPromptHandoff.themeName
+                      ? ` · ${dailyPromptHandoff.themeName}`
+                      : ""}
+                  </p>
+                  <p className="mt-1 text-[13px] leading-relaxed text-[color:var(--color-text)]">
+                    The prompt is in the composer — edit it or send when ready.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setDailyPromptHandoff(null)}
+                    className="mt-2 text-[11px] text-[color:var(--color-text-muted)] underline-offset-4 hover:text-[color:var(--color-text)] hover:underline"
+                  >
+                    Dismiss
+                  </button>
+                </div>
               ) : null}
               <Composer
                 className="w-full shrink-0"

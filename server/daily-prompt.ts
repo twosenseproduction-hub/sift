@@ -295,6 +295,12 @@ export function themeForDay(themeCycleDay: number): number {
   return Math.floor(day / DAYS_PER_THEME) + 1; // 1-indexed
 }
 
+/** Look up a library prompt by id (for email deep links). */
+export function getPromptById(id: number): Prompt | undefined {
+  if (!Number.isFinite(id)) return undefined;
+  return PROMPTS.find((p) => p.id === id);
+}
+
 /**
  * Score a single text blob against each of the 10 themes.
  * Returns a { [themeNum]: score } map where score counts keyword hits.

@@ -23,9 +23,11 @@ RUN npm prune --omit=dev
 # ---- Runtime stage ----
 FROM node:20-bookworm-slim AS runtime
 
-# Minimal runtime deps. libc6 is already in slim; nothing else needed for
-# better-sqlite3 at runtime because the .node binding is copied from /build.
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+ARG SUPERCRONIC_VERSION=v0.2.33
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
+  && curl -fsSLo /usr/local/bin/supercronic \
+     "https://github.com/aptible/supercronic/releases/download/${SUPERCRONIC_VERSION}/supercronic-linux-amd64" \
+  && chmod +x /usr/local/bin/supercronic \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -37,6 +39,7 @@ ENV DB_PATH=/data/sift.db
 COPY --from=build /app/package.json ./package.json
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
+COPY crontab /app/crontab
 
 # Fly mounts the persistent volume at /data; make sure the dir exists.
 RUN mkdir -p /data

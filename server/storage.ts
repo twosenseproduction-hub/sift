@@ -37,7 +37,10 @@ import {
   type DiscernmentProfileRow,
   type SupportProfile,
   type MemoryPreferences,
+  type NotificationPreferences,
   type UpdateSessionMemoryRequest,
+  defaultNotificationPreferences,
+  userNotificationPreferences,
   discernmentProfiles,
   sifts,
   users,
@@ -49,6 +52,20 @@ import {
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import Database from "better-sqlite3";
 import { eq, and, desc, like, or, isNull, asc, sql } from "drizzle-orm";
+import { localDateKeyForMs } from "./lib/daily-prompt-eligibility";
+
+function notificationRowToPrefs(
+  row: typeof userNotificationPreferences.$inferSelect,
+): NotificationPreferences {
+  return {
+    dailyPromptEmailEnabled: row.dailyPromptEmailEnabled === 1,
+    dailyPromptLocalHour: row.dailyPromptLocalHour,
+    dailyPromptTimezone: row.dailyPromptTimezone,
+    lastDailyPromptSentAt: row.lastDailyPromptSentAt,
+    lastDailyPromptPromptId: row.lastDailyPromptPromptId,
+    dailyPromptPausedUntil: row.dailyPromptPausedUntil,
+  };
+}
 
 // DB path is configurable so the production host can mount a persistent volume.
 // Fly.io mounts volumes at /data by default — set DB_PATH=/data/sift.db there.
@@ -319,6 +336,18 @@ if (!userCols.some((c) => c.name === "memory_preferences")) {
 }
 
 sqlite.exec(`
+  CREATE TABLE IF NOT EXISTS user_notification_preferences (
+    user_id INTEGER PRIMARY KEY,
+    daily_prompt_email_enabled INTEGER NOT NULL DEFAULT 0,
+    daily_prompt_local_hour INTEGER,
+    daily_prompt_timezone TEXT,
+    last_daily_prompt_sent_at INTEGER,
+    last_daily_prompt_prompt_id INTEGER,
+    daily_prompt_paused_until INTEGER
+  );
+`);
+
+sqlite.exec(`
   CREATE TABLE IF NOT EXISTS passphrase_reset_tokens (
     token TEXT PRIMARY KEY,
     user_id INTEGER NOT NULL,
@@ -442,6 +471,23 @@ export interface IStorage {
     userId: number,
     memoryPreferences: MemoryPreferences,
   ): Promise<User | undefined>;
+  getNotificationPreferences(
+    userId: number,
+  ): Promise<NotificationPreferences>;
+  upsertNotificationPreferences(
+    userId: number,
+    patch: Partial<NotificationPreferences>,
+  ): Promise<NotificationPreferences>;
+  listDailyPromptEmailCandidates(): Promise<
+    Array<{ userId: number; email: string; handle: string; prefs: NotificationPreferences }>
+  >;
+  /** Atomically mark a daily prompt send; returns false if already sent today (local date). */
+  claimDailyPromptSend(
+    userId: number,
+    localDateKey: string,
+    promptId: number,
+    sentAt: number,
+  ): boolean;
   updateSessionMemory(
     id: string,
     userId: number,
@@ -1026,6 +1072,134 @@ export class DatabaseStorage implements IStorage {
       .where(eq(users.id, userId))
       .returning()
       .get();
+  }
+
+  async getNotificationPreferences(
+    userId: number,
+  ): Promise<NotificationPreferences> {
+    const row = db
+      .select()
+      .from(userNotificationPreferences)
+      .where(eq(userNotificationPreferences.userId, userId))
+      .get();
+    return row ? notificationRowToPrefs(row) : { ...defaultNotificationPreferences };
+  }
+
+  async upsertNotificationPreferences(
+    userId: number,
+    patch: Partial<NotificationPreferences>,
+  ): Promise<NotificationPreferences> {
+    const current = await this.getNotificationPreferences(userId);
+    const next: NotificationPreferences = { ...current, ...patch };
+    db.insert(userNotificationPreferences)
+      .values({
+        userId,
+        dailyPromptEmailEnabled: next.dailyPromptEmailEnabled ? 1 : 0,
+        dailyPromptLocalHour: next.dailyPromptLocalHour,
+        dailyPromptTimezone: next.dailyPromptTimezone,
+        lastDailyPromptSentAt: next.lastDailyPromptSentAt,
+        lastDailyPromptPromptId: next.lastDailyPromptPromptId,
+        dailyPromptPausedUntil: next.dailyPromptPausedUntil,
+      })
+      .onConflictDoUpdate({
+        target: userNotificationPreferences.userId,
+        set: {
+          dailyPromptEmailEnabled: next.dailyPromptEmailEnabled ? 1 : 0,
+          dailyPromptLocalHour: next.dailyPromptLocalHour,
+          dailyPromptTimezone: next.dailyPromptTimezone,
+          lastDailyPromptSentAt: next.lastDailyPromptSentAt,
+          lastDailyPromptPromptId: next.lastDailyPromptPromptId,
+          dailyPromptPausedUntil: next.dailyPromptPausedUntil,
+        },
+      })
+      .run();
+    return next;
+  }
+
+  async listDailyPromptEmailCandidates(): Promise<
+    Array<{ userId: number; email: string; handle: string; prefs: NotificationPreferences }>
+  > {
+    const rows = rawDb
+      .prepare(
+        `SELECT u.id AS user_id, u.email, u.handle,
+                p.daily_prompt_email_enabled,
+                p.daily_prompt_local_hour,
+                p.daily_prompt_timezone,
+                p.last_daily_prompt_sent_at,
+                p.last_daily_prompt_prompt_id,
+                p.daily_prompt_paused_until
+           FROM user_notification_preferences p
+           JOIN users u ON u.id = p.user_id
+          WHERE p.daily_prompt_email_enabled = 1
+            AND u.email IS NOT NULL
+            AND TRIM(u.email) != ''
+            AND p.daily_prompt_local_hour IS NOT NULL
+            AND p.daily_prompt_timezone IS NOT NULL`,
+      )
+      .all() as Array<{
+      user_id: number;
+      email: string;
+      handle: string;
+      daily_prompt_email_enabled: number;
+      daily_prompt_local_hour: number;
+      daily_prompt_timezone: string;
+      last_daily_prompt_sent_at: number | null;
+      last_daily_prompt_prompt_id: number | null;
+      daily_prompt_paused_until: number | null;
+    }>;
+    return rows.map((r) => ({
+      userId: r.user_id,
+      email: r.email.trim(),
+      handle: r.handle,
+      prefs: {
+        dailyPromptEmailEnabled: r.daily_prompt_email_enabled === 1,
+        dailyPromptLocalHour: r.daily_prompt_local_hour,
+        dailyPromptTimezone: r.daily_prompt_timezone,
+        lastDailyPromptSentAt: r.last_daily_prompt_sent_at,
+        lastDailyPromptPromptId: r.last_daily_prompt_prompt_id,
+        dailyPromptPausedUntil: r.daily_prompt_paused_until,
+      },
+    }));
+  }
+
+  claimDailyPromptSend(
+    userId: number,
+    localDateKey: string,
+    promptId: number,
+    sentAt: number,
+  ): boolean {
+    const claim = rawDb.transaction(() => {
+      const row = rawDb
+        .prepare(
+          `SELECT last_daily_prompt_sent_at, daily_prompt_timezone
+             FROM user_notification_preferences
+            WHERE user_id = ?`,
+        )
+        .get(userId) as
+        | { last_daily_prompt_sent_at: number | null; daily_prompt_timezone: string | null }
+        | undefined;
+      if (!row) return false;
+
+      if (row.last_daily_prompt_sent_at != null && row.daily_prompt_timezone) {
+        const lastKey = localDateKeyForMs(
+          row.last_daily_prompt_sent_at,
+          row.daily_prompt_timezone,
+        );
+        if (lastKey === localDateKey) return false;
+      }
+
+      const res = rawDb
+        .prepare(
+          `UPDATE user_notification_preferences
+              SET last_daily_prompt_sent_at = ?,
+                  last_daily_prompt_prompt_id = ?
+            WHERE user_id = ?
+              AND daily_prompt_email_enabled = 1`,
+        )
+        .run(sentAt, promptId, userId);
+      return res.changes > 0;
+    });
+    return claim();
   }
 
   async updateSessionMemory(

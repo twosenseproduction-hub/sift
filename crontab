@@ -1,0 +1,1 @@
+*/15 * * * * cd /app && node dist/jobs/send-daily-prompts.cjs >> /proc/1/fd/1 2>&1

@@ -4,7 +4,14 @@ import express from "express";
 import crypto from "crypto";
 import Anthropic from "@anthropic-ai/sdk";
 import { storage, rawDb } from "./storage";
-import { selectDailyPrompt, type RecentSiftSignal } from "./daily-prompt";
+import { selectDailyPrompt, getPromptById } from "./daily-prompt";
+import {
+  buildDailyPromptInputForUser,
+  countUserSifts,
+  currentThemeCycleDay,
+  loadRecentSiftSignals,
+} from "./daily-prompt-context";
+import { isDailyPromptEmailFeatureEnabled } from "./lib/daily-prompt-eligibility";
 import { screenForCrisis, screenOutputForCrisis } from "./crisis-screen";
 import { registerKokoroTtsProxy } from "./kokoro-tts-proxy";
 import {
@@ -30,6 +37,11 @@ import {
   memoryPreferencesSchema,
   memoryPreferencesUpdateSchema,
   defaultMemoryPreferences,
+  notificationPreferencesSchema,
+  notificationPreferencesUpdateSchema,
+  defaultNotificationPreferences,
+  DAILY_PROMPT_HOUR_MIN,
+  DAILY_PROMPT_HOUR_MAX,
   classifyContact,
   checkinRequestSchema,
   checkinAnalysisSchema,
@@ -3403,6 +3415,93 @@ export async function registerRoutes(
     res.json({ me: toMe(updated) });
   });
 
+  app.get("/api/me/notifications", requireAuth, async (req, res) => {
+    const userId = (req as any).userId as number;
+    const user = await storage.getUserById(userId);
+    if (!user) return res.status(404).json({ error: "Account not found" });
+    const preferences = await storage.getNotificationPreferences(userId);
+    res.json({
+      preferences,
+      featureEnabled: isDailyPromptEmailFeatureEnabled(),
+      hourRange: { min: DAILY_PROMPT_HOUR_MIN, max: DAILY_PROMPT_HOUR_MAX },
+      hasEmail: Boolean(user.email?.trim()),
+    });
+  });
+
+  app.patch("/api/me/notifications", requireAuth, async (req, res) => {
+    const parsed = notificationPreferencesUpdateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res
+        .status(400)
+        .json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+    }
+    const userId = (req as any).userId as number;
+    const user = await storage.getUserById(userId);
+    if (!user) return res.status(404).json({ error: "Account not found" });
+
+    const current = await storage.getNotificationPreferences(userId);
+    const patch: Partial<typeof current> = {};
+
+    if (parsed.data.dailyPromptEmailEnabled !== undefined) {
+      if (parsed.data.dailyPromptEmailEnabled && !user.email?.trim()) {
+        return res.status(400).json({
+          error: "Add an email to your profile before turning on daily prompt emails.",
+        });
+      }
+      if (
+        parsed.data.dailyPromptEmailEnabled &&
+        !isDailyPromptEmailFeatureEnabled()
+      ) {
+        return res.status(503).json({
+          error: "Daily prompt emails are not enabled on this server yet.",
+        });
+      }
+      patch.dailyPromptEmailEnabled = parsed.data.dailyPromptEmailEnabled;
+    }
+
+    if (parsed.data.dailyPromptLocalHour !== undefined) {
+      patch.dailyPromptLocalHour = parsed.data.dailyPromptLocalHour;
+    }
+
+    if (parsed.data.dailyPromptTimezone !== undefined) {
+      patch.dailyPromptTimezone = parsed.data.dailyPromptTimezone;
+    }
+
+    if (parsed.data.pauseForDays === 7) {
+      patch.dailyPromptPausedUntil = Date.now() + 7 * 24 * 60 * 60 * 1000;
+    }
+
+    const enabling =
+      patch.dailyPromptEmailEnabled === true ||
+      (patch.dailyPromptEmailEnabled === undefined &&
+        current.dailyPromptEmailEnabled);
+
+    if (enabling && patch.dailyPromptEmailEnabled !== false) {
+      const hour =
+        patch.dailyPromptLocalHour ??
+        current.dailyPromptLocalHour ??
+        8;
+      const tz =
+        patch.dailyPromptTimezone ??
+        current.dailyPromptTimezone;
+      if (tz == null) {
+        return res.status(400).json({
+          error: "Choose a timezone before enabling daily prompt emails.",
+        });
+      }
+      patch.dailyPromptLocalHour = hour;
+      patch.dailyPromptTimezone = tz;
+    }
+
+    const preferences = await storage.upsertNotificationPreferences(userId, patch);
+    res.json({
+      preferences,
+      featureEnabled: isDailyPromptEmailFeatureEnabled(),
+      hourRange: { min: DAILY_PROMPT_HOUR_MIN, max: DAILY_PROMPT_HOUR_MAX },
+      hasEmail: Boolean(user.email?.trim()),
+    });
+  });
+
   app.get("/api/auth/export", requireAuth, async (req, res) => {
     const userId = (req as any).userId as number;
     const user = await storage.getUserById(userId);
@@ -3740,33 +3839,10 @@ export async function registerRoutes(
   //   Selection is deterministic for the same (userKey, cycleDay) pair, so
   //   the same user sees the same prompt all day and a new one at UTC
   //   midnight.
-  const DAY_MS = 24 * 60 * 60 * 1000;
-  // Shared epoch so theme rotation is stable across users, devices, and
-  // sessions. Cycle day ticks over at UTC midnight, not at the user's
-  // signup time. Jan 1 2026 UTC = day 0.
-  const CYCLE_EPOCH_MS = Date.UTC(2026, 0, 1);
-  const currentCycleDay = () =>
-    Math.floor((Date.now() - CYCLE_EPOCH_MS) / DAY_MS);
-  const countSiftsForUserStmt = rawDb.prepare(
-    `SELECT COUNT(*) AS n FROM sifts WHERE user_id = ?`
-  );
-  // Recent sifts feeding the pattern-aware prompt selector.
-  // 30 day lookback, newest first, capped at 40 to bound CPU/memory.
-  const recentSiftsStmt = rawDb.prepare(
-    `SELECT created_at, themes, core_intent, next_step
-       FROM sifts
-      WHERE user_id = ? AND created_at >= ?
-      ORDER BY created_at DESC
-      LIMIT 40`
-  );
-
   app.get("/api/daily-prompt", async (req, res) => {
     const mood =
       typeof req.query.mood === "string" ? req.query.mood : undefined;
 
-    // Optional client-supplied local hour for time-of-day bias (0–23).
-    // Anonymous callers can pass ?hour=14 to get a morning/evening-appropriate
-    // prompt; authed callers can do the same. Invalid values are ignored.
     const rawHour =
       typeof req.query.hour === "string" ? Number(req.query.hour) : NaN;
     const localHour =
@@ -3774,57 +3850,52 @@ export async function registerRoutes(
         ? Math.floor(rawHour)
         : null;
 
+    const rawPromptId =
+      typeof req.query.promptId === "string"
+        ? Number(req.query.promptId)
+        : NaN;
+
     const userId = readToken(req);
-    // Cycle day is calendar-UTC and shared by everyone. It ticks over at
-    // UTC midnight. Authed users still get a deterministic-but-distinct
-    // prompt via their userKey tiebreak, so two users on the same day
-    // don't necessarily see the same prompt.
-    const themeCycleDay = currentCycleDay();
+    const themeCycleDay = currentThemeCycleDay();
     let hasPriorSift = false;
     let userKey: string;
-    let recentSifts: RecentSiftSignal[] | undefined;
+    let recentSifts: ReturnType<typeof loadRecentSiftSignals> | undefined;
 
     if (userId) {
       const user = await storage.getUserById(userId);
       if (!user) {
         return res.status(401).json({ error: "Session expired" });
       }
-      const { n } = countSiftsForUserStmt.get(userId) as { n: number };
-      hasPriorSift = n > 0;
+      hasPriorSift = countUserSifts(userId) > 0;
       userKey = `u:${userId}`;
 
-      // Load the last ~30 days of sifts for pattern signals.
       if (hasPriorSift) {
-        const since = Date.now() - 30 * DAY_MS;
-        const rows = recentSiftsStmt.all(userId, since) as Array<{
-          created_at: number;
-          themes: string;
-          core_intent: string | null;
-          next_step: string | null;
-        }>;
-        recentSifts = rows.map((r) => {
-          // themes is stored as JSON string of [{title, summary}]. Extract titles.
-          let titles: string[] = [];
-          try {
-            const parsed = JSON.parse(r.themes);
-            if (Array.isArray(parsed)) {
-              titles = parsed
-                .map((t) => (t && typeof t.title === "string" ? t.title : ""))
-                .filter(Boolean);
-            }
-          } catch {
-            // Malformed JSON — ignore titles for this row.
-          }
-          return {
-            createdAt: r.created_at,
-            themeTitles: titles,
-            text: [r.core_intent || "", r.next_step || ""].join(" ").trim(),
-          };
-        });
+        recentSifts = loadRecentSiftSignals(userId);
       }
     } else {
       hasPriorSift = false;
       userKey = "anon";
+    }
+
+    if (Number.isFinite(rawPromptId)) {
+      const fixed = getPromptById(Math.floor(rawPromptId));
+      if (fixed) {
+        return res.json({
+          prompt: {
+            id: fixed.id,
+            text: fixed.text,
+            type: fixed.type,
+            outputLength: fixed.outputLength,
+            requiresPriorSift: fixed.priorSiftRef,
+            hasChoiceLogic: fixed.userChoiceLogic,
+            usageNotes: fixed.usageNotes,
+          },
+          theme: { num: fixed.themeNum, name: fixed.themeName },
+          themeCycleDay,
+          hasPriorSift,
+          appliedFilters: ["promptIdOverride"],
+        });
+      }
     }
 
     const result = selectDailyPrompt({

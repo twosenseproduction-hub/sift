@@ -57,6 +57,20 @@ async function buildAll() {
     external: externals,
     logLevel: "info",
   });
+
+  await esbuild({
+    entryPoints: ["server/jobs/send-daily-prompts-cli.ts"],
+    platform: "node",
+    bundle: true,
+    format: "cjs",
+    outfile: "dist/jobs/send-daily-prompts.cjs",
+    define: {
+      "process.env.NODE_ENV": '"production"',
+    },
+    minify: true,
+    external: externals,
+    logLevel: "info",
+  });
 }
 
 buildAll().catch((err) => {

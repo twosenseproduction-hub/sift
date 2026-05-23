@@ -197,6 +197,87 @@ export const memoryPreferencesUpdateSchema = z.object({
 });
 export type MemoryPreferencesUpdateRequest = z.infer<typeof memoryPreferencesUpdateSchema>;
 
+// ---- Daily prompt email (notification preferences) ----
+export const userNotificationPreferences = sqliteTable(
+  "user_notification_preferences",
+  {
+    userId: integer("user_id").primaryKey(),
+    dailyPromptEmailEnabled: integer("daily_prompt_email_enabled")
+      .notNull()
+      .default(0),
+    dailyPromptLocalHour: integer("daily_prompt_local_hour"),
+    dailyPromptTimezone: text("daily_prompt_timezone"),
+    lastDailyPromptSentAt: integer("last_daily_prompt_sent_at"),
+    lastDailyPromptPromptId: integer("last_daily_prompt_prompt_id"),
+    dailyPromptPausedUntil: integer("daily_prompt_paused_until"),
+  },
+);
+
+export type UserNotificationPreferencesRow =
+  typeof userNotificationPreferences.$inferSelect;
+
+export const DAILY_PROMPT_HOUR_MIN = 5;
+export const DAILY_PROMPT_HOUR_MAX = 21;
+
+export const notificationPreferencesSchema = z.object({
+  dailyPromptEmailEnabled: z.boolean(),
+  dailyPromptLocalHour: z.number().int().min(DAILY_PROMPT_HOUR_MIN).max(DAILY_PROMPT_HOUR_MAX).nullable(),
+  dailyPromptTimezone: z.string().nullable(),
+  lastDailyPromptSentAt: z.number().int().nullable(),
+  lastDailyPromptPromptId: z.number().int().nullable(),
+  dailyPromptPausedUntil: z.number().int().nullable(),
+});
+export type NotificationPreferences = z.infer<typeof notificationPreferencesSchema>;
+
+export const defaultNotificationPreferences: NotificationPreferences = {
+  dailyPromptEmailEnabled: false,
+  dailyPromptLocalHour: null,
+  dailyPromptTimezone: null,
+  lastDailyPromptSentAt: null,
+  lastDailyPromptPromptId: null,
+  dailyPromptPausedUntil: null,
+};
+
+export const notificationPreferencesUpdateSchema = z
+  .object({
+    dailyPromptEmailEnabled: z.boolean().optional(),
+    dailyPromptLocalHour: z
+      .number()
+      .int()
+      .min(DAILY_PROMPT_HOUR_MIN)
+      .max(DAILY_PROMPT_HOUR_MAX)
+      .nullable()
+      .optional(),
+    dailyPromptTimezone: z.string().trim().min(1).nullable().optional(),
+    pauseForDays: z.literal(7).optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (
+      data.dailyPromptTimezone != null &&
+      data.dailyPromptTimezone !== "" &&
+      !isValidIanaTimezone(data.dailyPromptTimezone)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Enter a valid timezone (e.g. America/Los_Angeles)",
+        path: ["dailyPromptTimezone"],
+      });
+    }
+  });
+export type NotificationPreferencesUpdateRequest = z.infer<
+  typeof notificationPreferencesUpdateSchema
+>;
+
+/** Validate IANA timezone strings for notification scheduling. */
+export function isValidIanaTimezone(timezone: string): boolean {
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: timezone });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export const defaultMemoryPreferences: MemoryPreferences = {
   rememberThemes: true,
   rememberTonePreferences: true,
