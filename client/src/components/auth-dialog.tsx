@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { useLogin, useSignup } from "@/lib/auth";
+import { useLogin, useSignup, useForgotPassphrase } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 
 interface Props {
@@ -15,6 +15,7 @@ interface Props {
 
 export function AuthDialog({ open, onOpenChange, initialMode = "signup" }: Props) {
   const [mode, setMode] = useState<"signin" | "signup">(initialMode);
+  const [view, setView] = useState<"auth" | "forgot">("auth");
   const [handle, setHandle] = useState("");
   const [passphrase, setPassphrase] = useState("");
   const [contact, setContact] = useState("");
@@ -22,13 +23,31 @@ export function AuthDialog({ open, onOpenChange, initialMode = "signup" }: Props
   const [consentReflections, setConsentReflections] = useState(false);
   const login = useLogin();
   const signup = useSignup();
+  const forgot = useForgotPassphrase();
   const { toast } = useToast();
 
-  const loading = login.isPending || signup.isPending;
+  const loading = login.isPending || signup.isPending || forgot.isPending;
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      if (view === "forgot") {
+        const data = await forgot.mutateAsync({ handle: handle.trim() });
+        toast({
+          title: "Check your email",
+          description: data.message,
+        });
+        if (data.devResetUrl) {
+          console.info("[auth] dev reset link", data.devResetUrl);
+          toast({
+            title: "Dev reset link",
+            description: "Logged to console. Open that URL to set a new passphrase.",
+          });
+        }
+        setView("auth");
+        setMode("signin");
+        return;
+      }
       if (mode === "signin") {
         await login.mutateAsync({ handle: handle.trim(), passphrase });
       } else {
@@ -62,16 +81,38 @@ export function AuthDialog({ open, onOpenChange, initialMode = "signup" }: Props
       <DialogContent className="max-h-[min(90dvh,760px)] max-w-md overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-serif text-2xl">
-            {mode === "signup" ? "Save your clarity" : "Welcome back"}
+            {view === "forgot"
+              ? "Reset passphrase"
+              : mode === "signup"
+                ? "Save your clarity"
+                : "Welcome back"}
           </DialogTitle>
           <DialogDescription className="text-muted-foreground">
-            {mode === "signup"
-              ? "Create your space to come back to this. Handle and passphrase only."
-              : "Enter your handle and passphrase."}
+            {view === "forgot"
+              ? "Enter your handle. If you added email at signup, a reset link will be issued."
+              : mode === "signup"
+                ? "Create your space to come back to this. Handle and passphrase only."
+                : "Enter your handle and passphrase."}
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={submit} className="space-y-4 pt-2" data-testid="form-auth">
+          {view === "forgot" ? (
+            <div className="space-y-1.5">
+              <Label htmlFor="handle-forgot" className="text-xs uppercase tracking-widest text-muted-foreground">
+                Handle
+              </Label>
+              <Input
+                id="handle-forgot"
+                value={handle}
+                onChange={(e) => setHandle(e.target.value)}
+                required
+                minLength={2}
+                disabled={loading}
+              />
+            </div>
+          ) : (
+          <>
           <div className="space-y-1.5">
             <Label htmlFor="handle" className="text-xs uppercase tracking-widest text-muted-foreground">Handle</Label>
             <Input
@@ -107,12 +148,14 @@ export function AuthDialog({ open, onOpenChange, initialMode = "signup" }: Props
             />
             {mode === "signup" && (
               <p className="text-xs text-muted-foreground pt-1">
-                Write it down somewhere. If you lose it, your thread is gone — there is no recovery.
+                Add an email at signup if you may need passphrase recovery later.
               </p>
             )}
           </div>
+          </>
+          )}
 
-          {mode === "signup" && (
+          {view === "auth" && mode === "signup" && (
             <>
               <div className="space-y-1.5">
                 <Label htmlFor="contact" className="text-xs uppercase tracking-widest text-muted-foreground">Email or phone optional</Label>
@@ -164,16 +207,54 @@ export function AuthDialog({ open, onOpenChange, initialMode = "signup" }: Props
           )}
 
           <div className="pt-2 flex items-center justify-between gap-3">
+            {view === "auth" ? (
+            <div className="flex flex-col items-start gap-1">
+              {mode === "signin" ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setView("forgot")}
+                    className="text-sm text-muted-foreground hover:text-foreground underline-offset-4 hover:underline transition-colors"
+                  >
+                    Forgot passphrase?
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMode("signup")}
+                    className="text-sm text-muted-foreground hover:text-foreground underline-offset-4 hover:underline transition-colors"
+                    data-testid="link-toggle-mode"
+                  >
+                    Create your space
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setMode("signin")}
+                  className="text-sm text-muted-foreground hover:text-foreground underline-offset-4 hover:underline transition-colors"
+                  data-testid="link-toggle-mode"
+                >
+                  I already have one
+                </button>
+              )}
+            </div>
+            ) : (
             <button
               type="button"
-              onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
+              onClick={() => setView("auth")}
               className="text-sm text-muted-foreground hover:text-foreground underline-offset-4 hover:underline transition-colors"
-              data-testid="link-toggle-mode"
             >
-              {mode === "signin" ? "Create your space" : "I already have one"}
+              Back to sign in
             </button>
+            )}
             <Button type="submit" disabled={loading} data-testid="button-auth-submit">
-              {loading ? "…" : mode === "signin" ? "Sign in" : "Keep this Sift"}
+              {loading
+                ? "…"
+                : view === "forgot"
+                  ? "Send reset link"
+                  : mode === "signin"
+                    ? "Sign in"
+                    : "Keep this Sift"}
             </Button>
           </div>
         </form>

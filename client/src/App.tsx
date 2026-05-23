@@ -8,6 +8,8 @@ import NotFound from "@/pages/not-found";
 import Home from "@/pages/home";
 import Shared from "@/pages/shared";
 import SiftChatPage from "@/pages/sift-chat";
+import OnboardingPreview from "@/pages/onboarding-preview";
+import ResetPassphrasePage from "@/pages/reset-passphrase";
 import RedirectHome from "@/pages/redirect-home";
 import AdminPage from "@/pages/admin";
 import AdminFeedbackPage from "@/pages/admin-feedback";
@@ -20,6 +22,8 @@ import { ThemeProvider } from "@/lib/theme";
 function AppRouter() {
   return (
     <Switch>
+      <Route path="/onboarding-preview" component={OnboardingPreview} />
+      <Route path="/reset-passphrase" component={ResetPassphrasePage} />
       <Route path="/companion" component={RedirectHome} />
       <Route path="/history" component={RedirectHome} />
       <Route path="/threads" component={RedirectHome} />

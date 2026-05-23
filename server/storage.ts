@@ -318,6 +318,16 @@ if (!userCols.some((c) => c.name === "memory_preferences")) {
   sqlite.exec(`ALTER TABLE users ADD COLUMN memory_preferences TEXT;`);
 }
 
+sqlite.exec(`
+  CREATE TABLE IF NOT EXISTS passphrase_reset_tokens (
+    token TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    used_at INTEGER
+  );
+`);
+
 sqlite.exec(
   `CREATE INDEX IF NOT EXISTS idx_sifts_user_created
      ON sifts(user_id, created_at DESC);`

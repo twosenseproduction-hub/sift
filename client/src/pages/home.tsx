@@ -35,6 +35,11 @@ import {
   type ActiveStepState,
 } from "@/components/bedroom-session/bedroom-summary-card";
 import { SupportProfileDialog } from "@/components/support-profile-dialog";
+import { HomeReEntryHint } from "@/components/home-reentry-hint";
+import {
+  SiftOnboardingFlow,
+  type OnboardingStep,
+} from "@/components/onboarding/sift-onboarding-flow";
 import { RedundancyGateCard } from "@/components/bedroom-session/redundancy-gate-card";
 import { SiftBaseBackground } from "@/components/bedroom-session/sift-base-background";
 import { ToastAction } from "@/components/ui/toast";
@@ -43,6 +48,7 @@ import {
   mergeSupportProfiles,
   readLocalSupportProfile,
   writeLocalSupportProfile,
+  completeOnboardingProfile,
 } from "@/lib/sift-experience";
 import { cn } from "@/lib/utils";
 import { useLocation } from "wouter";
@@ -59,7 +65,6 @@ type SessionPhase = "warmup" | "structured";
 type BedroomIntent = "warmup-companion" | "greeting-warmup";
 type AvatarState = "idle" | "thinking" | "presenting" | "celebrating";
 type SiftBaseMode = "dark" | "light";
-type OnboardingStep = "welcome" | "choice" | "personalize";
 type SpeechRecognitionResultLike = {
   transcript: string;
 };
@@ -129,19 +134,6 @@ function transcriptFromBubbles(bubbles: ChatBubble[]): ClientTranscriptTurn[] {
       role: bubble.role,
       text: bubble.text.trim(),
     }));
-}
-
-function completeOnboardingProfile(
-  input: SupportProfileUpdateRequest,
-): SupportProfile {
-  return {
-    mode: input.mode ?? undefined,
-    startingSpace: input.startingSpace ?? undefined,
-    theme: input.theme ?? undefined,
-    primaryIntent: input.primaryIntent ?? undefined,
-    supportStyle: input.supportStyle ?? undefined,
-    completedAt: new Date().toISOString(),
-  };
 }
 
 function supportProfileForRequest(profile?: SupportProfile | null): SupportProfileUpdateRequest | undefined {
@@ -1312,6 +1304,9 @@ export default function Home() {
 
       <div className="pointer-events-none relative z-10 flex w-full shrink-0 flex-col pb-8">
         <div className="relative z-[18] flex w-full flex-col items-center gap-3 px-4 sm:px-5">
+          {me && !activeSiftOwnsSurface && !showOnboarding ? (
+            <HomeReEntryHint enabled mode={baseMode} className="mb-1" />
+          ) : null}
           {gate ? (
             <div className="pointer-events-auto w-full max-w-[640px] shrink-0">
               <RedundancyGateCard
@@ -1432,6 +1427,7 @@ export default function Home() {
         <SiftOnboardingFlow
           step={onboardingStep}
           draft={onboardingDraft}
+          mode={baseMode}
           onStepChange={setOnboardingStep}
           onDraftChange={setOnboardingDraft}
           onBegin={() => setOnboardingStep("choice")}
@@ -1523,273 +1519,6 @@ function NextStepReturnStrip({
   );
 }
 
-function SiftOnboardingFlow({
-  step,
-  draft,
-  onStepChange,
-  onDraftChange,
-  onBegin,
-  onTryFree,
-  onCreateAccount,
-  onFinish,
-}: {
-  step: OnboardingStep;
-  draft: SupportProfileUpdateRequest;
-  onStepChange: (step: OnboardingStep) => void;
-  onDraftChange: (draft: SupportProfileUpdateRequest) => void;
-  onBegin: () => void;
-  onTryFree: () => void;
-  onCreateAccount: () => void;
-  onFinish: () => void;
-}) {
-  const setDraft = (patch: SupportProfileUpdateRequest) => {
-    onDraftChange({ ...draft, ...patch });
-  };
-
-  return (
-    <div className="pointer-events-auto fixed inset-0 z-[40] flex items-center justify-center bg-[linear-gradient(180deg,rgba(244,240,230,0.76),rgba(244,240,230,0.92))] px-5 backdrop-blur-[2px]">
-      <div className="max-h-[min(90dvh,760px)] w-full max-w-[520px] overflow-y-auto rounded-[2rem] border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)]/96 p-5 shadow-[0_28px_90px_-46px_rgba(41,38,31,0.58)] sm:p-7">
-        {step === "welcome" ? (
-          <div className="space-y-6 text-center">
-            <div className="mx-auto h-1 w-12 rounded-full bg-[color:var(--color-primary)]/35" />
-            <div className="space-y-3">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[color:var(--color-text-muted)]">
-                Sift
-              </p>
-              <h1 className="font-serif text-[34px] leading-[0.98] tracking-[-0.045em] text-[color:var(--color-text)] sm:text-[44px]">
-                Tell what matters from what is only loud.
-              </h1>
-              <p className="mx-auto max-w-[380px] text-[15px] leading-[1.55] text-[color:var(--color-text-muted)]">
-                Speak or type the tangle. Get back the signal underneath, and one next step you can actually take.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={onBegin}
-              className="inline-flex rounded-full bg-[color:var(--color-primary)] px-6 py-3 text-[14px] font-semibold text-[color:var(--color-surface)] transition hover:bg-[color:var(--color-primary-deep)]"
-            >
-              Begin
-            </button>
-          </div>
-        ) : null}
-
-        {step === "choice" ? (
-          <div className="space-y-5">
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[color:var(--color-text-muted)]">
-                Get started
-              </p>
-              <h2 className="mt-2 font-serif text-[30px] leading-tight tracking-[-0.04em] text-[color:var(--color-text)]">
-                How would you like to begin?
-              </h2>
-              <p className="mt-2 text-[14px] leading-[1.55] text-[color:var(--color-text-muted)]">
-                Try Sift for free right now, or create an account so your clarity stays with you.
-              </p>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <OnboardingChoiceCard
-                selected={false}
-                title="Try free sifts"
-                description="Start a sift right away. No account needed."
-                onClick={onTryFree}
-              />
-              <OnboardingChoiceCard
-                selected={false}
-                title="Create an account"
-                description="Save your sifts and return to past clarity."
-                onClick={onCreateAccount}
-              />
-            </div>
-            <div className="flex items-center justify-between gap-3 pt-1">
-              <button
-                type="button"
-                onClick={() => onStepChange("welcome")}
-                className="text-[13px] text-[color:var(--color-text-muted)] transition hover:text-[color:var(--color-text)]"
-              >
-                Back
-              </button>
-              <button
-                type="button"
-                onClick={() => onStepChange("personalize")}
-                className="text-[13px] text-[color:var(--color-text-muted)] underline-offset-4 transition hover:text-[color:var(--color-text)] hover:underline"
-              >
-                Tune support first
-              </button>
-            </div>
-          </div>
-        ) : null}
-
-        {step === "personalize" ? (
-          <div className="space-y-5">
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[color:var(--color-text-muted)]">
-                Optional
-              </p>
-              <h2 className="mt-2 font-serif text-[30px] leading-tight tracking-[-0.04em] text-[color:var(--color-text)]">
-                A little shape, if you want.
-              </h2>
-              <p className="mt-2 text-[14px] leading-[1.55] text-[color:var(--color-text-muted)]">
-                Fast answers only. You can change this later.
-              </p>
-            </div>
-
-            <OnboardingSegmentGroup
-              label="What would help most right now?"
-              value={draft.primaryIntent}
-              options={[
-                { value: "sort_thoughts", label: "Sort my thoughts" },
-                { value: "calm_noise", label: "Calm the noise" },
-                { value: "understand_feelings", label: "Understand what I’m feeling" },
-                { value: "find_next_step", label: "Find a next step" },
-              ]}
-              onChange={(primaryIntent) => setDraft({ primaryIntent })}
-            />
-            <OnboardingSegmentGroup
-              label="How should I support you?"
-              value={draft.supportStyle}
-              options={[
-                { value: "gentle", label: "Gently" },
-                { value: "clear", label: "Clearly" },
-                { value: "direct", label: "Directly" },
-                { value: "step_by_step", label: "Step by step" },
-              ]}
-              onChange={(supportStyle) => setDraft({ supportStyle })}
-            />
-
-            <OnboardingFooter
-              backLabel="Back"
-              nextLabel="Start first sift"
-              onBack={() => onStepChange("choice")}
-              onNext={onFinish}
-              secondaryLabel="Skip"
-              onSecondary={onFinish}
-            />
-          </div>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-function OnboardingChoiceCard({
-  selected,
-  title,
-  description,
-  onClick,
-}: {
-  selected: boolean;
-  title: string;
-  description: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "rounded-2xl border p-4 text-left transition",
-        selected
-          ? "border-[color:var(--color-primary)]/42 bg-[color:var(--color-primary)]/[0.08]"
-          : "border-[color:var(--color-border-soft)] bg-[color:var(--color-surface-alt)]/35 hover:border-[color:var(--color-primary)]/28",
-      )}
-      aria-pressed={selected}
-    >
-      <span className="block font-serif text-[22px] leading-tight tracking-[-0.03em] text-[color:var(--color-text)]">
-        {title}
-      </span>
-      <span className="mt-2 block text-[13px] leading-[1.45] text-[color:var(--color-text-muted)]">
-        {description}
-      </span>
-    </button>
-  );
-}
-
-function OnboardingSegmentGroup<TValue extends string>({
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  label: string;
-  value?: TValue | null;
-  options: Array<{ value: TValue; label: string }>;
-  onChange: (value: TValue | undefined) => void;
-}) {
-  return (
-    <div className="space-y-2">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--color-text-muted)]">
-        {label}
-      </p>
-      <div className="grid grid-cols-2 gap-2">
-        {options.map((option) => {
-          const selected = value === option.value;
-          return (
-            <button
-              key={option.value}
-              type="button"
-              onClick={() => onChange(selected ? undefined : option.value)}
-              className={cn(
-                "rounded-xl border px-3 py-2.5 text-left text-[13px] font-medium transition",
-                selected
-                  ? "border-[color:var(--color-primary)]/40 bg-[color:var(--color-primary)]/[0.09] text-[color:var(--color-text)]"
-                  : "border-[color:var(--color-border-soft)] bg-[color:var(--color-surface-alt)]/30 text-[color:var(--color-text-muted)] hover:border-[color:var(--color-primary)]/28 hover:text-[color:var(--color-text)]",
-              )}
-              aria-pressed={selected}
-            >
-              {option.label}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function OnboardingFooter({
-  backLabel,
-  nextLabel,
-  onBack,
-  onNext,
-  secondaryLabel,
-  onSecondary,
-}: {
-  backLabel: string;
-  nextLabel: string;
-  onBack: () => void;
-  onNext: () => void;
-  secondaryLabel?: string;
-  onSecondary?: () => void;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-3 pt-1">
-      <button
-        type="button"
-        onClick={onBack}
-        className="text-[13px] text-[color:var(--color-text-muted)] transition hover:text-[color:var(--color-text)]"
-      >
-        {backLabel}
-      </button>
-      <div className="flex items-center gap-3">
-        {secondaryLabel && onSecondary ? (
-          <button
-            type="button"
-            onClick={onSecondary}
-            className="text-[13px] text-[color:var(--color-text-muted)] transition hover:text-[color:var(--color-text)]"
-          >
-            {secondaryLabel}
-          </button>
-        ) : null}
-        <button
-          type="button"
-          onClick={onNext}
-          className="rounded-full bg-[color:var(--color-primary)] px-5 py-2.5 text-[13px] font-semibold text-[color:var(--color-surface)] transition hover:bg-[color:var(--color-primary-deep)]"
-        >
-          {nextLabel}
-        </button>
-      </div>
-    </div>
-  );
-}
 
 function SiftBaseOpeningIntro({
   mode,

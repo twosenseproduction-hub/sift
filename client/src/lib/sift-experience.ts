@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { SupportProfile } from "@shared/schema";
+import type { SupportProfile, SupportProfileUpdateRequest } from "@shared/schema";
 import { useMe } from "@/lib/auth";
 
 export type SiftExperienceMode = "base";
@@ -27,6 +27,19 @@ export function writeLocalSupportProfile(profile: SupportProfile | null) {
   } catch {
     /* ignore */
   }
+}
+
+export function completeOnboardingProfile(
+  input: SupportProfileUpdateRequest,
+): SupportProfile {
+  return {
+    mode: input.mode ?? undefined,
+    startingSpace: input.startingSpace ?? undefined,
+    theme: input.theme ?? undefined,
+    primaryIntent: input.primaryIntent ?? undefined,
+    supportStyle: input.supportStyle ?? undefined,
+    completedAt: new Date().toISOString(),
+  };
 }
 
 export function mergeSupportProfiles(

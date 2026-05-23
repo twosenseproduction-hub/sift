@@ -161,3 +161,21 @@ export function useLogout() {
     },
   });
 }
+
+export function useForgotPassphrase() {
+  return useMutation({
+    mutationFn: async (input: { handle: string }) => {
+      const res = await apiRequest("POST", "/api/auth/forgot-passphrase", input);
+      return (await res.json()) as { ok: boolean; message: string; devResetUrl?: string };
+    },
+  });
+}
+
+export function useResetPassphrase() {
+  return useMutation({
+    mutationFn: async (input: { token: string; passphrase: string }) => {
+      const res = await apiRequest("POST", "/api/auth/reset-passphrase", input);
+      return (await res.json()) as { ok: boolean };
+    },
+  });
+}

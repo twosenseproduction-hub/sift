@@ -237,7 +237,15 @@ function LibraryList({
         </div>
       ) : (
         <div className="rounded-2xl border border-[#d7c8b4] bg-[#fffaf2] p-6 text-sm leading-relaxed text-[#675d4f]">
-          No saved Sifts match this view yet.
+          <p className="font-serif text-lg text-[#241f18]">Your notebook is empty.</p>
+          <p className="mt-2">
+            Saved sifts land here with what mattered, what was noise, and the next step you left with.
+          </p>
+          <Link href="/sift">
+            <a className="mt-4 inline-flex text-[13px] font-medium text-[#1f6f72] underline-offset-4 hover:underline">
+              Start a sift
+            </a>
+          </Link>
         </div>
       )}
     </div>
@@ -481,8 +489,28 @@ function LibraryDetail({
             <p className="mt-2 text-sm font-medium leading-relaxed text-[#25301f]">
               {item.preview.nextStep}
             </p>
+            <div className="mt-3 flex flex-wrap gap-3">
+              <Link href={`/s/${encodeURIComponent(item.id)}`}>
+                <a className="text-[13px] font-medium text-[#1f6f72] underline-offset-4 hover:underline">
+                  Continue thread
+                </a>
+              </Link>
+              <Link href={`/s/${encodeURIComponent(item.id)}`}>
+                <a className="text-[13px] font-medium text-[#746858] underline-offset-4 hover:underline">
+                  Check in on this step
+                </a>
+              </Link>
+            </div>
           </div>
-        ) : null}
+        ) : (
+          <div className="mt-5">
+            <Link href={`/s/${encodeURIComponent(item.id)}`}>
+              <a className="text-[13px] font-medium text-[#1f6f72] underline-offset-4 hover:underline">
+                Continue thread
+              </a>
+            </Link>
+          </div>
+        )}
 
         {item.movement ? (
           <div className="mt-4 grid gap-2 sm:grid-cols-3">

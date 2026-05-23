@@ -647,6 +647,17 @@ export const loginSchema = z.object({
 });
 export type LoginRequest = z.infer<typeof loginSchema>;
 
+export const forgotPassphraseSchema = z.object({
+  handle: handleSchema,
+});
+export type ForgotPassphraseRequest = z.infer<typeof forgotPassphraseSchema>;
+
+export const resetPassphraseSchema = z.object({
+  token: z.string().min(16).max(128),
+  passphrase: passphraseSchema,
+});
+export type ResetPassphraseRequest = z.infer<typeof resetPassphraseSchema>;
+
 // Signup can be a light account first. Contact is optional and can be added later.
 export const signupSchema = z
   .object({

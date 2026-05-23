@@ -22,6 +22,8 @@ import {
   feedbackSentimentSchema,
   loginSchema,
   signupSchema,
+  forgotPassphraseSchema,
+  resetPassphraseSchema,
   contactUpdateSchema,
   supportProfileSchema,
   supportProfileUpdateSchema,
@@ -588,20 +590,36 @@ function newId(): string {
 }
 
 // --- Passphrase hashing (scrypt) ---
+const SCRYPT_PARAMS = { N: 16384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 } as const;
+
 function hashPassphrase(passphrase: string): string {
-  const salt = crypto.randomBytes(16).toString("hex");
-  const derived = crypto.scryptSync(passphrase, salt, 64).toString("hex");
-  return `${salt}:${derived}`;
+  const salt = crypto.randomBytes(16);
+  const derived = crypto.scryptSync(passphrase, salt, 64, SCRYPT_PARAMS);
+  return `${salt.toString("hex")}:${derived.toString("hex")}`;
 }
 
 function verifyPassphrase(passphrase: string, stored: string): boolean {
-  const [salt, derived] = stored.split(":");
-  if (!salt || !derived) return false;
-  const test = crypto.scryptSync(passphrase, salt, 64).toString("hex");
-  const a = Buffer.from(derived, "hex");
-  const b = Buffer.from(test, "hex");
-  if (a.length !== b.length) return false;
-  return crypto.timingSafeEqual(a, b);
+  const [saltPart, derivedHex] = stored.split(":");
+  if (!saltPart || !derivedHex) return false;
+  const expected = Buffer.from(derivedHex, "hex");
+  const candidates: Buffer[] = [];
+  try {
+    candidates.push(
+      crypto.scryptSync(passphrase, Buffer.from(saltPart, "hex"), 64, SCRYPT_PARAMS),
+    );
+  } catch {
+    /* ignore */
+  }
+  try {
+    candidates.push(crypto.scryptSync(passphrase, saltPart, 64, SCRYPT_PARAMS));
+    candidates.push(crypto.scryptSync(passphrase, saltPart, 64));
+  } catch {
+    /* ignore */
+  }
+  return candidates.some(
+    (test) =>
+      test.length === expected.length && crypto.timingSafeEqual(test, expected),
+  );
 }
 
 // --- Bearer-token auth (the deploy proxy strips Set-Cookie, so we can't use cookies) ---
@@ -615,6 +633,21 @@ const readSessionStmt = rawDb.prepare(
 );
 const deleteSessionStmt = rawDb.prepare(
   `DELETE FROM sessions WHERE token = ?`,
+);
+
+const insertResetTokenStmt = rawDb.prepare(
+  `INSERT INTO passphrase_reset_tokens (token, user_id, created_at, expires_at, used_at)
+   VALUES (?, ?, ?, ?, NULL)`,
+);
+const readResetTokenStmt = rawDb.prepare(
+  `SELECT user_id AS userId, expires_at AS expiresAt, used_at AS usedAt
+   FROM passphrase_reset_tokens WHERE token = ?`,
+);
+const markResetTokenUsedStmt = rawDb.prepare(
+  `UPDATE passphrase_reset_tokens SET used_at = ? WHERE token = ?`,
+);
+const updateUserPassphraseStmt = rawDb.prepare(
+  `UPDATE users SET passphrase_hash = ? WHERE id = ?`,
 );
 
 function issueToken(userId: number): string {
@@ -3202,6 +3235,59 @@ export async function registerRoutes(
     }
     const token = issueToken(user.id);
     res.json({ me: toMe(user), token });
+  });
+
+  app.post("/api/auth/forgot-passphrase", async (req, res) => {
+    const parsed = forgotPassphraseSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res
+        .status(400)
+        .json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+    }
+    const handle = parsed.data.handle.toLowerCase();
+    const user = await storage.getUserByHandle(handle);
+    const message =
+      "If that handle has an email on file, a reset link was issued.";
+    if (!user?.email?.trim()) {
+      console.info("[auth] forgot-passphrase skipped — no email on file", {
+        handle,
+      });
+      return res.json({ ok: true, message });
+    }
+    const token = crypto.randomBytes(32).toString("hex");
+    const now = Date.now();
+    insertResetTokenStmt.run(token, user.id, now, now + 60 * 60 * 1000);
+    const host = req.get("host") ?? "localhost:5173";
+    const proto = req.protocol === "https" ? "https" : "http";
+    const resetUrl = `${proto}://${host}/#/reset-passphrase?token=${token}`;
+    console.info("[auth] passphrase reset link", { handle, resetUrl });
+    const payload: { ok: true; message: string; devResetUrl?: string } = {
+      ok: true,
+      message,
+    };
+    if (process.env.NODE_ENV === "development") {
+      payload.devResetUrl = resetUrl;
+    }
+    return res.json(payload);
+  });
+
+  app.post("/api/auth/reset-passphrase", async (req, res) => {
+    const parsed = resetPassphraseSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res
+        .status(400)
+        .json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+    }
+    const row = readResetTokenStmt.get(parsed.data.token) as
+      | { userId: number; expiresAt: number; usedAt: number | null }
+      | undefined;
+    if (!row || row.usedAt != null || row.expiresAt < Date.now()) {
+      return res.status(400).json({ error: "This reset link is no longer valid." });
+    }
+    const hash = hashPassphrase(parsed.data.passphrase);
+    updateUserPassphraseStmt.run(hash, row.userId);
+    markResetTokenUsedStmt.run(Date.now(), parsed.data.token);
+    return res.json({ ok: true });
   });
 
   app.post("/api/auth/logout", (req, res) => {
