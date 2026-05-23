@@ -15,7 +15,6 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { LibrarySiftDetail, LibrarySiftItem, ThreadTurn } from "@shared/schema";
-import { BedroomBackdrop } from "@/components/bedroom-session/bedroom-backdrop";
 import { SiftBaseBackground } from "@/components/bedroom-session/sift-base-background";
 import { PrimaryTopNav } from "@/components/primary-top-nav";
 import { AuthDialog } from "@/components/auth-dialog";
@@ -49,8 +48,7 @@ export default function LibraryPage() {
   const selectedId = params?.id ?? null;
   const { data: meData } = useMe();
   const me = meData?.me;
-  const { mode: experienceMode, baseMode, profile } = useCurrentSiftExperience();
-  const isBaseExperience = experienceMode === "base";
+  const { baseMode } = useCurrentSiftExperience();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<LibraryFilter>("recent");
   const [authOpen, setAuthOpen] = useState(false);
@@ -88,20 +86,11 @@ export default function LibraryPage() {
   return (
     <main
       className={cn(
-        "bedroom-session relative min-h-[100dvh] overflow-x-hidden bg-[color:var(--color-bg)] text-[color:var(--color-text)]",
-        isBaseExperience && "sift-base-session",
-        isBaseExperience && baseMode === "light" && "sift-base-light-session",
+        "bedroom-session sift-base-session relative min-h-[100dvh] overflow-x-hidden bg-[color:var(--color-bg)] text-[color:var(--color-text)]",
+        baseMode === "light" && "sift-base-light-session",
       )}
     >
-      {isBaseExperience ? (
-        <SiftBaseBackground mode={baseMode} />
-      ) : (
-        <BedroomBackdrop
-          scene={profile?.startingSpace ?? "library"}
-          companionStatus="idle"
-          showCompanion={false}
-        />
-      )}
+      <SiftBaseBackground mode={baseMode} />
       <div className="relative z-[30] mx-auto flex min-h-[100dvh] w-full max-w-[560px] flex-col px-4 pb-[calc(3.5rem+env(safe-area-inset-bottom))] pt-[max(env(safe-area-inset-top),1rem)] sm:px-6">
         <header className="mb-[min(27dvh,235px)] flex items-center justify-between gap-3">
           <PrimaryTopNav />

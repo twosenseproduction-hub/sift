@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { SupportProfile } from "@shared/schema";
 import { useMe } from "@/lib/auth";
 
-export type SiftExperienceMode = "base" | "companion";
+export type SiftExperienceMode = "base";
 export type SiftBaseVisualMode = "dark" | "light";
 
 export const LOCAL_SUPPORT_PROFILE_KEY = "sift.onboardingProfile";
@@ -37,8 +37,8 @@ export function mergeSupportProfiles(
   return localProfile ?? null;
 }
 
-export function supportProfileMode(profile?: SupportProfile | null): SiftExperienceMode {
-  return profile?.mode === "base" ? "base" : "companion";
+export function supportProfileMode(_profile?: SupportProfile | null): SiftExperienceMode {
+  return "base";
 }
 
 export function supportProfileBaseVisualMode(

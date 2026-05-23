@@ -23,17 +23,8 @@ import { cn } from "@/lib/utils";
 
 type PrimaryIntent = SupportProfileUpdateRequest["primaryIntent"];
 type SupportStyle = SupportProfileUpdateRequest["supportStyle"];
-type SiftMode = NonNullable<SupportProfileUpdateRequest["mode"]>;
-type StartingSpace = NonNullable<SupportProfileUpdateRequest["startingSpace"]>;
 type ThemeChoice = NonNullable<SupportProfileUpdateRequest["theme"]>;
 type BaseMode = "dark" | "light";
-
-const SCENE_OPTIONS = [
-  { value: "bedroom", name: "Bedroom", description: "quiet, private, grounding", src: "/room/bedroom.png" },
-  { value: "desk", name: "Desk", description: "focused, practical, action-oriented", src: "/room/computer-desk.png" },
-  { value: "rooftop", name: "Rooftop", description: "perspective, distance, reflection", src: "/room/rooftop.png" },
-  { value: "library", name: "Library", description: "quiet study, depth, spacious thought", src: "/room/library.png" },
-] as const;
 
 export function SupportProfileDialog({
   open,
@@ -54,8 +45,6 @@ export function SupportProfileDialog({
   onBaseModeChange?: (mode: BaseMode) => void;
   onSaveLocal?: (profile: SupportProfile | null) => void;
 }) {
-  const [mode, setMode] = useState<SiftMode>("companion");
-  const [startingSpace, setStartingSpace] = useState<StartingSpace>("bedroom");
   const [theme, setTheme] = useState<ThemeChoice>("system");
   const [primaryIntent, setPrimaryIntent] = useState<PrimaryIntent>();
   const [supportStyle, setSupportStyle] = useState<SupportStyle>();
@@ -75,8 +64,6 @@ export function SupportProfileDialog({
 
   useEffect(() => {
     if (!open) return;
-    setMode(profile?.mode ?? "companion");
-    setStartingSpace(profile?.startingSpace ?? "bedroom");
     setTheme(profile?.theme ?? "system");
     setPrimaryIntent(profile?.primaryIntent);
     setSupportStyle(profile?.supportStyle);
@@ -84,8 +71,8 @@ export function SupportProfileDialog({
   }, [contactLabel, open, profile]);
 
   const nextProfile = (): SupportProfile => ({
-    mode,
-    startingSpace,
+    mode: "base",
+    startingSpace: profile?.startingSpace,
     theme,
     primaryIntent: primaryIntent ?? undefined,
     supportStyle: supportStyle ?? undefined,
@@ -221,21 +208,10 @@ export function SupportProfileDialog({
             </div>
           </SettingsSection>
 
-          <SettingsSection title="Experience" description="Choose how Sift opens and where you begin.">
-            <PreferenceCardGroup
-              label="Sift mode"
-              value={mode}
-              onChange={(value) => setMode(value ?? "companion")}
-              options={[
-                { value: "base", label: "Sift Base" },
-                { value: "companion", label: "Sift Companion" },
-              ]}
-            />
-            <ScenePreferenceGroup
-              label="Starting space"
-              value={startingSpace}
-              onChange={setStartingSpace}
-            />
+          <SettingsSection title="Experience" description="Sift Base — minimal, direct, and conversation-first.">
+            <p className="text-[13px] leading-relaxed text-[#675d4f]">
+              You&apos;re using Sift Base, the streamlined Sift experience. Tune the support preferences below to shape how Sift opens and paces with you.
+            </p>
           </SettingsSection>
 
           <SettingsSection title="Support Preferences" description="How Sift should pace and shape early help.">
@@ -347,11 +323,9 @@ export function SupportProfileDialog({
               ]}
               columns="three"
             />
-            {mode === "base" ? (
-              <p className="text-xs leading-relaxed text-[#675d4f]">
-                Sift Base currently follows this setting most visibly. Companion scenes keep their illustrated environment.
-              </p>
-            ) : null}
+            <p className="text-xs leading-relaxed text-[#675d4f]">
+              Sift Base follows this setting visibly across the app.
+            </p>
           </SettingsSection>
 
           <SettingsSection title="Account" description="Session and account actions.">
@@ -534,49 +508,3 @@ function PreferenceCardGroup<TValue extends string>({
   );
 }
 
-function ScenePreferenceGroup({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: StartingSpace;
-  onChange: (value: StartingSpace) => void;
-}) {
-  return (
-    <div className="space-y-2">
-      <FieldLabel>{label}</FieldLabel>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        {SCENE_OPTIONS.map((scene) => {
-          const selected = value === scene.value;
-          return (
-            <button
-              key={scene.value}
-              type="button"
-              onClick={() => onChange(scene.value)}
-              className={cn(
-                "overflow-hidden rounded-xl border text-left transition",
-                selected
-                  ? "border-[#65765c] bg-[#e7eddf]"
-                  : "border-[#d7c8b4] bg-[#f6efe3] hover:border-[#6c7d63]/45",
-              )}
-              aria-pressed={selected}
-            >
-              <span className="block aspect-[4/3] overflow-hidden">
-                <img src={scene.src} alt="" className="h-full w-full object-cover" draggable={false} />
-              </span>
-              <span className="block px-3 py-2">
-                <span className="block text-sm font-semibold text-[#241f18]">
-                  {scene.name}
-                </span>
-                <span className="mt-0.5 block text-[11px] leading-tight text-[#675d4f]">
-                  {scene.description}
-                </span>
-              </span>
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}

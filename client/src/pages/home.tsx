@@ -18,7 +18,6 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { AuthDialog } from "@/components/auth-dialog";
 import { CareScreen } from "@/components/care-screen";
-import { BedroomBackdrop } from "@/components/bedroom-session/bedroom-backdrop";
 import { BedroomHeader } from "@/components/bedroom-session/bedroom-header";
 import {
   ConversationCard,
@@ -52,14 +51,6 @@ const REQUEST_FALLBACK_COPY =
   "I missed that for a second. Send it once more, and I'll stay with the thread." as const;
 const LIVE_SESSION_STORAGE_KEY = "sift.liveSession.v1";
 
-/** In-flow spacer height — matches `.bedroom-scene-img` in `index.css`. */
-const BEDROOM_SCENE_BLOCK_H =
-  "h-[min(68dvh,560px)] sm:h-[min(62dvh,600px)]";
-
-/** Top of fixed chat column = scene + handoff (visual boundary under the feather), nudged up slightly. */
-const BEDROOM_CHAT_DOCK_TOP =
-  "top-[calc(min(68dvh,560px)+2.5rem-1rem)] sm:top-[calc(min(62dvh,600px)+3rem-1rem)]";
-
 /** Base mode is conversation-first: less headroom, more transcript height. */
 const SIFT_BASE_CHAT_DOCK_TOP =
   "top-[max(calc(env(safe-area-inset-top,0px)+4.25rem),4.25rem)] sm:top-[4.75rem]";
@@ -67,10 +58,8 @@ const SIFT_BASE_CHAT_DOCK_TOP =
 type SessionPhase = "warmup" | "structured";
 type BedroomIntent = "warmup-companion" | "greeting-warmup";
 type AvatarState = "idle" | "thinking" | "presenting" | "celebrating";
-type SiftUiVariant = "companion" | "base";
 type SiftBaseMode = "dark" | "light";
-type CompanionScene = "bedroom" | "desk" | "rooftop" | "library";
-type OnboardingStep = "welcome" | "mode" | "space" | "personalize";
+type OnboardingStep = "welcome" | "choice" | "personalize";
 type SpeechRecognitionResultLike = {
   transcript: string;
 };
@@ -98,9 +87,7 @@ type LiveSessionSnapshot = {
   bubbles: ChatBubble[];
   composer: string;
   chatOpen: boolean;
-  uiVariant: SiftUiVariant;
   baseMode: SiftBaseMode;
-  companionScene: CompanionScene;
   recap: RecapModel | null;
   summary: SiftSummary | null;
   summarySheetMinimized: boolean;
@@ -116,32 +103,6 @@ type LiveSessionSnapshot = {
 };
 
 const CHAT_REVEAL_DELAY_MS = 420;
-const SCENE_OPTIONS = [
-  {
-    value: "bedroom",
-    name: "Bedroom",
-    description: "quiet, private, grounding",
-    src: "/room/bedroom.png",
-  },
-  {
-    value: "desk",
-    name: "Desk",
-    description: "focused, practical, action-oriented",
-    src: "/room/computer-desk.png",
-  },
-  {
-    value: "rooftop",
-    name: "Rooftop",
-    description: "perspective, distance, reflection",
-    src: "/room/rooftop.png",
-  },
-  {
-    value: "library",
-    name: "Library",
-    description: "quiet study, depth, spacious thought",
-    src: "/room/library.png",
-  },
-] as const;
 
 function isGreetingOnlyMessage(text: string): boolean {
   const stripped = text
@@ -384,14 +345,12 @@ export default function Home() {
     me?.supportProfile,
   );
   const onboardingComplete = Boolean(effectiveSupportProfile?.completedAt);
-  const startingSpace = effectiveSupportProfile?.startingSpace ?? "bedroom";
 
   const [bubbles, setBubbles] = useState<ChatBubble[]>(() => []);
   const [composer, setComposer] = useState("");
   const [thinking, setThinking] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [chatRevealed, setChatRevealed] = useState(false);
-  const [uiVariant, setUiVariant] = useState<SiftUiVariant>("companion");
   const [baseMode, setBaseMode] = useState<SiftBaseMode>("dark");
   const [siftId, setSiftId] = useState<string | null>(null);
   const [recap, setRecap] = useState<RecapModel | null>(null);
@@ -399,7 +358,6 @@ export default function Home() {
   const [summarySheetMinimized, setSummarySheetMinimized] = useState(false);
   const [summaryDone, setSummaryDone] = useState(false);
   const [activeStep, setActiveStep] = useState<ActiveStepState | null>(null);
-  const [companionScene, setCompanionScene] = useState<CompanionScene>("bedroom");
   const [avatarCelebrating, setAvatarCelebrating] = useState(false);
   const [avatarPresenting, setAvatarPresenting] = useState(false);
   const lastPresentedReplyCountRef = useRef(0);
@@ -433,8 +391,7 @@ export default function Home() {
   const [onboardingStep, setOnboardingStep] = useState<OnboardingStep>("welcome");
   const [onboardingDraft, setOnboardingDraft] = useState<SupportProfileUpdateRequest>(
     () => ({
-      mode: effectiveSupportProfile?.mode ?? "companion",
-      startingSpace: effectiveSupportProfile?.startingSpace ?? "bedroom",
+      mode: "base",
       theme: effectiveSupportProfile?.theme ?? "system",
       primaryIntent: effectiveSupportProfile?.primaryIntent,
       supportStyle: effectiveSupportProfile?.supportStyle,
@@ -454,7 +411,6 @@ export default function Home() {
     setSummarySheetMinimized(false);
     setSummaryDone(false);
     setActiveStep(null);
-    setCompanionScene(startingSpace);
     setAvatarCelebrating(false);
     setAvatarPresenting(false);
     lastPresentedReplyCountRef.current = 0;
@@ -480,7 +436,7 @@ export default function Home() {
     setUnsavedGuestSiftId(null);
     setGuestSavePromptDismissed(false);
     writeLiveSessionSnapshot(null);
-  }, [startingSpace]);
+  }, []);
 
   useEffect(() => {
     const onReset = () => resetSession();
@@ -507,9 +463,7 @@ export default function Home() {
     setComposer(snapshot.composer);
     setChatOpen(snapshot.chatOpen || hasLiveState);
     setChatRevealed(snapshot.chatOpen || hasLiveState);
-    setUiVariant(snapshot.uiVariant);
     setBaseMode(snapshot.baseMode);
-    setCompanionScene(snapshot.companionScene);
     setRecap(snapshot.recap);
     setSummary(snapshot.summary);
     setSummarySheetMinimized(snapshot.summarySheetMinimized);
@@ -550,9 +504,7 @@ export default function Home() {
       bubbles,
       composer,
       chatOpen,
-      uiVariant,
       baseMode,
-      companionScene,
       recap,
       summary,
       summarySheetMinimized,
@@ -571,7 +523,6 @@ export default function Home() {
     baseMode,
     bubbles,
     chatOpen,
-    companionScene,
     composer,
     latestSiftCanSummarize,
     meaningfulSiftReplyCount,
@@ -584,18 +535,8 @@ export default function Home() {
     summary,
     summaryPromptHidden,
     summarySheetMinimized,
-    uiVariant,
   ]);
 
-  useEffect(() => {
-    if (effectiveSupportProfile?.mode) {
-      setUiVariant(effectiveSupportProfile.mode);
-    }
-  }, [effectiveSupportProfile?.mode]);
-
-  useEffect(() => {
-    if (!activeStep) setCompanionScene(startingSpace);
-  }, [activeStep, startingSpace]);
 
   useEffect(() => {
     if (!me || me.supportProfile?.completedAt || !localOnboardingProfile?.completedAt) {
@@ -606,15 +547,12 @@ export default function Home() {
 
   useEffect(() => {
     setOnboardingDraft({
-      mode: effectiveSupportProfile?.mode ?? "companion",
-      startingSpace: effectiveSupportProfile?.startingSpace ?? "bedroom",
+      mode: "base",
       theme: effectiveSupportProfile?.theme ?? "system",
       primaryIntent: effectiveSupportProfile?.primaryIntent,
       supportStyle: effectiveSupportProfile?.supportStyle,
     });
   }, [
-    effectiveSupportProfile?.mode,
-    effectiveSupportProfile?.startingSpace,
     effectiveSupportProfile?.theme,
     effectiveSupportProfile?.primaryIntent,
     effectiveSupportProfile?.supportStyle,
@@ -654,8 +592,7 @@ export default function Home() {
 
   useEffect(() => {
     setActiveStep(null);
-    setCompanionScene(startingSpace);
-  }, [startingSpace, summary]);
+  }, [summary]);
 
   useEffect(() => {
     if (!summaryDone) {
@@ -687,7 +624,6 @@ export default function Home() {
 
   const startActiveStep = useCallback((option: SiftSummary["options"][number]) => {
     setActiveStep(createActiveStep(option, effectiveSupportProfile));
-    setCompanionScene("desk");
     setSummaryDone(false);
     setSummarySheetMinimized(false);
     setAvatarPresenting(true);
@@ -723,7 +659,6 @@ export default function Home() {
   }, []);
 
   const inSummaryMode = Boolean(summary && !summarySheetMinimized);
-  const isCompanionVariant = uiVariant === "companion";
   const isSiftRoute = location === "/sift";
   const activeSiftOwnsSurface = isSiftRoute || chatOpen;
 
@@ -764,8 +699,6 @@ export default function Home() {
 
   const shouldShowSummaryPrompt =
     deeperClarityEligible && !summaryPromptHidden;
-  const companionShellExpanded =
-    isCompanionVariant && Boolean(recapVisible || shouldShowSummaryPrompt || inSummaryMode || activeStep);
 
   useEffect(() => {
     if (
@@ -1316,12 +1249,10 @@ export default function Home() {
   const finishOnboarding = useCallback(async () => {
     const profile = completeOnboardingProfile({
       ...onboardingDraft,
-      mode: onboardingDraft.mode ?? "companion",
-      startingSpace: onboardingDraft.startingSpace ?? "bedroom",
+      mode: "base",
     });
     setLocalOnboardingProfile(profile);
     writeLocalSupportProfile(profile);
-    setUiVariant(profile.mode ?? "companion");
     setOnboardingStep("welcome");
     beginLiveSift(true);
 
@@ -1353,19 +1284,25 @@ export default function Home() {
     );
   }
 
+  const showOnboarding =
+    !onboardingComplete &&
+    !me &&
+    !activeSiftOwnsSurface &&
+    !siftId &&
+    bubbles.length === 0;
+
   return (
     <div
       className={cn(
-        "bedroom-session relative flex min-h-[100dvh] flex-col overflow-x-hidden bg-[color:var(--color-bg)] text-[color:var(--color-text)]",
-        uiVariant === "base" && "sift-base-session",
-        uiVariant === "base" && baseMode === "light" && "sift-base-light-session",
+        "bedroom-session sift-base-session relative flex min-h-[100dvh] flex-col overflow-x-hidden bg-[color:var(--color-bg)] text-[color:var(--color-text)]",
+        baseMode === "light" && "sift-base-light-session",
         activeSiftOwnsSurface && "sift-active-session",
       )}
     >
-      {uiVariant === "base" ? <SiftBaseBackground mode={baseMode} /> : null}
+      <SiftBaseBackground mode={baseMode} />
       <BedroomHeader
         className="pointer-events-auto fixed inset-x-0 top-0 z-[30] bg-transparent px-4 pt-[max(env(safe-area-inset-top),0.35rem)] sm:px-5"
-        companionLabel={isCompanionVariant ? "Companion" : "Base"}
+        companionLabel="Sift Base"
         status={avatarState === "thinking" ? "listening" : "idle"}
         avatarInitial={me ? handleInitial(me.handle) : undefined}
         showIdentity={Boolean(me)}
@@ -1373,26 +1310,10 @@ export default function Home() {
         onSettingsClick={() => setSupportProfileOpen(true)}
       />
 
-      {/* Room column: scene reserve + handoff; optional cards stack at the boundary (above chat dock). */}
-      <div
-        className={cn(
-          "relative z-10 flex w-full shrink-0 flex-col pb-8",
-          !isCompanionVariant && "pointer-events-none",
-        )}
-      >
-        <div className={cn(BEDROOM_SCENE_BLOCK_H, "relative shrink-0")} aria-hidden />
-
-        <div
-          className={cn(
-            "bedroom-session-handoff pointer-events-none relative h-10 shrink-0 sm:h-12",
-            !isCompanionVariant && "opacity-0",
-          )}
-          aria-hidden
-        />
-
+      <div className="pointer-events-none relative z-10 flex w-full shrink-0 flex-col pb-8">
         <div className="relative z-[18] flex w-full flex-col items-center gap-3 px-4 sm:px-5">
           {gate ? (
-            <div className="w-full max-w-[640px] shrink-0">
+            <div className="pointer-events-auto w-full max-w-[640px] shrink-0">
               <RedundancyGateCard
                 gate={gate}
                 busy={gateBusy}
@@ -1403,7 +1324,7 @@ export default function Home() {
           ) : null}
 
           {sortIntro && siftId ? (
-            <div className="w-full max-w-[640px] shrink-0">
+            <div className="pointer-events-auto w-full max-w-[640px] shrink-0">
               <BedroomSortPromptCard
                 payload={sortIntro}
                 busy={sortBusy}
@@ -1414,61 +1335,27 @@ export default function Home() {
         </div>
       </div>
 
-      {isCompanionVariant ? (
-        <BedroomBackdrop
-          scene={companionScene}
-          inSummaryMode={inSummaryMode}
-          companionStatus={avatarState}
-          showCompanion={Boolean(me)}
-        />
-      ) : null}
-
-      {!activeSiftOwnsSurface ? (
-        isCompanionVariant ? (
-          <div className="pointer-events-none fixed inset-x-0 bottom-[max(calc(env(safe-area-inset-bottom,0px)+1.25rem),1.5rem)] z-[25] flex justify-center px-5">
-            <button
-              type="button"
-              onClick={() => beginLiveSift(true)}
-              className="pointer-events-auto rounded-full border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)]/88 px-5 py-3 text-[13px] font-medium text-[color:var(--color-text)] shadow-[var(--bedroom-tray-shadow)] backdrop-blur-md transition hover:-translate-y-0.5 hover:bg-[color:var(--color-surface)]"
-              aria-label="Start a sift"
-            >
-              Start a sift
-            </button>
-          </div>
-        ) : (
-          <SiftBaseOpeningIntro mode={baseMode} onBegin={() => beginLiveSift(true)} />
-        )
+      {!activeSiftOwnsSurface && !showOnboarding ? (
+        <SiftBaseOpeningIntro mode={baseMode} onBegin={() => beginLiveSift(true)} />
       ) : null}
 
       {activeSiftOwnsSurface ? (
-        /* Chat column: top pinned to feather/paper boundary; shell holds transcript + composer. */
         <div
           className={cn(
             "bedroom-chat-dock pointer-events-none fixed inset-x-0 bottom-0 z-[25] flex flex-col items-stretch transition-[opacity,transform] duration-500 ease-out",
             chatRevealed
               ? "translate-y-0 opacity-100"
               : "translate-y-[calc(100%+2rem)] opacity-0",
-            isCompanionVariant
-              ? BEDROOM_CHAT_DOCK_TOP
-              : SIFT_BASE_CHAT_DOCK_TOP,
+            SIFT_BASE_CHAT_DOCK_TOP,
           )}
         >
-          <div
-            className={cn(
-              "pointer-events-auto mx-auto flex h-full w-full items-end px-4 pb-[max(calc(0.75rem+env(safe-area-inset-bottom,0px)),1rem)] pt-0 sm:px-5",
-              isCompanionVariant ? "max-w-[640px]" : "max-w-[720px]",
-            )}
-          >
+          <div className="pointer-events-auto mx-auto flex h-full w-full max-w-[720px] items-end px-4 pb-[max(calc(0.75rem+env(safe-area-inset-bottom,0px)),1rem)] pt-0 sm:px-5">
             <div
               className={cn(
                 "bedroom-conversation-shell flex h-full min-h-0 w-full flex-col overflow-hidden rounded-3xl border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)] shadow-[var(--bedroom-paper-shadow)] transition-[max-height] duration-300 ease-out",
-                isCompanionVariant
-                  ? companionShellExpanded
-                    ? "max-h-[min(460px,100%)]"
-                    : "max-h-[min(320px,100%)]"
-                  : inSummaryMode
-                    ? "max-h-[72dvh] sm:max-h-[76dvh]"
-                    : "max-h-[68dvh] sm:max-h-[74dvh]",
+                inSummaryMode
+                  ? "max-h-[72dvh] sm:max-h-[76dvh]"
+                  : "max-h-[68dvh] sm:max-h-[74dvh]",
               )}
               aria-label="Conversation"
             >
@@ -1477,7 +1364,7 @@ export default function Home() {
                 thinking={thinking}
                 recap={recapVisible}
                 phase={phase}
-                showCompanion={isCompanionVariant && Boolean(me)}
+                showCompanion={false}
                 nextStepDone={nextStepDone}
                 onToggleNextStep={() => setNextStepDone((v) => !v)}
                 footerVisible={shouldShowSummaryPrompt}
@@ -1541,6 +1428,30 @@ export default function Home() {
         }}
       />
 
+      {showOnboarding ? (
+        <SiftOnboardingFlow
+          step={onboardingStep}
+          draft={onboardingDraft}
+          onStepChange={setOnboardingStep}
+          onDraftChange={setOnboardingDraft}
+          onBegin={() => setOnboardingStep("choice")}
+          onTryFree={() => {
+            const profile = completeOnboardingProfile({
+              ...onboardingDraft,
+              mode: "base",
+            });
+            setLocalOnboardingProfile(profile);
+            writeLocalSupportProfile(profile);
+            setOnboardingStep("welcome");
+            beginLiveSift(true);
+          }}
+          onCreateAccount={() => {
+            setAuthOpen(true);
+          }}
+          onFinish={() => void finishOnboarding()}
+        />
+      ) : null}
+
       <AuthDialog open={authOpen} onOpenChange={setAuthOpen} initialMode="signup" />
       <SupportProfileDialog
         open={supportProfileOpen}
@@ -1552,8 +1463,6 @@ export default function Home() {
         onSaveLocal={(profile) => {
           setLocalOnboardingProfile(profile);
           writeLocalSupportProfile(profile);
-          if (profile?.mode) setUiVariant(profile.mode);
-          if (profile?.startingSpace) setCompanionScene(profile.startingSpace);
           if (profile?.theme === "light") setBaseMode("light");
           if (profile?.theme === "dark") setBaseMode("dark");
         }}
@@ -1620,6 +1529,8 @@ function SiftOnboardingFlow({
   onStepChange,
   onDraftChange,
   onBegin,
+  onTryFree,
+  onCreateAccount,
   onFinish,
 }: {
   step: OnboardingStep;
@@ -1627,6 +1538,8 @@ function SiftOnboardingFlow({
   onStepChange: (step: OnboardingStep) => void;
   onDraftChange: (draft: SupportProfileUpdateRequest) => void;
   onBegin: () => void;
+  onTryFree: () => void;
+  onCreateAccount: () => void;
   onFinish: () => void;
 }) {
   const setDraft = (patch: SupportProfileUpdateRequest) => {
@@ -1660,75 +1573,49 @@ function SiftOnboardingFlow({
           </div>
         ) : null}
 
-        {step === "mode" ? (
+        {step === "choice" ? (
           <div className="space-y-5">
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[color:var(--color-text-muted)]">
-                First shape
+                Get started
               </p>
               <h2 className="mt-2 font-serif text-[30px] leading-tight tracking-[-0.04em] text-[color:var(--color-text)]">
-                How would you like to use Sift?
+                How would you like to begin?
               </h2>
               <p className="mt-2 text-[14px] leading-[1.55] text-[color:var(--color-text-muted)]">
-                Choose the kind of support you want to begin with. You can change this later in Settings.
+                Try Sift for free right now, or create an account so your clarity stays with you.
               </p>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <OnboardingChoiceCard
-                selected={draft.mode === "base"}
-                title="Sift Base"
-                description="Simpler, more minimal, and more direct."
-                onClick={() => setDraft({ mode: "base" })}
+                selected={false}
+                title="Try free sifts"
+                description="Start a sift right away. No account needed."
+                onClick={onTryFree}
               />
               <OnboardingChoiceCard
-                selected={(draft.mode ?? "companion") === "companion"}
-                title="Sift Companion"
-                description="Warmer, more relational, and more immersive."
-                onClick={() => setDraft({ mode: "companion" })}
+                selected={false}
+                title="Create an account"
+                description="Save your sifts and return to past clarity."
+                onClick={onCreateAccount}
               />
             </div>
-            <OnboardingFooter
-              backLabel="Back"
-              nextLabel="Continue"
-              onBack={() => onStepChange("welcome")}
-              onNext={() => onStepChange("space")}
-            />
-          </div>
-        ) : null}
-
-        {step === "space" ? (
-          <div className="space-y-5">
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[color:var(--color-text-muted)]">
-                Choose your space
-              </p>
-              <h2 className="mt-2 font-serif text-[30px] leading-tight tracking-[-0.04em] text-[color:var(--color-text)]">
-                Where would you like to begin?
-              </h2>
-              <p className="mt-2 text-[14px] leading-[1.55] text-[color:var(--color-text-muted)]">
-                Pick the setting that fits how you want to enter Sift. You can change this later in Settings.
-              </p>
+            <div className="flex items-center justify-between gap-3 pt-1">
+              <button
+                type="button"
+                onClick={() => onStepChange("welcome")}
+                className="text-[13px] text-[color:var(--color-text-muted)] transition hover:text-[color:var(--color-text)]"
+              >
+                Back
+              </button>
+              <button
+                type="button"
+                onClick={() => onStepChange("personalize")}
+                className="text-[13px] text-[color:var(--color-text-muted)] underline-offset-4 transition hover:text-[color:var(--color-text)] hover:underline"
+              >
+                Tune support first
+              </button>
             </div>
-
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
-              {SCENE_OPTIONS.map((scene) => (
-                <SceneChoiceCard
-                  key={scene.value}
-                  selected={(draft.startingSpace ?? "bedroom") === scene.value}
-                  name={scene.name}
-                  description={scene.description}
-                  src={scene.src}
-                  onClick={() => setDraft({ startingSpace: scene.value })}
-                />
-              ))}
-            </div>
-
-            <OnboardingFooter
-              backLabel="Back"
-              nextLabel="Continue"
-              onBack={() => onStepChange("mode")}
-              onNext={() => onStepChange("personalize")}
-            />
           </div>
         ) : null}
 
@@ -1772,7 +1659,7 @@ function SiftOnboardingFlow({
             <OnboardingFooter
               backLabel="Back"
               nextLabel="Start first sift"
-              onBack={() => onStepChange("space")}
+              onBack={() => onStepChange("choice")}
               onNext={onFinish}
               secondaryLabel="Skip"
               onSecondary={onFinish}
@@ -1812,51 +1699,6 @@ function OnboardingChoiceCard({
       </span>
       <span className="mt-2 block text-[13px] leading-[1.45] text-[color:var(--color-text-muted)]">
         {description}
-      </span>
-    </button>
-  );
-}
-
-function SceneChoiceCard({
-  selected,
-  name,
-  description,
-  src,
-  onClick,
-}: {
-  selected: boolean;
-  name: string;
-  description: string;
-  src: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "overflow-hidden rounded-2xl border text-left transition",
-        selected
-          ? "border-[color:var(--color-primary)]/42 bg-[color:var(--color-primary)]/[0.08] shadow-[0_16px_36px_-30px_rgba(41,38,31,0.5)]"
-          : "border-[color:var(--color-border-soft)] bg-[color:var(--color-surface-alt)]/35 hover:border-[color:var(--color-primary)]/28",
-      )}
-      aria-pressed={selected}
-    >
-      <span className="block aspect-[4/3] overflow-hidden bg-[color:var(--color-warm)]/10">
-        <img
-          src={src}
-          alt=""
-          className="h-full w-full object-cover object-center"
-          draggable={false}
-        />
-      </span>
-      <span className="block p-2 sm:p-3">
-        <span className="block font-serif text-[16px] leading-tight tracking-[-0.03em] text-[color:var(--color-text)] sm:text-[19px]">
-          {name}
-        </span>
-        <span className="mt-1 block text-[10px] leading-[1.25] text-[color:var(--color-text-muted)] sm:text-[12px] sm:leading-[1.35]">
-          {description}
-        </span>
       </span>
     </button>
   );
