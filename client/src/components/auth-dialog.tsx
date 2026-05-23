@@ -55,11 +55,13 @@ export function AuthDialog({
 
   const loading = login.isPending || signup.isPending || forgot.isPending;
 
+  const normalizedHandle = handle.trim().toLowerCase();
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       if (view === "forgot") {
-        const data = await forgot.mutateAsync({ handle: handle.trim() });
+        const data = await forgot.mutateAsync({ handle: normalizedHandle });
         toast({
           title: "Check your email",
           description: data.message,
@@ -76,10 +78,10 @@ export function AuthDialog({
         return;
       }
       if (mode === "signin") {
-        await login.mutateAsync({ handle: handle.trim(), passphrase });
+        await login.mutateAsync({ handle: normalizedHandle, passphrase });
       } else {
         await signup.mutateAsync({
-          handle: handle.trim(),
+          handle: normalizedHandle,
           passphrase,
           contact: contact.trim(),
           consentUpdates,
@@ -99,7 +101,13 @@ export function AuthDialog({
         const obj = JSON.parse(msg);
         parsed = obj.error ?? msg;
       } catch {}
-      toast({ title: mode === "signin" ? "Can't sign in" : "Can't sign up", description: parsed });
+      toast({
+        title: mode === "signin" ? "Can't sign in" : "Can't sign up",
+        description:
+          parsed === "That handle is taken."
+            ? "That handle already exists. Switch to sign in, or choose a different handle."
+            : parsed,
+      });
     }
   };
 
@@ -165,7 +173,6 @@ export function AuthDialog({
                   required
                   minLength={2}
                   maxLength={24}
-                  pattern="[a-zA-Z0-9_.\-]+"
                   disabled={loading}
                 />
               </div>

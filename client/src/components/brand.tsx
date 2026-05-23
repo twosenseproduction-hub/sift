@@ -78,6 +78,7 @@ export function Header() {
   const logout = useLogout();
   const [, setLocation] = useLocation();
   const [authOpen, setAuthOpen] = useState(false);
+  const [authMode, setAuthMode] = useState<"signin" | "signup">("signin");
   const me = data?.me;
 
   return (
@@ -148,7 +149,10 @@ export function Header() {
               variant="secondary"
               size="sm"
               className="shrink-0"
-              onClick={() => setAuthOpen(true)}
+              onClick={() => {
+                setAuthMode("signin");
+                setAuthOpen(true);
+              }}
               data-testid="button-signin"
             >
               Sign in
@@ -156,7 +160,7 @@ export function Header() {
           )}
         </div>
       </div>
-      <AuthDialog open={authOpen} onOpenChange={setAuthOpen} initialMode="signup" />
+      <AuthDialog open={authOpen} onOpenChange={setAuthOpen} initialMode={authMode} />
     </header>
   );
 }

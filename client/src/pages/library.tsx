@@ -69,6 +69,11 @@ export default function LibraryPage() {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<LibraryFilter>("recent");
   const [authOpen, setAuthOpen] = useState(false);
+  const [authMode, setAuthMode] = useState<"signin" | "signup">("signup");
+  const openAuth = (mode: "signin" | "signup") => {
+    setAuthMode(mode);
+    setAuthOpen(true);
+  };
   const [supportProfileOpen, setSupportProfileOpen] = useState(false);
 
   const listQuery = useQuery<LibraryListResponse>({
@@ -132,7 +137,7 @@ export default function LibraryPage() {
               </p>
               <button
                 type="button"
-                onClick={() => setAuthOpen(true)}
+                onClick={() => openAuth("signup")}
                 className="mt-5 rounded-full bg-[#1f6f72] px-5 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-[#1a5f62]"
               >
                 Keep this Sift
@@ -158,7 +163,7 @@ export default function LibraryPage() {
         </section>
       </div>
       <SiftBottomNav variant="pill" />
-      <AuthDialog open={authOpen} onOpenChange={setAuthOpen} initialMode="signup" baseMode={baseMode} />
+      <AuthDialog open={authOpen} onOpenChange={setAuthOpen} initialMode={authMode} baseMode={baseMode} />
       <SupportProfileDialog
         open={supportProfileOpen}
         onOpenChange={setSupportProfileOpen}
@@ -175,7 +180,7 @@ export default function LibraryPage() {
         me={me ?? null}
         onRequestSignIn={() => {
           setSupportProfileOpen(false);
-          setAuthOpen(true);
+          openAuth("signin");
         }}
       />
     </main>

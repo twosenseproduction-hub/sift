@@ -378,6 +378,11 @@ export default function Home() {
   const voiceRecognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const voiceBaseTextRef = useRef("");
   const [authOpen, setAuthOpen] = useState(false);
+  const [authMode, setAuthMode] = useState<"signin" | "signup">("signup");
+  const openAuth = useCallback((mode: "signin" | "signup") => {
+    setAuthMode(mode);
+    setAuthOpen(true);
+  }, []);
   const [unsavedGuestSiftId, setUnsavedGuestSiftId] = useState<string | null>(null);
   const [guestSavePromptDismissed, setGuestSavePromptDismissed] = useState(false);
   const [supportProfileOpen, setSupportProfileOpen] = useState(false);
@@ -1031,7 +1036,7 @@ export default function Home() {
           title: "Create your space to keep going",
           description: "Guest mode gives you a few Sifts first. Saving keeps the thread available.",
           action: (
-            <ToastAction altText="Save your clarity" onClick={() => setAuthOpen(true)}>
+            <ToastAction altText="Save your clarity" onClick={() => openAuth("signup")}>
               Save your clarity
             </ToastAction>
           ),
@@ -1371,7 +1376,7 @@ export default function Home() {
               />
               {!me && unsavedGuestSiftId && !guestSavePromptDismissed ? (
                 <GuestSavePrompt
-                  onSave={() => setAuthOpen(true)}
+                  onSave={() => openAuth("signup")}
                   onDismiss={() => setGuestSavePromptDismissed(true)}
                 />
               ) : null}
@@ -1439,7 +1444,7 @@ export default function Home() {
             beginLiveSift(true);
           }}
           onCreateAccount={() => {
-            setAuthOpen(true);
+            openAuth("signup");
           }}
           onFinish={() => void finishOnboarding()}
         />
@@ -1451,7 +1456,7 @@ export default function Home() {
         onSiftClick={() => beginLiveSift(true)}
       />
 
-      <AuthDialog open={authOpen} onOpenChange={setAuthOpen} initialMode="signup" baseMode={baseMode} />
+      <AuthDialog open={authOpen} onOpenChange={setAuthOpen} initialMode={authMode} baseMode={baseMode} />
       <SupportProfileDialog
         open={supportProfileOpen}
         onOpenChange={setSupportProfileOpen}
@@ -1468,7 +1473,7 @@ export default function Home() {
         me={me ?? null}
         onRequestSignIn={() => {
           setSupportProfileOpen(false);
-          setAuthOpen(true);
+          openAuth("signin");
         }}
       />
     </div>
