@@ -30,6 +30,9 @@ primary_region = "sjc"   # San Jose — close to the Bay Area. Change if you pre
   source = "sift_data"
   destination = "/data"
 
+[processes]
+  app = "/app/docker-entrypoint.sh"
+
 [http_service]
   internal_port = 8080
   force_https = true
@@ -38,17 +41,8 @@ primary_region = "sjc"   # San Jose — close to the Bay Area. Change if you pre
   min_machines_running = 0
   processes = ["app"]
 
-[processes]
-  app = "node dist/index.cjs"
-  cron = "supercronic /app/crontab"
-
 [[vm]]
   # Smallest shared-cpu-1x with 512 MB RAM is enough for SQLite + Express + one LLM call at a time.
   size = "shared-cpu-1x"
   memory = "512mb"
   processes = ["app"]
-
-[[vm]]
-  size = "shared-cpu-1x"
-  memory = "256mb"
-  processes = ["cron"]

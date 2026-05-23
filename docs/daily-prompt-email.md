@@ -38,17 +38,13 @@ The job logs per-user skip/send/fail reasons. Without Resend configured, sends a
 
 ## Fly cron deployment
 
-The Docker image includes [Supercronic](https://github.com/aptible/supercronic). `fly.toml` defines two processes:
+The Docker image includes [Supercronic](https://github.com/aptible/supercronic). It runs **on the app machine** (same process container as Express) so the job shares the SQLite volume at `/data/sift.db`.
 
-- **app** — HTTP server (`node dist/index.cjs`)
-- **cron** — `supercronic /app/crontab` (every 15 minutes)
+`docker-entrypoint.sh` starts Supercronic, then Express. Schedule: every 15 minutes via `/app/crontab`.
 
-After deploy:
+After deploy, no separate cron process is required.
 
 ```bash
-# One cron machine (shares the same volume mount as app)
-fly scale count cron=1 --process-group cron
-
 # Secrets
 fly secrets set \
   DAILY_PROMPT_EMAIL_ENABLED=true \
@@ -57,7 +53,7 @@ fly secrets set \
   APP_BASE_URL=https://app.siftnow.io
 ```
 
-Both processes must use the same `DB_PATH` and volume so send markers persist.
+Both the web app and the job use the same `DB_PATH` on the mounted volume.
 
 ## API
 

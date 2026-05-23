@@ -40,10 +40,12 @@ COPY --from=build /app/package.json ./package.json
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY crontab /app/crontab
+COPY docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh
 
 # Fly mounts the persistent volume at /data; make sure the dir exists.
 RUN mkdir -p /data
 
 EXPOSE 8080
 
-CMD ["node", "dist/index.cjs"]
+CMD ["/app/docker-entrypoint.sh"]

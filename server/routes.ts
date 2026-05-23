@@ -12,6 +12,7 @@ import {
   loadRecentSiftSignals,
 } from "./daily-prompt-context";
 import { isDailyPromptEmailFeatureEnabled } from "./lib/daily-prompt-eligibility";
+import { runSendDailyPromptsJob } from "./jobs/send-daily-prompts";
 import { screenForCrisis, screenOutputForCrisis } from "./crisis-screen";
 import { registerKokoroTtsProxy } from "./kokoro-tts-proxy";
 import {
@@ -3136,6 +3137,18 @@ export async function registerRoutes(
 ): Promise<Server> {
   // JSON body parsing lives on the root app (server/index.ts) — keep a single
   // express.json() so the request body is not parsed twice.
+
+  // Wakes the app on Fly when auto-stopped; also usable if Supercronic is not running.
+  app.post("/api/internal/jobs/daily-prompts", async (req, res) => {
+    const secret = process.env.CRON_SECRET?.trim();
+    const header = req.headers["x-cron-secret"];
+    const provided = typeof header === "string" ? header : "";
+    if (!secret || provided !== secret) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const result = await runSendDailyPromptsJob();
+    res.json(result);
+  });
 
   // --- Auth ---
 
