@@ -1,19 +1,40 @@
-import { useState } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { useEffect, useState } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useLogin, useSignup, useForgotPassphrase } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
+import type { SiftBaseVisualMode } from "@/components/onboarding/sift-onboarding-flow";
+import { cn } from "@/lib/utils";
 
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   initialMode?: "signin" | "signup";
+  /** Match the active Sift Base theme on Home / Library. */
+  baseMode?: SiftBaseVisualMode;
 }
 
-export function AuthDialog({ open, onOpenChange, initialMode = "signup" }: Props) {
+const fieldClass =
+  "flex h-10 w-full rounded-xl border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface-alt)]/40 px-3 py-2 text-[14px] text-[color:var(--color-text)] shadow-[0_8px_24px_-20px_rgba(0,0,0,0.35)] ring-offset-[color:var(--color-surface)] transition-[border-color,box-shadow] placeholder:text-[color:var(--color-text-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]/35 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50";
+
+const labelClass =
+  "font-serif text-[11px] uppercase tracking-[0.28em] text-[color:var(--color-text-muted)]";
+
+const linkClass =
+  "text-left font-serif text-[13px] text-[color:var(--color-text-muted)] underline-offset-4 transition hover:text-[color:var(--color-text)] hover:underline";
+
+export function AuthDialog({
+  open,
+  onOpenChange,
+  initialMode = "signup",
+  baseMode = "dark",
+}: Props) {
   const [mode, setMode] = useState<"signin" | "signup">(initialMode);
   const [view, setView] = useState<"auth" | "forgot">("auth");
   const [handle, setHandle] = useState("");
@@ -25,6 +46,12 @@ export function AuthDialog({ open, onOpenChange, initialMode = "signup" }: Props
   const signup = useSignup();
   const forgot = useForgotPassphrase();
   const { toast } = useToast();
+
+  useEffect(() => {
+    if (!open) return;
+    setMode(initialMode);
+    setView("auth");
+  }, [open, initialMode]);
 
   const loading = login.isPending || signup.isPending || forgot.isPending;
 
@@ -78,16 +105,22 @@ export function AuthDialog({ open, onOpenChange, initialMode = "signup" }: Props
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[min(90dvh,760px)] max-w-md overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="font-serif text-2xl">
+      <DialogContent
+        className={cn(
+          "bedroom-session sift-base-session max-h-[min(90dvh,760px)] max-w-md overflow-y-auto border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)] p-6 text-[color:var(--color-text)] shadow-[var(--bedroom-paper-shadow)] sm:rounded-3xl sm:p-8",
+          baseMode === "light" && "sift-base-light-session",
+          "[&>button]:text-[color:var(--color-text-muted)] [&>button]:hover:bg-[color:var(--color-text)]/[0.06] [&>button]:hover:text-[color:var(--color-text)]",
+        )}
+      >
+        <DialogHeader className="space-y-2">
+          <DialogTitle className="font-serif text-[1.75rem] leading-[1.12] tracking-[-0.035em] text-[color:var(--color-text)]">
             {view === "forgot"
               ? "Reset passphrase"
               : mode === "signup"
                 ? "Save your clarity"
                 : "Welcome back"}
           </DialogTitle>
-          <DialogDescription className="text-muted-foreground">
+          <DialogDescription className="font-serif text-[15px] italic leading-relaxed text-[color:var(--color-text-muted)]">
             {view === "forgot"
               ? "Enter your handle. If you added email at signup, a reset link will be issued."
               : mode === "signup"
@@ -96,14 +129,15 @@ export function AuthDialog({ open, onOpenChange, initialMode = "signup" }: Props
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={submit} className="space-y-4 pt-2" data-testid="form-auth">
+        <form onSubmit={submit} className="space-y-4 pt-1" data-testid="form-auth">
           {view === "forgot" ? (
             <div className="space-y-1.5">
-              <Label htmlFor="handle-forgot" className="text-xs uppercase tracking-widest text-muted-foreground">
+              <label htmlFor="handle-forgot" className={labelClass}>
                 Handle
-              </Label>
-              <Input
+              </label>
+              <input
                 id="handle-forgot"
+                className={fieldClass}
                 value={handle}
                 onChange={(e) => setHandle(e.target.value)}
                 required
@@ -112,56 +146,65 @@ export function AuthDialog({ open, onOpenChange, initialMode = "signup" }: Props
               />
             </div>
           ) : (
-          <>
-          <div className="space-y-1.5">
-            <Label htmlFor="handle" className="text-xs uppercase tracking-widest text-muted-foreground">Handle</Label>
-            <Input
-              id="handle"
-              data-testid="input-handle"
-              value={handle}
-              onChange={(e) => setHandle(e.target.value)}
-              autoComplete="username"
-              autoCapitalize="none"
-              autoCorrect="off"
-              spellCheck={false}
-              placeholder={mode === "signup" ? "Choose a handle" : "Your handle"}
-              required
-              minLength={2}
-              maxLength={24}
-              pattern="[a-zA-Z0-9_.\-]+"
-              disabled={loading}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="passphrase" className="text-xs uppercase tracking-widest text-muted-foreground">Passphrase</Label>
-            <Input
-              id="passphrase"
-              data-testid="input-passphrase"
-              type="password"
-              value={passphrase}
-              onChange={(e) => setPassphrase(e.target.value)}
-              autoComplete={mode === "signup" ? "new-password" : "current-password"}
-              placeholder="At least 6 characters"
-              required
-              minLength={6}
-              disabled={loading}
-            />
-            {mode === "signup" && (
-              <p className="text-xs text-muted-foreground pt-1">
-                Add an email at signup if you may need passphrase recovery later.
-              </p>
-            )}
-          </div>
-          </>
+            <>
+              <div className="space-y-1.5">
+                <label htmlFor="handle" className={labelClass}>
+                  Handle
+                </label>
+                <input
+                  id="handle"
+                  data-testid="input-handle"
+                  className={fieldClass}
+                  value={handle}
+                  onChange={(e) => setHandle(e.target.value)}
+                  autoComplete="username"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  placeholder={mode === "signup" ? "Choose a handle" : "Your handle"}
+                  required
+                  minLength={2}
+                  maxLength={24}
+                  pattern="[a-zA-Z0-9_.\-]+"
+                  disabled={loading}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label htmlFor="passphrase" className={labelClass}>
+                  Passphrase
+                </label>
+                <input
+                  id="passphrase"
+                  data-testid="input-passphrase"
+                  type="password"
+                  className={fieldClass}
+                  value={passphrase}
+                  onChange={(e) => setPassphrase(e.target.value)}
+                  autoComplete={mode === "signup" ? "new-password" : "current-password"}
+                  placeholder="At least 6 characters"
+                  required
+                  minLength={6}
+                  disabled={loading}
+                />
+                {mode === "signup" && (
+                  <p className="pt-1 font-serif text-[12px] italic leading-relaxed text-[color:var(--color-text-muted)]">
+                    Add an email at signup if you may need passphrase recovery later.
+                  </p>
+                )}
+              </div>
+            </>
           )}
 
           {view === "auth" && mode === "signup" && (
             <>
               <div className="space-y-1.5">
-                <Label htmlFor="contact" className="text-xs uppercase tracking-widest text-muted-foreground">Email or phone optional</Label>
-                <Input
+                <label htmlFor="contact" className={labelClass}>
+                  Email or phone optional
+                </label>
+                <input
                   id="contact"
                   data-testid="input-contact"
+                  className={fieldClass}
                   value={contact}
                   onChange={(e) => setContact(e.target.value)}
                   autoComplete="email"
@@ -171,83 +214,81 @@ export function AuthDialog({ open, onOpenChange, initialMode = "signup" }: Props
                   placeholder="you@example.com or +15551234567"
                   disabled={loading}
                 />
-                <p className="text-xs text-muted-foreground pt-1">
+                <p className="pt-1 font-serif text-[12px] italic leading-relaxed text-[color:var(--color-text-muted)]">
                   Add this only if you want reminders or updates later. Never shared.
                 </p>
               </div>
 
               <div className="space-y-3 pt-1">
-                <label className="flex items-start gap-3 cursor-pointer">
+                <label className="flex cursor-pointer items-start gap-3">
                   <Checkbox
                     checked={consentUpdates}
                     onCheckedChange={(v) => setConsentUpdates(v === true)}
                     disabled={loading}
                     data-testid="checkbox-consent-updates"
-                    className="mt-0.5"
+                    className="mt-0.5 border-[color:var(--color-primary)]/45 data-[state=checked]:border-[color:var(--color-primary)] data-[state=checked]:bg-[color:var(--color-primary)] data-[state=checked]:text-[color:var(--color-surface)]"
                   />
-                  <span className="text-sm leading-snug text-foreground/90">
+                  <span className="text-[13px] leading-snug text-[color:var(--color-text)]/90">
                     Send me occasional product updates.
                   </span>
                 </label>
-                <label className="flex items-start gap-3 cursor-pointer">
+                <label className="flex cursor-pointer items-start gap-3">
                   <Checkbox
                     checked={consentReflections}
                     onCheckedChange={(v) => setConsentReflections(v === true)}
                     disabled={loading}
                     data-testid="checkbox-consent-reflections"
-                    className="mt-0.5"
+                    className="mt-0.5 border-[color:var(--color-primary)]/45 data-[state=checked]:border-[color:var(--color-primary)] data-[state=checked]:bg-[color:var(--color-primary)] data-[state=checked]:text-[color:var(--color-surface)]"
                   />
-                  <span className="text-sm leading-snug text-foreground/90">
+                  <span className="text-[13px] leading-snug text-[color:var(--color-text)]/90">
                     Send me gentle reflections now and then.
                   </span>
                 </label>
               </div>
-
             </>
           )}
 
-          <div className="pt-2 flex items-center justify-between gap-3">
+          <div className="flex items-center justify-between gap-3 pt-2">
             {view === "auth" ? (
-            <div className="flex flex-col items-start gap-1">
-              {mode === "signin" ? (
-                <>
+              <div className="flex flex-col items-start gap-1">
+                {mode === "signin" ? (
+                  <>
+                    <button type="button" onClick={() => setView("forgot")} className={linkClass}>
+                      Forgot passphrase?
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMode("signup")}
+                      className={linkClass}
+                      data-testid="link-toggle-mode"
+                    >
+                      Create your space
+                    </button>
+                  </>
+                ) : (
                   <button
                     type="button"
-                    onClick={() => setView("forgot")}
-                    className="text-sm text-muted-foreground hover:text-foreground underline-offset-4 hover:underline transition-colors"
-                  >
-                    Forgot passphrase?
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setMode("signup")}
-                    className="text-sm text-muted-foreground hover:text-foreground underline-offset-4 hover:underline transition-colors"
+                    onClick={() => setMode("signin")}
+                    className={linkClass}
                     data-testid="link-toggle-mode"
                   >
-                    Create your space
+                    I already have one
                   </button>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setMode("signin")}
-                  className="text-sm text-muted-foreground hover:text-foreground underline-offset-4 hover:underline transition-colors"
-                  data-testid="link-toggle-mode"
-                >
-                  I already have one
-                </button>
-              )}
-            </div>
+                )}
+              </div>
             ) : (
-            <button
-              type="button"
-              onClick={() => setView("auth")}
-              className="text-sm text-muted-foreground hover:text-foreground underline-offset-4 hover:underline transition-colors"
-            >
-              Back to sign in
-            </button>
+              <button type="button" onClick={() => setView("auth")} className={linkClass}>
+                Back to sign in
+              </button>
             )}
-            <Button type="submit" disabled={loading} data-testid="button-auth-submit">
+            <button
+              type="submit"
+              disabled={loading}
+              data-testid="button-auth-submit"
+              className={cn(
+                "shrink-0 rounded-full border border-[color:var(--color-primary)]/20 bg-[color:var(--color-primary)] px-5 py-2.5 font-serif text-[14px] tracking-[0.01em] text-[color:var(--color-surface)] shadow-[0_14px_36px_-18px_rgba(0,0,0,0.45)] transition hover:brightness-[1.03] focus:outline-none focus:ring-2 focus:ring-[color:var(--color-primary)]/35 focus:ring-offset-2 focus:ring-offset-[color:var(--color-surface)] disabled:cursor-not-allowed disabled:opacity-50",
+              )}
+            >
               {loading
                 ? "…"
                 : view === "forgot"
@@ -255,7 +296,7 @@ export function AuthDialog({ open, onOpenChange, initialMode = "signup" }: Props
                   : mode === "signin"
                     ? "Sign in"
                     : "Keep this Sift"}
-            </Button>
+            </button>
           </div>
         </form>
       </DialogContent>

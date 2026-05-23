@@ -9,6 +9,7 @@ import Home from "@/pages/home";
 import Shared from "@/pages/shared";
 import SiftChatPage from "@/pages/sift-chat";
 import OnboardingPreview from "@/pages/onboarding-preview";
+import ShellPreview from "@/pages/shell-preview";
 import ResetPassphrasePage from "@/pages/reset-passphrase";
 import RedirectHome from "@/pages/redirect-home";
 import AdminPage from "@/pages/admin";
@@ -23,6 +24,7 @@ function AppRouter() {
   return (
     <Switch>
       <Route path="/onboarding-preview" component={OnboardingPreview} />
+      <Route path="/shell-preview" component={ShellPreview} />
       <Route path="/reset-passphrase" component={ResetPassphrasePage} />
       <Route path="/companion" component={RedirectHome} />
       <Route path="/history" component={RedirectHome} />

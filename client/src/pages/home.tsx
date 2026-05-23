@@ -18,7 +18,8 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { AuthDialog } from "@/components/auth-dialog";
 import { CareScreen } from "@/components/care-screen";
-import { BedroomHeader } from "@/components/bedroom-session/bedroom-header";
+import { SiftBottomNav } from "@/components/sift-bottom-nav";
+import { SiftShellHeader } from "@/components/sift-shell-header";
 import {
   ConversationCard,
   type ChatBubble,
@@ -1292,14 +1293,10 @@ export default function Home() {
       )}
     >
       <SiftBaseBackground mode={baseMode} />
-      <BedroomHeader
+      <SiftShellHeader
         className="pointer-events-auto fixed inset-x-0 top-0 z-[30] bg-transparent px-4 pt-[max(env(safe-area-inset-top),0.35rem)] sm:px-5"
-        companionLabel="Sift Base"
-        status={avatarState === "thinking" ? "listening" : "idle"}
-        avatarInitial={me ? handleInitial(me.handle) : undefined}
-        showIdentity={Boolean(me)}
-        onBrandClick={() => beginLiveSift(true)}
         onSettingsClick={() => setSupportProfileOpen(true)}
+        settingsTestId="button-home-settings"
       />
 
       <div className="pointer-events-none relative z-10 flex w-full shrink-0 flex-col pb-8">
@@ -1448,7 +1445,13 @@ export default function Home() {
         />
       ) : null}
 
-      <AuthDialog open={authOpen} onOpenChange={setAuthOpen} initialMode="signup" />
+      <SiftBottomNav
+        hidden={activeSiftOwnsSurface || showOnboarding}
+        variant="pill"
+        onSiftClick={() => beginLiveSift(true)}
+      />
+
+      <AuthDialog open={authOpen} onOpenChange={setAuthOpen} initialMode="signup" baseMode={baseMode} />
       <SupportProfileDialog
         open={supportProfileOpen}
         onOpenChange={setSupportProfileOpen}
@@ -1463,6 +1466,10 @@ export default function Home() {
           if (profile?.theme === "dark") setBaseMode("dark");
         }}
         me={me ?? null}
+        onRequestSignIn={() => {
+          setSupportProfileOpen(false);
+          setAuthOpen(true);
+        }}
       />
     </div>
   );

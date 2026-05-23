@@ -7,19 +7,25 @@ import {
   ChevronRight,
   ChevronUp,
   Search,
-  SlidersHorizontal,
   Sparkles,
   Star,
   UserRound,
   Users,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import type { LibrarySiftDetail, LibrarySiftItem, ThreadTurn } from "@shared/schema";
+import type { LibrarySiftDetail, LibrarySiftItem, SupportProfile, ThreadTurn } from "@shared/schema";
 import { SiftBaseBackground } from "@/components/bedroom-session/sift-base-background";
-import { PrimaryTopNav } from "@/components/primary-top-nav";
+import { SiftBottomNav, SIFT_BOTTOM_NAV_RESERVE } from "@/components/sift-bottom-nav";
+import { SiftShellHeader } from "@/components/sift-shell-header";
 import { AuthDialog } from "@/components/auth-dialog";
+import { SupportProfileDialog } from "@/components/support-profile-dialog";
 import { useMe } from "@/lib/auth";
-import { useCurrentSiftExperience } from "@/lib/sift-experience";
+import {
+  mergeSupportProfiles,
+  readLocalSupportProfile,
+  supportProfileBaseVisualMode,
+  writeLocalSupportProfile,
+} from "@/lib/sift-experience";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 
@@ -48,10 +54,22 @@ export default function LibraryPage() {
   const selectedId = params?.id ?? null;
   const { data: meData } = useMe();
   const me = meData?.me;
-  const { baseMode } = useCurrentSiftExperience();
+  const [localOnboardingProfile, setLocalOnboardingProfile] = useState<SupportProfile | null>(() =>
+    readLocalSupportProfile(),
+  );
+  const effectiveSupportProfile = mergeSupportProfiles(localOnboardingProfile, me?.supportProfile);
+  const [baseMode, setBaseMode] = useState<"dark" | "light">(() =>
+    supportProfileBaseVisualMode(effectiveSupportProfile),
+  );
+
+  useEffect(() => {
+    setBaseMode(supportProfileBaseVisualMode(effectiveSupportProfile));
+  }, [effectiveSupportProfile?.theme]);
+
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<LibraryFilter>("recent");
   const [authOpen, setAuthOpen] = useState(false);
+  const [supportProfileOpen, setSupportProfileOpen] = useState(false);
 
   const listQuery = useQuery<LibraryListResponse>({
     queryKey: ["/api/library"],
@@ -91,18 +109,18 @@ export default function LibraryPage() {
       )}
     >
       <SiftBaseBackground mode={baseMode} />
-      <div className="relative z-[30] mx-auto flex min-h-[100dvh] w-full max-w-[560px] flex-col px-4 pb-[calc(3.5rem+env(safe-area-inset-bottom))] pt-[max(env(safe-area-inset-top),1rem)] sm:px-6">
-        <header className="mb-[min(27dvh,235px)] flex items-center justify-between gap-3">
-          <PrimaryTopNav />
-          <button
-            type="button"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)]/58 text-[color:var(--color-text-muted)] shadow-[0_14px_42px_-34px_rgba(0,0,0,0.55)] backdrop-blur-xl transition hover:bg-[color:var(--color-surface)]/78 hover:text-[color:var(--color-text)]"
-            aria-label="Library filters"
-          >
-            <SlidersHorizontal className="h-4 w-4" />
-          </button>
-        </header>
-
+      <SiftShellHeader
+        className="pointer-events-auto fixed inset-x-0 top-0 z-[30] bg-transparent px-4 pt-[max(env(safe-area-inset-top),0.35rem)] sm:px-5"
+        onSettingsClick={() => setSupportProfileOpen(true)}
+        settingsTestId="button-library-settings"
+      />
+      <div
+        className={cn(
+          "relative z-[30] mx-auto flex min-h-[100dvh] w-full max-w-[560px] flex-col px-4 sm:px-6",
+          "pt-[max(calc(env(safe-area-inset-top,0px)+3.75rem),4rem)]",
+          SIFT_BOTTOM_NAV_RESERVE,
+        )}
+      >
         <section className="rounded-[2rem] border border-[#e1d5c5] bg-[#fbf7ef] p-4 shadow-[0_28px_90px_-50px_rgba(41,38,31,0.68)] sm:p-6">
           {!me ? (
             <div className="py-10 text-center">
@@ -139,7 +157,27 @@ export default function LibraryPage() {
           )}
         </section>
       </div>
-      <AuthDialog open={authOpen} onOpenChange={setAuthOpen} initialMode="signup" />
+      <SiftBottomNav variant="pill" />
+      <AuthDialog open={authOpen} onOpenChange={setAuthOpen} initialMode="signup" baseMode={baseMode} />
+      <SupportProfileDialog
+        open={supportProfileOpen}
+        onOpenChange={setSupportProfileOpen}
+        profile={effectiveSupportProfile}
+        canPersist={Boolean(me)}
+        baseMode={baseMode}
+        onBaseModeChange={setBaseMode}
+        onSaveLocal={(profile) => {
+          setLocalOnboardingProfile(profile);
+          writeLocalSupportProfile(profile);
+          if (profile?.theme === "light") setBaseMode("light");
+          if (profile?.theme === "dark") setBaseMode("dark");
+        }}
+        me={me ?? null}
+        onRequestSignIn={() => {
+          setSupportProfileOpen(false);
+          setAuthOpen(true);
+        }}
+      />
     </main>
   );
 }

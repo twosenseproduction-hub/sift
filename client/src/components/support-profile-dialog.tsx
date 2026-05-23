@@ -35,6 +35,7 @@ export function SupportProfileDialog({
   baseMode = "dark",
   onBaseModeChange,
   onSaveLocal,
+  onRequestSignIn,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -44,6 +45,8 @@ export function SupportProfileDialog({
   baseMode?: BaseMode;
   onBaseModeChange?: (mode: BaseMode) => void;
   onSaveLocal?: (profile: SupportProfile | null) => void;
+  /** When not signed in, Account opens auth (reuse `AuthDialog` from parent). */
+  onRequestSignIn?: () => void;
 }) {
   const [theme, setTheme] = useState<ThemeChoice>("system");
   const [primaryIntent, setPrimaryIntent] = useState<PrimaryIntent>();
@@ -328,29 +331,51 @@ export function SupportProfileDialog({
             </p>
           </SettingsSection>
 
-          <SettingsSection title="Account" description="Session and account actions.">
-            <div className="flex flex-wrap gap-2">
+          <SettingsSection
+            title="Account"
+            description={
+              me
+                ? "Session and account actions."
+                : "Sign in to keep your Library and sync preferences to your handle."
+            }
+          >
+            {me ? (
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    logout.mutate();
+                    onOpenChange(false);
+                  }}
+                  disabled={!canPersist || logout.isPending}
+                >
+                  Log out
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => void confirmDelete()}
+                  disabled={!canPersist || deleteAccount.isPending}
+                  className="border-red-200 bg-red-50/70 text-red-700 hover:bg-red-100 hover:text-red-800"
+                >
+                  Delete account
+                </Button>
+              </div>
+            ) : (
               <Button
                 type="button"
                 variant="outline"
+                className="w-full sm:w-auto"
+                disabled={!onRequestSignIn}
                 onClick={() => {
-                  logout.mutate();
                   onOpenChange(false);
+                  onRequestSignIn?.();
                 }}
-                disabled={!canPersist || logout.isPending}
               >
-                Log out
+                Sign in or create account
               </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => void confirmDelete()}
-                disabled={!canPersist || deleteAccount.isPending}
-                className="border-red-200 bg-red-50/70 text-red-700 hover:bg-red-100 hover:text-red-800"
-              >
-                Delete account
-              </Button>
-            </div>
+            )}
           </SettingsSection>
 
           <SettingsSection title="Help & Legal" description="Reference, support, and product information.">
