@@ -46,7 +46,7 @@ import {
 } from "@/components/redesign-v3";
 import { RedesignV3EmptyComposer } from "@/components/redesign-v3/empty-composer";
 import { ComposerIntro } from "@/components/redesign-v3/composer-intro";
-import { useRedesignV3 } from "@/lib/use-redesign-v3";
+import { isRedesignV3Enabled, useRedesignV3 } from "@/lib/use-redesign-v3";
 import { ToastAction } from "@/components/ui/toast";
 import { useMe, useUpdateSupportProfile } from "@/lib/auth";
 import {
@@ -353,7 +353,9 @@ export default function Home() {
   const [thinking, setThinking] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [chatRevealed, setChatRevealed] = useState(false);
-  const [baseMode, setBaseMode] = useState<SiftBaseMode>("dark");
+  const [baseMode, setBaseMode] = useState<SiftBaseMode>(() =>
+    isRedesignV3Enabled() ? "light" : "dark",
+  );
   const [siftId, setSiftId] = useState<string | null>(null);
   const [recap, setRecap] = useState<RecapModel | null>(null);
   const [summary, setSummary] = useState<SiftSummary | null>(null);
@@ -1410,11 +1412,13 @@ export default function Home() {
   return (
     <>
       {showOnboarding ? (
-        <SiftOnboardingFlow
-          step={onboardingStep}
-          draft={onboardingDraft}
-          mode={baseMode}
-          onStepChange={setOnboardingStep}
+        <div className="sift-redesign-v3-theme sift-v3-onboarding-screen fixed inset-0 z-[40]">
+          <SiftOnboardingFlow
+            step={onboardingStep}
+            draft={onboardingDraft}
+            variant="v3"
+            mode="light"
+            onStepChange={setOnboardingStep}
           onDraftChange={setOnboardingDraft}
           onBegin={() => setOnboardingStep("choice")}
           onTryFree={() => {
@@ -1431,7 +1435,8 @@ export default function Home() {
             openAuth("signup");
           }}
           onFinish={() => void finishOnboarding()}
-        />
+          />
+        </div>
       ) : (
         <SiftAppShell
           activeTab="composer"

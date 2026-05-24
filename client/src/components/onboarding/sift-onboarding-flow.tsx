@@ -1,13 +1,17 @@
 import type { SupportProfileUpdateRequest } from "@shared/schema";
 import { cn } from "@/lib/utils";
+import { isRedesignV3Enabled } from "@/lib/use-redesign-v3";
 
 export type OnboardingStep = "welcome" | "choice" | "personalize";
 export type SiftBaseVisualMode = "dark" | "light";
+export type OnboardingVariant = "bedroom" | "v3";
 
 export type SiftOnboardingFlowProps = {
   step: OnboardingStep;
   draft: SupportProfileUpdateRequest;
   mode?: SiftBaseVisualMode;
+  /** v3 uses cream editorial tokens; bedroom keeps legacy dark/light palette. */
+  variant?: OnboardingVariant;
   onStepChange: (step: OnboardingStep) => void;
   onDraftChange: (draft: SupportProfileUpdateRequest) => void;
   onBegin: () => void;
@@ -17,16 +21,31 @@ export type SiftOnboardingFlowProps = {
   previewLabel?: string;
 };
 
-function useOnboardingTheme(mode: SiftBaseVisualMode) {
+function useOnboardingTheme(mode: SiftBaseVisualMode, variant: OnboardingVariant) {
+  if (variant === "v3") {
+    return {
+      v3: true as const,
+      kicker: "v3-onboarding-kicker",
+      rule: "v3-onboarding-rule",
+      headline: "v3-onboarding-headline",
+      sub: "v3-onboarding-sub",
+      link: "v3-onboarding-link",
+      primaryBtn: "v3-sift-btn v3-onboarding-primary",
+      card: "v3-onboarding-card",
+      cardDesc: "v3-onboarding-card-desc",
+      chip: "v3-onboarding-chip",
+      chipSelected: "v3-onboarding-chip selected",
+      label: "v3-onboarding-label",
+    };
+  }
+
   const dark = mode === "dark";
   return {
-    dark,
-    shell: dark ? "text-[rgba(216,242,210,0.9)]" : "text-[#29261f]",
+    v3: false as const,
     kicker: dark ? "text-[rgba(195,240,190,0.54)]" : "text-[#556b57]/80",
     rule: dark ? "bg-[rgba(195,240,190,0.28)]" : "bg-[#7a5e49]/35",
     headline: dark ? "text-[rgba(218,244,213,0.9)]" : "text-[#29261f]",
     sub: dark ? "text-[rgba(201,235,194,0.58)]" : "text-[#6e685d]",
-    muted: dark ? "text-[rgba(201,235,194,0.48)]" : "text-[#6e685d]",
     link: dark
       ? "text-[rgba(201,235,194,0.58)] hover:text-[rgba(218,244,213,0.9)]"
       : "text-[#6e685d] hover:text-[#29261f]",
@@ -43,16 +62,16 @@ function useOnboardingTheme(mode: SiftBaseVisualMode) {
     chipSelected: dark
       ? "border-[rgba(120,200,110,0.38)] bg-black/22 text-[rgba(218,244,213,0.92)]"
       : "border-[#556b57]/32 bg-[#faf7f0]/88 text-[#29261f]",
-    label: dark
-      ? "text-[rgba(195,240,190,0.44)]"
-      : "text-[#556b57]/75",
+    label: dark ? "text-[rgba(195,240,190,0.44)]" : "text-[#556b57]/75",
+    shell: dark ? "text-[rgba(216,242,210,0.9)]" : "text-[#29261f]",
   };
 }
 
 export function SiftOnboardingFlow({
   step,
   draft,
-  mode = "dark",
+  mode = "light",
+  variant = isRedesignV3Enabled() ? "v3" : "bedroom",
   onStepChange,
   onDraftChange,
   onBegin,
@@ -61,20 +80,20 @@ export function SiftOnboardingFlow({
   onFinish,
   previewLabel,
 }: SiftOnboardingFlowProps) {
-  const t = useOnboardingTheme(mode);
+  const t = useOnboardingTheme(mode, variant);
   const setDraft = (patch: SupportProfileUpdateRequest) => {
     onDraftChange({ ...draft, ...patch });
   };
 
   return (
     <section
-      className="pointer-events-none fixed inset-0 z-[40] flex items-center justify-center overflow-y-auto px-5 py-[max(env(safe-area-inset-top),1.5rem)] pb-8"
+      className="pointer-events-none flex min-h-full w-full items-center justify-center overflow-y-auto px-5 py-[max(env(safe-area-inset-top),1.5rem)] pb-8"
       aria-label="Sift onboarding"
     >
       <div
         className={cn(
           "pointer-events-auto my-auto flex w-full max-w-[480px] flex-col items-center text-center transition-[opacity,transform] duration-500 ease-out",
-          t.shell,
+          !t.v3 && "shell" in t && t.shell,
         )}
       >
         {previewLabel ? (
@@ -85,26 +104,25 @@ export function SiftOnboardingFlow({
 
         {step === "welcome" ? (
           <div className="flex w-full flex-col items-center">
-            <p className={cn("font-serif text-[12px] uppercase tracking-[0.38em]", t.kicker)}>
-              Sift
-            </p>
-            <div className={cn("mt-4 h-px w-10", t.rule)} aria-hidden />
+            <p className={cn(t.kicker)}>Sift</p>
+            <div className={cn("mt-4", t.rule)} aria-hidden />
             <h1
               className={cn(
-                "mt-7 max-w-[400px] font-serif text-[36px] leading-[1.12] tracking-[-0.035em] sm:text-[44px]",
+                "mt-7 max-w-[400px] text-[36px] leading-[1.12] tracking-[-0.035em] sm:text-[44px]",
                 t.headline,
               )}
             >
               Tell what matters from what is only loud.
             </h1>
-            <p className={cn("mt-5 max-w-[360px] font-serif text-[17px] italic leading-[1.45] sm:text-[19px]", t.sub)}>
+            <p className={cn("mt-5 max-w-[360px] text-[17px] leading-[1.45] sm:text-[19px]", t.sub)}>
               Speak or type the tangle. Get back the signal underneath, and one next step you can actually take.
             </p>
             <button
               type="button"
               onClick={onBegin}
               className={cn(
-                "mt-8 w-full max-w-[300px] rounded-xl px-6 py-4 font-serif text-[18px] tracking-[0.01em] shadow-[0_18px_44px_-34px_rgba(0,0,0,0.45)] transition hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-offset-2",
+                "mt-8 w-full max-w-[300px] px-6 py-4 tracking-[0.01em] transition focus:outline-none focus:ring-2 focus:ring-offset-2",
+                !t.v3 && "rounded-xl font-serif text-[18px] shadow-[0_18px_44px_-34px_rgba(0,0,0,0.45)] hover:-translate-y-0.5",
                 t.primaryBtn,
               )}
             >
@@ -115,19 +133,17 @@ export function SiftOnboardingFlow({
 
         {step === "choice" ? (
           <div className="w-full text-left">
-            <p className={cn("text-center font-serif text-[12px] uppercase tracking-[0.38em]", t.kicker)}>
-              Get started
-            </p>
-            <div className={cn("mx-auto mt-4 h-px w-10", t.rule)} aria-hidden />
+            <p className={cn("text-center", t.kicker)}>Get started</p>
+            <div className={cn("mx-auto mt-4", t.rule)} aria-hidden />
             <h2
               className={cn(
-                "mt-6 text-center font-serif text-[32px] leading-[1.12] tracking-[-0.035em] sm:text-[38px]",
+                "mt-6 text-center text-[32px] leading-[1.12] tracking-[-0.035em] sm:text-[38px]",
                 t.headline,
               )}
             >
               How would you like to begin?
             </h2>
-            <p className={cn("mt-4 text-center font-serif text-[16px] italic leading-[1.5] sm:text-[17px]", t.sub)}>
+            <p className={cn("mt-4 text-center text-[16px] leading-[1.5] sm:text-[17px]", t.sub)}>
               Try Sift for free right now, or create an account so your clarity stays with you.
             </p>
             <div className="mt-7 grid gap-3 sm:grid-cols-2">
@@ -145,13 +161,13 @@ export function SiftOnboardingFlow({
               />
             </div>
             <div className="mt-6 flex items-center justify-between gap-3 px-1">
-              <button type="button" onClick={() => onStepChange("welcome")} className={cn("font-serif text-[14px] transition", t.link)}>
+              <button type="button" onClick={() => onStepChange("welcome")} className={cn("transition", t.link)}>
                 Back
               </button>
               <button
                 type="button"
                 onClick={() => onStepChange("personalize")}
-                className={cn("font-serif text-[14px] underline-offset-4 transition hover:underline", t.link)}
+                className={cn("underline-offset-4 transition hover:underline", t.link)}
               >
                 Tune support first
               </button>
@@ -161,19 +177,17 @@ export function SiftOnboardingFlow({
 
         {step === "personalize" ? (
           <div className="w-full text-left">
-            <p className={cn("text-center font-serif text-[12px] uppercase tracking-[0.38em]", t.kicker)}>
-              Optional
-            </p>
-            <div className={cn("mx-auto mt-4 h-px w-10", t.rule)} aria-hidden />
+            <p className={cn("text-center", t.kicker)}>Optional</p>
+            <div className={cn("mx-auto mt-4", t.rule)} aria-hidden />
             <h2
               className={cn(
-                "mt-6 text-center font-serif text-[32px] leading-[1.12] tracking-[-0.035em] sm:text-[38px]",
+                "mt-6 text-center text-[32px] leading-[1.12] tracking-[-0.035em] sm:text-[38px]",
                 t.headline,
               )}
             >
               A little shape, if you want.
             </h2>
-            <p className={cn("mt-4 text-center font-serif text-[16px] italic leading-[1.5]", t.sub)}>
+            <p className={cn("mt-4 text-center text-[16px] leading-[1.5]", t.sub)}>
               Fast answers only. You can change this later.
             </p>
 
@@ -238,14 +252,13 @@ function OnboardingChoiceCard({
       type="button"
       onClick={onClick}
       className={cn(
-        "rounded-xl p-4 text-left shadow-[0_18px_44px_-34px_rgba(0,0,0,0.45)] transition hover:-translate-y-0.5",
+        "p-4 text-left transition",
+        !t.v3 && "rounded-xl shadow-[0_18px_44px_-34px_rgba(0,0,0,0.45)] hover:-translate-y-0.5",
         t.card,
       )}
     >
       <span className="block font-serif text-[21px] leading-tight tracking-[-0.03em]">{title}</span>
-      <span className={cn("mt-2 block font-serif text-[14px] italic leading-[1.45]", t.cardDesc)}>
-        {description}
-      </span>
+      <span className={cn("mt-2 block text-[14px] leading-[1.45]", t.cardDesc)}>{description}</span>
     </button>
   );
 }
@@ -265,7 +278,7 @@ function OnboardingSegmentGroup<TValue extends string>({
 }) {
   return (
     <div className="space-y-2">
-      <p className={cn("font-serif text-[11px] uppercase tracking-[0.22em]", t.label)}>{label}</p>
+      <p className={cn(t.label)}>{label}</p>
       <div className="grid grid-cols-2 gap-2">
         {options.map((option) => {
           const selected = value === option.value;
@@ -275,7 +288,8 @@ function OnboardingSegmentGroup<TValue extends string>({
               type="button"
               onClick={() => onChange(selected ? undefined : option.value)}
               className={cn(
-                "rounded-xl border px-3 py-2.5 text-left font-serif text-[13px] transition",
+                "px-3 py-2.5 text-left text-[13px] transition",
+                !t.v3 && "rounded-xl border font-serif",
                 selected ? t.chipSelected : t.chip,
               )}
               aria-pressed={selected}
@@ -308,12 +322,12 @@ function OnboardingFooter({
 }) {
   return (
     <div className="mt-6 flex items-center justify-between gap-3 px-1">
-      <button type="button" onClick={onBack} className={cn("font-serif text-[14px] transition", t.link)}>
+      <button type="button" onClick={onBack} className={cn("transition", t.link)}>
         {backLabel}
       </button>
       <div className="flex items-center gap-3">
         {secondaryLabel && onSecondary ? (
-          <button type="button" onClick={onSecondary} className={cn("font-serif text-[14px] transition", t.link)}>
+          <button type="button" onClick={onSecondary} className={cn("transition", t.link)}>
             {secondaryLabel}
           </button>
         ) : null}
@@ -321,7 +335,8 @@ function OnboardingFooter({
           type="button"
           onClick={onNext}
           className={cn(
-            "rounded-xl px-5 py-2.5 font-serif text-[15px] shadow-[0_18px_44px_-34px_rgba(0,0,0,0.45)] transition hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-offset-2",
+            "px-5 py-2.5 transition focus:outline-none focus:ring-2 focus:ring-offset-2",
+            !t.v3 && "rounded-xl font-serif text-[15px] shadow-[0_18px_44px_-34px_rgba(0,0,0,0.45)] hover:-translate-y-0.5",
             t.primaryBtn,
           )}
         >

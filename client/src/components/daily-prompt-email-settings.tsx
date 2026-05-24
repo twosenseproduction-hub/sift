@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { Me } from "@shared/schema";
 import { DAILY_PROMPT_HOUR_MIN, DAILY_PROMPT_HOUR_MAX } from "@shared/schema";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -99,22 +98,20 @@ export function DailyPromptEmailSettings({
 
   if (!canPersist) {
     return (
-      <p className="text-[13px] leading-relaxed text-[#675d4f]">
+      <p className="sift-v3-settings-desc text-[13px] leading-relaxed">
         Sign in to receive a gentle daily check-in by email.
       </p>
     );
   }
 
   if (isLoading) {
-    return (
-      <p className="text-[13px] text-[#675d4f]">Loading notification settings…</p>
-    );
+    return <p className="sift-v3-settings-desc text-[13px]">Loading notification settings…</p>;
   }
 
   return (
     <div className="space-y-4">
       {!featureEnabled ? (
-        <p className="rounded-xl border border-[#e8ddd0] bg-[#fffaf2] px-3 py-2 text-[12px] leading-relaxed text-[#675d4f]">
+        <p className="sift-v3-settings-desc rounded-[3px] border border-[color:var(--v3-border)] bg-[color:var(--v3-surface)] px-3 py-2 text-[12px] leading-relaxed">
           Daily prompt emails are not enabled on this server yet. You can still save preferences for when they roll out.
         </p>
       ) : null}
@@ -135,7 +132,7 @@ export function DailyPromptEmailSettings({
               value={hour}
               onChange={(e) => setHour(Number(e.target.value))}
               disabled={update.isPending}
-              className="h-10 w-full rounded-md border border-[#d7c8b4] bg-[#fffaf2] px-3 text-sm text-[#2f2a22]"
+              className="sift-v3-field-box h-10 w-full px-3 text-sm"
             >
               {hourOptions.map((h) => (
                 <option key={h} value={h}>
@@ -151,13 +148,12 @@ export function DailyPromptEmailSettings({
               onChange={(e) => setTimezone(e.target.value)}
               disabled={update.isPending}
               placeholder="America/Los_Angeles"
-              className="border-[#d7c8b4] bg-[#fffaf2] text-[#2f2a22]"
+              className="sift-v3-field-box h-10"
             />
           </div>
           <div className="flex flex-wrap items-center gap-2 sm:col-span-2">
-            <Button
+            <button
               type="button"
-              variant="outline"
               disabled={update.isPending}
               onClick={() =>
                 void save({
@@ -166,27 +162,27 @@ export function DailyPromptEmailSettings({
                   dailyPromptEmailEnabled: true,
                 })
               }
+              className="sift-v3-btn-outline"
             >
               Save time
-            </Button>
-            <Button
+            </button>
+            <button
               type="button"
-              variant="ghost"
               disabled={update.isPending}
-              className="text-[#675d4f]"
+              className="sift-v3-btn-ghost"
               onClick={() => void save({ pauseForDays: 7 })}
             >
               Pause for 7 days
-            </Button>
+            </button>
             {savedFlash ? (
-              <span className="text-[12px] text-[#3d5a45]">Saved</span>
+              <span className="text-[12px] text-[color:var(--v3-leaf-mid)]">Saved</span>
             ) : null}
           </div>
         </div>
       ) : null}
 
       {!hasEmail ? (
-        <p className="text-[12px] leading-relaxed text-[#8a7f70]">
+        <p className="sift-v3-settings-desc text-[12px] leading-relaxed">
           Add an email under Profile to turn this on.
         </p>
       ) : null}
@@ -195,11 +191,7 @@ export function DailyPromptEmailSettings({
 }
 
 function FieldLabel({ children }: { children: ReactNode }) {
-  return (
-    <p className="text-[11px] font-medium uppercase tracking-[0.06em] text-[#8a7f70]">
-      {children}
-    </p>
-  );
+  return <p className="sift-v3-field-label">{children}</p>;
 }
 
 function MemoryToggle({
@@ -218,20 +210,20 @@ function MemoryToggle({
   return (
     <label
       className={cn(
-        "flex cursor-pointer items-start gap-3 rounded-xl border border-[#e8ddd0] bg-[#fffaf2] px-3 py-3",
+        "sift-v3-toggle-row flex cursor-pointer items-start gap-3 px-3 py-3",
         disabled && "cursor-not-allowed opacity-60",
       )}
     >
       <input
         type="checkbox"
-        className="mt-1 h-4 w-4 rounded border-[#d7c8b4]"
+        className="mt-1 h-4 w-4"
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
         disabled={disabled}
       />
       <span>
-        <span className="block text-[14px] font-medium text-[#241f18]">{label}</span>
-        <span className="mt-0.5 block text-[12px] leading-relaxed text-[#675d4f]">
+        <span className="block text-[14px] font-medium">{label}</span>
+        <span className="sift-v3-settings-desc mt-0.5 block text-[12px] leading-relaxed">
           {description}
         </span>
       </span>

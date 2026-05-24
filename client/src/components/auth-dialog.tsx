@@ -11,6 +11,7 @@ import { useLogin, useSignup, useForgotPassphrase } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 import type { SiftBaseVisualMode } from "@/components/onboarding/sift-onboarding-flow";
 import { cn } from "@/lib/utils";
+import { isRedesignV3Enabled } from "@/lib/use-redesign-v3";
 
 interface Props {
   open: boolean;
@@ -20,21 +21,31 @@ interface Props {
   baseMode?: SiftBaseVisualMode;
 }
 
-const fieldClass =
+const legacyFieldClass =
   "flex h-10 w-full rounded-xl border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface-alt)]/40 px-3 py-2 text-[14px] text-[color:var(--color-text)] shadow-[0_8px_24px_-20px_rgba(0,0,0,0.35)] ring-offset-[color:var(--color-surface)] transition-[border-color,box-shadow] placeholder:text-[color:var(--color-text-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-primary)]/35 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50";
 
-const labelClass =
+const v3FieldClass = "flex h-10 w-full px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50";
+
+const legacyLabelClass =
   "font-serif text-[11px] uppercase tracking-[0.28em] text-[color:var(--color-text-muted)]";
 
-const linkClass =
+const v3LabelClass = "sift-v3-field-label block";
+
+const legacyLinkClass =
   "text-left font-serif text-[13px] text-[color:var(--color-text-muted)] underline-offset-4 transition hover:text-[color:var(--color-text)] hover:underline";
+
+const v3LinkClass = "sift-v3-btn-ghost text-left text-[13px] underline-offset-4 hover:underline";
 
 export function AuthDialog({
   open,
   onOpenChange,
   initialMode = "signup",
-  baseMode = "dark",
+  baseMode = isRedesignV3Enabled() ? "light" : "dark",
 }: Props) {
+  const v3 = isRedesignV3Enabled();
+  const fieldClass = v3 ? v3FieldClass : legacyFieldClass;
+  const labelClass = v3 ? v3LabelClass : legacyLabelClass;
+  const linkClass = v3 ? v3LinkClass : legacyLinkClass;
   const [mode, setMode] = useState<"signin" | "signup">(initialMode);
   const [view, setView] = useState<"auth" | "forgot">("auth");
   const [handle, setHandle] = useState("");
@@ -115,20 +126,35 @@ export function AuthDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className={cn(
-          "bedroom-session sift-base-session max-h-[min(90dvh,760px)] max-w-md overflow-y-auto border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)] p-6 text-[color:var(--color-text)] shadow-[var(--bedroom-paper-shadow)] sm:rounded-3xl sm:p-8",
-          baseMode === "light" && "sift-base-light-session",
-          "[&>button]:text-[color:var(--color-text-muted)] [&>button]:hover:bg-[color:var(--color-text)]/[0.06] [&>button]:hover:text-[color:var(--color-text)]",
+          "max-h-[min(90dvh,760px)] max-w-md overflow-y-auto p-6 sm:p-8",
+          v3
+            ? "sift-redesign-v3-theme sift-v3-auth-dialog sm:rounded-[3px]"
+            : cn(
+                "bedroom-session sift-base-session border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)] text-[color:var(--color-text)] shadow-[var(--bedroom-paper-shadow)] sm:rounded-3xl",
+                baseMode === "light" && "sift-base-light-session",
+                "[&>button]:text-[color:var(--color-text-muted)] [&>button]:hover:bg-[color:var(--color-text)]/[0.06] [&>button]:hover:text-[color:var(--color-text)]",
+              ),
         )}
       >
         <DialogHeader className="space-y-2">
-          <DialogTitle className="font-serif text-[1.75rem] leading-[1.12] tracking-[-0.035em] text-[color:var(--color-text)]">
+          <DialogTitle
+            className={cn(
+              "text-[1.75rem] leading-[1.12] tracking-[-0.035em]",
+              v3 ? "v3-auth-title" : "font-serif text-[color:var(--color-text)]",
+            )}
+          >
             {view === "forgot"
               ? "Reset passphrase"
               : mode === "signup"
                 ? "Save your clarity"
                 : "Welcome back"}
           </DialogTitle>
-          <DialogDescription className="font-serif text-[15px] italic leading-relaxed text-[color:var(--color-text-muted)]">
+          <DialogDescription
+            className={cn(
+              "text-[15px] leading-relaxed",
+              v3 ? "v3-auth-desc" : "font-serif italic text-[color:var(--color-text-muted)]",
+            )}
+          >
             {view === "forgot"
               ? "Enter your handle. If you added email at signup, a reset link will be issued."
               : mode === "signup"
@@ -293,7 +319,10 @@ export function AuthDialog({
               disabled={loading}
               data-testid="button-auth-submit"
               className={cn(
-                "shrink-0 rounded-full border border-[color:var(--color-primary)]/20 bg-[color:var(--color-primary)] px-5 py-2.5 font-serif text-[14px] tracking-[0.01em] text-[color:var(--color-surface)] shadow-[0_14px_36px_-18px_rgba(0,0,0,0.45)] transition hover:brightness-[1.03] focus:outline-none focus:ring-2 focus:ring-[color:var(--color-primary)]/35 focus:ring-offset-2 focus:ring-offset-[color:var(--color-surface)] disabled:cursor-not-allowed disabled:opacity-50",
+                "shrink-0 disabled:cursor-not-allowed disabled:opacity-50",
+                v3
+                  ? "v3-auth-submit"
+                  : "rounded-full border border-[color:var(--color-primary)]/20 bg-[color:var(--color-primary)] px-5 py-2.5 font-serif text-[14px] tracking-[0.01em] text-[color:var(--color-surface)] shadow-[0_14px_36px_-18px_rgba(0,0,0,0.45)] transition hover:brightness-[1.03] focus:outline-none focus:ring-2 focus:ring-[color:var(--color-primary)]/35 focus:ring-offset-2 focus:ring-offset-[color:var(--color-surface)]",
               )}
             >
               {loading

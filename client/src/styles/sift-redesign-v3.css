@@ -1,5 +1,6 @@
-/* Redesign v3 — cream editorial session. Scoped under .sift-redesign-v3-session */
+/* Redesign v3 — cream editorial. Use .sift-redesign-v3-theme on portaled dialogs/onboarding. */
 
+.sift-redesign-v3-theme,
 .sift-redesign-v3-session {
   --v3-bg: #f0ebe0;
   --v3-leaf-dark: #263d1a;
@@ -1803,5 +1804,318 @@
     padding: 7px 12px;
     font-size: 10px;
   }
+}
+
+/* ── ONBOARDING (full-screen, portaled outside app shell) ── */
+.sift-v3-onboarding-screen {
+  background: var(--v3-bg);
+  font-family: var(--v3-sans);
+  color: var(--v3-text-primary);
+}
+
+.sift-v3-onboarding-screen .v3-onboarding-kicker {
+  font-family: var(--v3-sans);
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--v3-text-muted);
+}
+
+.sift-v3-onboarding-screen .v3-onboarding-rule {
+  height: 1px;
+  width: 2.5rem;
+  background: var(--v3-border);
+}
+
+.sift-v3-onboarding-screen .v3-onboarding-headline {
+  font-family: var(--v3-serif);
+  color: var(--v3-text-primary);
+}
+
+.sift-v3-onboarding-screen .v3-onboarding-sub {
+  font-family: var(--v3-serif);
+  font-style: italic;
+  color: var(--v3-text-secondary);
+}
+
+.sift-v3-onboarding-screen .v3-onboarding-link {
+  font-family: var(--v3-sans);
+  font-size: 14px;
+  color: var(--v3-text-muted);
+  transition: color 0.15s;
+}
+
+.sift-v3-onboarding-screen .v3-onboarding-link:hover {
+  color: var(--v3-text-primary);
+}
+
+.sift-v3-onboarding-screen .v3-onboarding-card {
+  border: 1px solid var(--v3-border);
+  background: var(--v3-surface);
+  color: var(--v3-text-primary);
+  border-radius: 3px;
+  transition: border-color 0.18s, background 0.18s, transform 0.18s;
+}
+
+.sift-v3-onboarding-screen .v3-onboarding-card:hover {
+  border-color: var(--v3-border-hover);
+  background: rgba(225, 218, 204, 0.75);
+  transform: translateY(-1px);
+}
+
+.sift-v3-onboarding-screen .v3-onboarding-card-desc {
+  font-family: var(--v3-serif);
+  font-style: italic;
+  color: var(--v3-text-muted);
+}
+
+.sift-v3-onboarding-screen .v3-onboarding-chip {
+  border: 1px solid var(--v3-border);
+  background: rgba(225, 218, 204, 0.35);
+  color: var(--v3-text-secondary);
+  border-radius: 3px;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.sift-v3-onboarding-screen .v3-onboarding-chip:hover {
+  border-color: var(--v3-border-hover);
+  color: var(--v3-text-primary);
+}
+
+.sift-v3-onboarding-screen .v3-onboarding-chip.selected {
+  border-color: rgba(90, 112, 60, 0.35);
+  background: rgba(90, 112, 60, 0.12);
+  color: var(--v3-text-primary);
+}
+
+.sift-v3-onboarding-screen .v3-onboarding-label {
+  font-family: var(--v3-sans);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--v3-text-muted);
+}
+
+.sift-v3-onboarding-screen .v3-sift-btn.v3-onboarding-primary {
+  font-size: 13px;
+  padding: 12px 24px;
+  border-radius: 3px;
+  letter-spacing: 0.1em;
+}
+
+/* ── SETTINGS + AUTH DIALOGS (Radix portals) ── */
+.sift-v3-settings-dialog,
+.sift-v3-auth-dialog {
+  font-family: var(--v3-sans);
+  color: var(--v3-text-primary);
+  border-color: var(--v3-border) !important;
+  background: rgba(250, 247, 240, 0.98) !important;
+  box-shadow: var(--bedroom-paper-shadow) !important;
+}
+
+.sift-v3-settings-dialog > button,
+.sift-v3-auth-dialog > button {
+  color: var(--v3-text-muted);
+}
+
+.sift-v3-settings-dialog > button:hover,
+.sift-v3-auth-dialog > button:hover {
+  color: var(--v3-text-primary);
+  background: rgba(90, 112, 60, 0.08);
+}
+
+.sift-v3-settings-header {
+  border-bottom: 1px solid var(--v3-border);
+  background: rgba(240, 235, 226, 0.92);
+}
+
+.sift-v3-settings-footer {
+  border-top: 1px solid var(--v3-border);
+  background: rgba(240, 235, 226, 0.92);
+}
+
+.sift-v3-settings-title {
+  font-family: var(--v3-serif);
+  color: var(--v3-text-primary);
+}
+
+.sift-v3-settings-desc {
+  color: var(--v3-text-muted);
+}
+
+.sift-v3-settings-section {
+  border: 1px solid var(--v3-border);
+  background: rgba(250, 247, 240, 0.88);
+  border-radius: 3px;
+  box-shadow: var(--bedroom-paper-shadow);
+}
+
+.sift-v3-settings-section h3 {
+  font-family: var(--v3-serif);
+  color: var(--v3-text-primary);
+}
+
+.sift-v3-settings-section p {
+  color: var(--v3-text-muted);
+}
+
+.sift-v3-field-label {
+  font-family: var(--v3-sans);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--v3-text-muted);
+}
+
+.sift-v3-field-box,
+.sift-v3-settings-dialog input[type="text"],
+.sift-v3-settings-dialog input[type="email"],
+.sift-v3-settings-dialog input[type="tel"],
+.sift-v3-settings-dialog select {
+  border: 1px solid var(--v3-border);
+  background: rgba(255, 252, 246, 0.95);
+  color: var(--v3-text-primary);
+  border-radius: 3px;
+}
+
+.sift-v3-settings-dialog input:focus-visible,
+.sift-v3-settings-dialog select:focus-visible,
+.sift-v3-auth-dialog input:focus-visible {
+  outline: none;
+  ring: 2px solid rgba(122, 148, 96, 0.35);
+  border-color: var(--v3-border-hover);
+}
+
+.sift-v3-pref-chip {
+  border: 1px solid var(--v3-border);
+  background: rgba(225, 218, 204, 0.4);
+  color: var(--v3-text-secondary);
+  border-radius: 3px;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.sift-v3-pref-chip:hover {
+  border-color: var(--v3-border-hover);
+  color: var(--v3-text-primary);
+}
+
+.sift-v3-pref-chip.selected {
+  border-color: rgba(90, 112, 60, 0.35);
+  background: rgba(90, 112, 60, 0.12);
+  color: var(--v3-text-primary);
+}
+
+.sift-v3-toggle-row {
+  border: 1px solid var(--v3-border);
+  background: rgba(225, 218, 204, 0.35);
+  border-radius: 3px;
+}
+
+.sift-v3-toggle-row span:first-child span:first-child {
+  color: var(--v3-text-primary);
+}
+
+.sift-v3-toggle-row input {
+  accent-color: var(--v3-sage);
+}
+
+.sift-v3-settings-link {
+  border: 1px solid var(--v3-border);
+  background: rgba(225, 218, 204, 0.35);
+  color: var(--v3-text-primary);
+  border-radius: 3px;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.sift-v3-settings-link:hover {
+  border-color: var(--v3-border-hover);
+  background: rgba(225, 218, 204, 0.65);
+}
+
+.sift-v3-btn-ghost {
+  font-family: var(--v3-sans);
+  font-size: 13px;
+  color: var(--v3-text-muted);
+  transition: color 0.15s;
+}
+
+.sift-v3-btn-ghost:hover {
+  color: var(--v3-text-primary);
+}
+
+.sift-v3-btn-outline {
+  font-family: var(--v3-sans);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  border: 1px solid var(--v3-border);
+  background: rgba(225, 218, 204, 0.35);
+  color: var(--v3-text-primary);
+  border-radius: 3px;
+  padding: 8px 14px;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.sift-v3-btn-outline:hover:not(:disabled) {
+  border-color: var(--v3-border-hover);
+  background: rgba(225, 218, 204, 0.65);
+}
+
+.sift-v3-btn-outline:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.sift-v3-auth-dialog .v3-auth-title {
+  font-family: var(--v3-serif);
+  color: var(--v3-text-primary);
+}
+
+.sift-v3-auth-dialog .v3-auth-desc {
+  font-family: var(--v3-serif);
+  font-style: italic;
+  color: var(--v3-text-muted);
+}
+
+.sift-v3-auth-dialog input {
+  border: 1px solid var(--v3-border);
+  background: rgba(255, 252, 246, 0.95);
+  color: var(--v3-text-primary);
+  border-radius: 3px;
+  font-family: var(--v3-sans);
+  font-size: 14px;
+}
+
+.sift-v3-auth-dialog input::placeholder {
+  color: var(--v3-text-muted);
+  font-style: italic;
+}
+
+.sift-v3-auth-dialog input:focus-visible {
+  outline: 2px solid rgba(122, 148, 96, 0.35);
+  outline-offset: 2px;
+  border-color: var(--v3-border-hover);
+}
+
+.sift-v3-auth-dialog .v3-auth-submit {
+  font-family: var(--v3-sans);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--v3-bg);
+  background: var(--v3-sage);
+  border: none;
+  border-radius: 3px;
+  padding: 10px 20px;
+  transition: background 0.18s;
+}
+
+.sift-v3-auth-dialog .v3-auth-submit:hover:not(:disabled) {
+  background: var(--v3-leaf-mid);
+}
+
+.sift-v3-auth-dialog [data-state="checked"] {
+  background: var(--v3-sage) !important;
+  border-color: var(--v3-sage) !important;
 }
 

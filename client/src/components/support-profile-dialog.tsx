@@ -7,7 +7,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   useDeleteAccount,
@@ -173,13 +172,13 @@ export function SupportProfileDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[min(92dvh,820px)] max-w-[680px] overflow-y-auto border-[color:var(--color-walnut)]/18 bg-[#f7f1e5] p-0 text-[#2f2a22] shadow-[0_28px_90px_-42px_rgba(20,16,10,0.78)]">
-        <div className="border-b border-[#d7c8b4] bg-[#fbf7ef] px-5 py-5 sm:px-6">
+      <DialogContent className="sift-redesign-v3-theme sift-v3-settings-dialog max-h-[min(92dvh,820px)] max-w-[680px] overflow-y-auto p-0 sm:rounded-[3px]">
+        <div className="sift-v3-settings-header px-5 py-5 sm:px-6">
           <DialogHeader className="text-left">
-            <DialogTitle className="font-serif text-3xl tracking-[-0.04em] text-[#241f18]">
+            <DialogTitle className="sift-v3-settings-title text-3xl tracking-[-0.04em]">
               Settings
             </DialogTitle>
-            <DialogDescription className="text-[14px] leading-relaxed text-[#675d4f]">
+            <DialogDescription className="sift-v3-settings-desc text-[14px] leading-relaxed">
               Account, experience, and support preferences for Sift.
             </DialogDescription>
           </DialogHeader>
@@ -197,23 +196,23 @@ export function SupportProfileDialog({
                     onChange={(event) => setContact(event.target.value)}
                     placeholder="you@example.com"
                     disabled={!canPersist}
-                    className="border-[#d7c8b4] bg-[#fffaf2] text-[#2f2a22]"
+                    className="sift-v3-field-box h-10"
                   />
-                  <Button
+                  <button
                     type="button"
                     onClick={saveContact}
                     disabled={!canPersist || updateContact.isPending}
-                    variant="outline"
+                    className="sift-v3-btn-outline shrink-0"
                   >
                     Save
-                  </Button>
+                  </button>
                 </div>
               </div>
             </div>
           </SettingsSection>
 
           <SettingsSection title="Experience" description="Sift Base — minimal, direct, and conversation-first.">
-            <p className="text-[13px] leading-relaxed text-[#675d4f]">
+            <p className="sift-v3-settings-desc text-[13px] leading-relaxed">
               You&apos;re using Sift Base, the streamlined Sift experience. Tune the support preferences below to shape how Sift opens and paces with you.
             </p>
           </SettingsSection>
@@ -244,7 +243,7 @@ export function SupportProfileDialog({
             <button
               type="button"
               onClick={resetSupport}
-              className="text-sm font-medium text-[#675d4f] underline-offset-4 transition hover:text-[#241f18] hover:underline"
+              className="sift-v3-btn-ghost text-sm underline-offset-4 hover:underline"
             >
               Reset support preferences
             </button>
@@ -290,23 +289,22 @@ export function SupportProfileDialog({
               disabled={!canPersist || updateMemory.isPending}
             />
             <div className="grid gap-2 sm:grid-cols-3">
-              <Button
+              <button
                 type="button"
-                variant="outline"
                 onClick={() => void handleExportData()}
                 disabled={!canPersist || exportData.isPending}
+                className="sift-v3-btn-outline"
               >
                 Export my data
-              </Button>
-              <Button
+              </button>
+              <button
                 type="button"
-                variant="outline"
                 onClick={() => void handleDeleteAllHistory()}
                 disabled={!canPersist || deleteAllHistory.isPending}
-                className="border-red-200 bg-red-50/70 text-red-700 hover:bg-red-100 hover:text-red-800 sm:col-span-2"
+                className="sift-v3-btn-outline border-red-200/80 bg-red-50/70 text-red-800 hover:bg-red-100 sm:col-span-2"
               >
                 Delete all history
-              </Button>
+              </button>
             </div>
           </SettingsSection>
 
@@ -334,7 +332,7 @@ export function SupportProfileDialog({
               ]}
               columns="three"
             />
-            <p className="text-xs leading-relaxed text-[#675d4f]">
+            <p className="sift-v3-settings-desc text-xs leading-relaxed">
               Sift Base follows this setting visibly across the app.
             </p>
           </SettingsSection>
@@ -349,32 +347,30 @@ export function SupportProfileDialog({
           >
             {me ? (
               <div className="flex flex-wrap gap-2">
-                <Button
+                <button
                   type="button"
-                  variant="outline"
                   onClick={() => {
                     logout.mutate();
                     onOpenChange(false);
                   }}
                   disabled={!canPersist || logout.isPending}
+                  className="sift-v3-btn-outline"
                 >
                   Log out
-                </Button>
-                <Button
+                </button>
+                <button
                   type="button"
-                  variant="outline"
                   onClick={() => void confirmDelete()}
                   disabled={!canPersist || deleteAccount.isPending}
-                  className="border-red-200 bg-red-50/70 text-red-700 hover:bg-red-100 hover:text-red-800"
+                  className="sift-v3-btn-outline border-red-200/80 bg-red-50/70 text-red-800 hover:bg-red-100"
                 >
                   Delete account
-                </Button>
+                </button>
               </div>
             ) : (
-              <Button
+              <button
                 type="button"
-                variant="outline"
-                className="w-full sm:w-auto"
+                className="sift-v3-btn-outline w-full sm:w-auto"
                 disabled={!onRequestSignIn}
                 onClick={() => {
                   onOpenChange(false);
@@ -382,7 +378,7 @@ export function SupportProfileDialog({
                 }}
               >
                 Sign in or create account
-              </Button>
+              </button>
             )}
           </SettingsSection>
 
@@ -397,17 +393,13 @@ export function SupportProfileDialog({
           </SettingsSection>
         </div>
 
-        <div className="sticky bottom-0 flex items-center justify-between gap-3 border-t border-[#d7c8b4] bg-[#fbf7ef] px-5 py-4 shadow-[0_-18px_38px_-32px_rgba(20,16,10,0.55)]">
-          <button
-            type="button"
-            onClick={() => onOpenChange(false)}
-            className="text-sm font-medium text-[#675d4f] transition hover:text-[#241f18]"
-          >
+        <div className="sift-v3-settings-footer sticky bottom-0 flex items-center justify-between gap-3 px-5 py-4">
+          <button type="button" onClick={() => onOpenChange(false)} className="sift-v3-btn-ghost text-sm">
             Close
           </button>
-          <Button type="button" onClick={saveExperience} disabled={saving}>
+          <button type="button" onClick={saveExperience} disabled={saving} className="v3-sift-btn">
             {saving ? "Saving..." : "Save settings"}
-          </Button>
+          </button>
         </div>
       </DialogContent>
     </Dialog>
@@ -424,14 +416,10 @@ function SettingsSection({
   children: ReactNode;
 }) {
   return (
-    <section className="rounded-2xl border border-[#d7c8b4] bg-[#fffaf2] p-4 shadow-[0_18px_54px_-48px_rgba(41,38,31,0.5)]">
+    <section className="sift-v3-settings-section p-4">
       <div className="mb-4">
-        <h3 className="font-serif text-[22px] leading-tight tracking-[-0.03em] text-[#241f18]">
-          {title}
-        </h3>
-        <p className="mt-1 text-[13px] leading-relaxed text-[#675d4f]">
-          {description}
-        </p>
+        <h3 className="text-[22px] leading-tight tracking-[-0.03em]">{title}</h3>
+        <p className="mt-1 text-[13px] leading-relaxed">{description}</p>
       </div>
       <div className="space-y-4">{children}</div>
     </section>
@@ -440,9 +428,7 @@ function SettingsSection({
 
 function FieldLabel({ children }: { children: ReactNode }) {
   return (
-    <p className="text-[11px] font-semibold uppercase tracking-[0.13em] text-[#5f5548]">
-      {children}
-    </p>
+    <p className="sift-v3-field-label">{children}</p>
   );
 }
 
@@ -450,9 +436,7 @@ function ReadOnlyField({ label, value }: { label: string; value: string }) {
   return (
     <div className="space-y-1.5">
       <FieldLabel>{label}</FieldLabel>
-      <div className="rounded-xl border border-[#d7c8b4] bg-[#f6efe3] px-3 py-2 text-sm text-[#2f2a22]">
-        {value}
-      </div>
+      <div className="sift-v3-field-box px-3 py-2 text-sm">{value}</div>
     </div>
   );
 }
@@ -471,19 +455,17 @@ function MemoryToggle({
   onChange: (checked: boolean) => void;
 }) {
   return (
-    <label className="flex items-start justify-between gap-4 rounded-xl border border-[#d7c8b4] bg-[#f6efe3] px-3 py-3">
+    <label className="sift-v3-toggle-row flex items-start justify-between gap-4 px-3 py-3">
       <span>
-        <span className="block text-sm font-semibold text-[#241f18]">{label}</span>
-        <span className="mt-1 block text-xs leading-relaxed text-[#675d4f]">
-          {description}
-        </span>
+        <span className="block text-sm font-medium">{label}</span>
+        <span className="sift-v3-settings-desc mt-1 block text-xs leading-relaxed">{description}</span>
       </span>
       <input
         type="checkbox"
         checked={checked}
         disabled={disabled}
         onChange={(event) => onChange(event.target.checked)}
-        className="mt-1 h-5 w-5 accent-[#65765c]"
+        className="mt-1 h-5 w-5"
       />
     </label>
   );
@@ -493,7 +475,7 @@ function SettingsLink({ label, href }: { label: string; href: string }) {
   return (
     <a
       href={href}
-      className="rounded-xl border border-[#d7c8b4] bg-[#f6efe3] px-3 py-2 text-sm font-medium text-[#2f2a22] transition hover:border-[#6c7d63]/45 hover:bg-[#efe5d5]"
+      className="sift-v3-settings-link block px-3 py-2 text-sm font-medium"
     >
       {label}
     </a>
@@ -525,10 +507,8 @@ function PreferenceCardGroup<TValue extends string>({
               type="button"
               onClick={() => onChange(selected ? undefined : option.value)}
               className={cn(
-                "rounded-xl border px-3 py-2 text-left text-sm font-medium transition",
-                selected
-                  ? "border-[#65765c] bg-[#e7eddf] text-[#202018]"
-                  : "border-[#d7c8b4] bg-[#f6efe3] text-[#5f5548] hover:border-[#6c7d63]/45 hover:text-[#241f18]",
+                "sift-v3-pref-chip px-3 py-2 text-left text-sm font-medium",
+                selected && "selected",
               )}
               aria-pressed={selected}
             >
