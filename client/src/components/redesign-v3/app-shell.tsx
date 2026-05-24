@@ -4,20 +4,12 @@ import { Settings } from "lucide-react";
 import { LogoMark } from "@/components/brand";
 import { cn } from "@/lib/utils";
 import { EnergyCanvas, EnergyIndicator } from "./energy-canvas";
+import {
+  confirmLeavingUnsavedGuestSift,
+  requestNewSiftEntry,
+} from "@/lib/start-new-sift-entry";
 
 export type SiftAppTab = "composer" | "library" | "patterns";
-
-function confirmLeavingUnsavedGuestSift() {
-  try {
-    if (typeof sessionStorage === "undefined") return true;
-    if (!sessionStorage.getItem("sift.unsavedGuestSift")) return true;
-  } catch {
-    return true;
-  }
-  return window.confirm(
-    "This Sift is only temporary right now. Leave without saving it?",
-  );
-}
 
 export function SiftTopNav({
   activeTab,
@@ -35,15 +27,23 @@ export function SiftTopNav({
   const [, setLocation] = useLocation();
 
   const goComposer = () => {
-    if (activeTab === "composer") return;
+    if (activeTab === "composer") {
+      requestNewSiftEntry();
+      return;
+    }
     if (!confirmLeavingUnsavedGuestSift()) return;
-    window.dispatchEvent(new CustomEvent("sift:home-reset"));
+    requestNewSiftEntry();
     setLocation("/sift");
-    window.setTimeout(() => {
-      window.dispatchEvent(
-        new CustomEvent("sift:focus-composer", { detail: { select: true } }),
-      );
-    }, 80);
+  };
+
+  const startNewEntry = () => {
+    if (activeTab === "composer") {
+      requestNewSiftEntry();
+      return;
+    }
+    if (!confirmLeavingUnsavedGuestSift()) return;
+    requestNewSiftEntry();
+    setLocation("/sift");
   };
 
   const goLibrary = () => {
@@ -60,10 +60,15 @@ export function SiftTopNav({
 
   return (
     <nav className={cn("v3-top-nav", className)} aria-label="App">
-      <div className="v3-nav-brand" aria-label="Sift">
+      <button
+        type="button"
+        className="v3-nav-brand"
+        aria-label="New entry"
+        onClick={startNewEntry}
+      >
         <LogoMark size={20} />
         <span className="v3-nav-logo">sift</span>
-      </div>
+      </button>
 
       <div className="v3-nav-tabs" role="tablist">
         <button
@@ -97,6 +102,13 @@ export function SiftTopNav({
 
       <div className="v3-nav-right">
         {activeTab === "composer" ? <EnergyIndicator text={composerText} /> : null}
+        <button
+          type="button"
+          className="v3-nav-new-entry"
+          onClick={startNewEntry}
+        >
+          New entry
+        </button>
         <button
           type="button"
           onClick={() => onSettingsClick?.()}

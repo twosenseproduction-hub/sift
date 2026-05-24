@@ -1,5 +1,6 @@
 import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
+import { requestNewSiftEntry } from "@/lib/start-new-sift-entry";
 
 export type SidebarRecentItem = {
   id: string;
@@ -36,7 +37,10 @@ export function V3AppSidebar({
         <button
           type="button"
           className={cn("v3-sidebar-item v3-sidebar-item-btn", onComposer && "active")}
-          onClick={() => setLocation("/sift")}
+          onClick={() => {
+            if (!requestNewSiftEntry()) return;
+            if (!onComposer) setLocation("/sift");
+          }}
         >
           <span className="v3-sidebar-dot" aria-hidden />
           <span>New entry</span>
