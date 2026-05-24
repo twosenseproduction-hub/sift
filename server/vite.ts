@@ -1,4 +1,4 @@
-import { type Express } from "express";
+import express, { type Express } from "express";
 import { createServer as createViteServer, createLogger } from "vite";
 import { type Server } from "http";
 import viteConfig from "../vite.config";
@@ -34,6 +34,17 @@ export async function setupVite(server: Server, app: Express) {
     server: serverOptions,
     appType: "custom",
   });
+
+  // Serve standalone HTML mocks from client/public/mockups before Vite + SPA fallback,
+  // so requests like /mockups/*.html never get index.html when Vite passes through.
+  const mockupsDir = path.resolve(
+    import.meta.dirname,
+    "..",
+    "client",
+    "public",
+    "mockups",
+  );
+  app.use("/mockups", express.static(mockupsDir));
 
   app.use(vite.middlewares);
 

@@ -48,7 +48,10 @@ export function clearHashSearchParam(...keys: string[]) {
   try {
     const h = window.location.hash;
     const qi = h.indexOf("?");
-    const path = qi === -1 ? h.replace(/^#/, "") || "/" : h.slice(1, qi + 1).replace(/^\/?/, "/").split("?")[0];
+    const path =
+      qi === -1
+        ? h.replace(/^#/, "") || "/"
+        : h.slice(1, qi) || "/";
     const params = parseHashSearchParams();
     for (const key of keys) params.delete(key);
     const qs = params.toString();

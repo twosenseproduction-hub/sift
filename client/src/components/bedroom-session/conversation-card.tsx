@@ -27,6 +27,7 @@ export function ConversationCard({
   onToggleNextStep,
   footerVisible = false,
   emptyState,
+  recapSlot,
 }: {
   bubbles: ChatBubble[];
   thinking: boolean;
@@ -37,6 +38,8 @@ export function ConversationCard({
   onToggleNextStep: () => void;
   footerVisible?: boolean;
   emptyState?: ReactNode;
+  /** When set, replaces the default RecapStrip (e.g. redesign v3 output). */
+  recapSlot?: ReactNode;
 }) {
   const hasSift = useMemo(
     () => bubbles.some((b) => b.role === "sift"),
@@ -108,11 +111,13 @@ export function ConversationCard({
 
       {phase === "structured" && recap && hasSift ? (
         <div className="max-h-[min(34dvh,38%)] min-h-0 shrink overflow-y-auto px-3 sm:px-4 [-webkit-overflow-scrolling:touch]">
-          <RecapStrip
-            recap={recap}
-            nextStepDone={nextStepDone}
-            onToggleNextStep={onToggleNextStep}
-          />
+          {recapSlot ?? (
+            <RecapStrip
+              recap={recap}
+              nextStepDone={nextStepDone}
+              onToggleNextStep={onToggleNextStep}
+            />
+          )}
         </div>
       ) : null}
 

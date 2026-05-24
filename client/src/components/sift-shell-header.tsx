@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Settings } from "lucide-react";
 import { LogoMark } from "@/components/brand";
 import { cn } from "@/lib/utils";
@@ -10,13 +11,15 @@ export function SiftShellHeader({
   className,
   onSettingsClick,
   settingsTestId = "button-settings",
+  centerSlot,
 }: {
   className?: string;
   onSettingsClick?: () => void;
   settingsTestId?: string;
+  centerSlot?: ReactNode;
 }) {
   return (
-    <header className={cn("bg-transparent py-2 sm:py-3", className)}>
+    <header className={cn("sift-shell-header bg-transparent py-2 sm:py-3", className)}>
       <div className="mx-auto flex w-full max-w-3xl items-center justify-between gap-3">
         <div
           className="flex items-center gap-2 text-[color:var(--color-text)]"
@@ -25,6 +28,12 @@ export function SiftShellHeader({
           <LogoMark size={22} />
           <span className="font-serif text-[17px] tracking-[-0.03em]">Sift</span>
         </div>
+
+        {centerSlot ? (
+          <div className="flex flex-1 justify-center">{centerSlot}</div>
+        ) : (
+          <div className="flex-1" />
+        )}
 
         <button
           type="button"

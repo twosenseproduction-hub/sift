@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import type {
   Bookmark,
   ClientTranscriptTurn,
@@ -18,18 +19,11 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { AuthDialog } from "@/components/auth-dialog";
 import { CareScreen } from "@/components/care-screen";
-import { SiftBottomNav } from "@/components/sift-bottom-nav";
-import { SiftShellHeader } from "@/components/sift-shell-header";
 import {
-  ConversationCard,
   type ChatBubble,
 } from "@/components/bedroom-session/conversation-card";
 import type { RecapModel } from "@/components/bedroom-session/recap-card";
-import {
-  Composer,
-  EmptyConversationState,
-  SiftReadyPrompt,
-} from "@/components/bedroom-session/first-use-flow";
+import { SiftReadyPrompt } from "@/components/bedroom-session/first-use-flow";
 import { BedroomSortPromptCard } from "@/components/bedroom-session/bedroom-sort-prompt";
 import {
   BedroomSummarySheet,
@@ -42,13 +36,24 @@ import {
   type OnboardingStep,
 } from "@/components/onboarding/sift-onboarding-flow";
 import { RedundancyGateCard } from "@/components/bedroom-session/redundancy-gate-card";
-import { SiftBaseBackground } from "@/components/bedroom-session/sift-base-background";
+import {
+  NextStepSystem,
+  RedesignV3RecapOutput,
+  SiftAppShell,
+  V3AppSidebar,
+  V3ComposerBox,
+  V3ConversationThread,
+} from "@/components/redesign-v3";
+import { RedesignV3EmptyComposer } from "@/components/redesign-v3/empty-composer";
+import { ComposerIntro } from "@/components/redesign-v3/composer-intro";
+import { useRedesignV3 } from "@/lib/use-redesign-v3";
 import { ToastAction } from "@/components/ui/toast";
 import { useMe, useUpdateSupportProfile } from "@/lib/auth";
 import {
   clearHashSearchParam,
   parseHashSearchParams,
 } from "@/lib/notifications";
+import { useDailyPrompt } from "@/lib/useDailyPrompt";
 import {
   mergeSupportProfiles,
   readLocalSupportProfile,
@@ -378,6 +383,12 @@ export default function Home() {
   const [nextStepDone, setNextStepDone] = useState(false);
   const [showReturnStepStrip, setShowReturnStepStrip] = useState(false);
   const [nextStepLoopBusy, setNextStepLoopBusy] = useState(false);
+  const [nextStepCommitted, setNextStepCommitted] = useState(false);
+  const [microDoneCount, setMicroDoneCount] = useState(0);
+  const [microTotal, setMicroTotal] = useState(4);
+  const [releaseOpen, setReleaseOpen] = useState(false);
+  const { enabled: redesignV3 } = useRedesignV3();
+  const redesignV3Booted = useRef(false);
   const [voiceListening, setVoiceListening] = useState(false);
   const voiceRecognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const voiceBaseTextRef = useRef("");
@@ -390,11 +401,9 @@ export default function Home() {
   const [unsavedGuestSiftId, setUnsavedGuestSiftId] = useState<string | null>(null);
   const [guestSavePromptDismissed, setGuestSavePromptDismissed] = useState(false);
   const [supportProfileOpen, setSupportProfileOpen] = useState(false);
-  const [dailyPromptHandoff, setDailyPromptHandoff] = useState<{
-    text: string;
-    themeName?: string;
-  } | null>(null);
   const dailyPromptDeepLinkHandled = useRef(false);
+  const { data: dailyPromptData, isLoading: dailyPromptLoading } =
+    useDailyPrompt();
   const [onboardingStep, setOnboardingStep] = useState<OnboardingStep>("welcome");
   const [onboardingDraft, setOnboardingDraft] = useState<SupportProfileUpdateRequest>(
     () => ({
@@ -696,6 +705,36 @@ export default function Home() {
         : null,
     [latestExchangeComplete, phase, recap],
   );
+
+  const dailyPromptCard = useMemo(() => {
+    if (!dailyPromptData?.prompt?.text) return null;
+    const text = dailyPromptData.prompt.text.trim();
+    if (!text) return null;
+    return {
+      themeName: dailyPromptData.theme.name,
+      promptText: text,
+      promptType: dailyPromptData.prompt.type,
+    };
+  }, [dailyPromptData]);
+
+  const dailyPromptActive = useMemo(() => {
+    if (!dailyPromptCard) return false;
+    return composer.trim() === dailyPromptCard.promptText;
+  }, [composer, dailyPromptCard]);
+
+  const librarySidebarQuery = useQuery<{ items: Array<{ id: string; title: string }> }>({
+    queryKey: ["/api/library"],
+    enabled: Boolean(me),
+  });
+  const sidebarRecent = useMemo(
+    () =>
+      (librarySidebarQuery.data?.items ?? []).map((item) => ({
+        id: item.id,
+        title: item.title,
+      })),
+    [librarySidebarQuery.data],
+  );
+
   const avatarState: AvatarState = avatarCelebrating
     ? "celebrating"
     : thinking
@@ -780,7 +819,6 @@ export default function Home() {
 
   const selectStarterPrompt = useCallback((prompt: string) => {
     setComposer(prompt);
-    setDailyPromptHandoff(null);
     window.setTimeout(
       () =>
         window.dispatchEvent(
@@ -788,48 +826,6 @@ export default function Home() {
         ),
       0,
     );
-  }, []);
-
-  useEffect(() => {
-    if (dailyPromptDeepLinkHandled.current) return;
-    const params = parseHashSearchParams();
-    if (params.get("dailyPrompt") !== "1") return;
-    const promptId = params.get("promptId");
-    if (!promptId) return;
-    dailyPromptDeepLinkHandled.current = true;
-
-    const hour = new Date().getHours();
-    void (async () => {
-      try {
-        const res = await apiRequest(
-          "GET",
-          `/api/daily-prompt?promptId=${encodeURIComponent(promptId)}&hour=${hour}`,
-        );
-        const data = await res.json();
-        if (data?.prompt?.text) {
-          setComposer(data.prompt.text);
-          setDailyPromptHandoff({
-            text: data.prompt.text,
-            themeName: data.theme?.name,
-          });
-          setChatOpen(true);
-          setChatRevealed(true);
-          window.setTimeout(
-            () =>
-              window.dispatchEvent(
-                new CustomEvent("sift:focus-composer", {
-                  detail: { select: false },
-                }),
-              ),
-            0,
-          );
-        }
-      } catch {
-        // Land quietly on home if the handoff fails.
-      } finally {
-        clearHashSearchParam("dailyPrompt", "promptId");
-      }
-    })();
   }, []);
 
   const stopVoiceInput = useCallback(() => {
@@ -1291,10 +1287,73 @@ export default function Home() {
   }, [location, openChat, setLocation]);
 
   useEffect(() => {
+    if (dailyPromptDeepLinkHandled.current) return;
+    const params = parseHashSearchParams();
+    if (params.get("dailyPrompt") !== "1") return;
+    const promptId = params.get("promptId");
+    if (!promptId) return;
+    dailyPromptDeepLinkHandled.current = true;
+
+    const hour = new Date().getHours();
+    void (async () => {
+      try {
+        const res = await apiRequest(
+          "GET",
+          `/api/daily-prompt?promptId=${encodeURIComponent(promptId)}&hour=${hour}`,
+        );
+        const data = await res.json();
+        if (data?.prompt?.text) {
+          beginLiveSift(false);
+          setComposer(data.prompt.text);
+          window.setTimeout(
+            () =>
+              window.dispatchEvent(
+                new CustomEvent("sift:focus-composer", {
+                  detail: { select: false },
+                }),
+              ),
+            0,
+          );
+        }
+      } catch {
+        // Land quietly on home if the handoff fails.
+      } finally {
+        clearHashSearchParam("dailyPrompt", "promptId");
+      }
+    })();
+  }, [beginLiveSift]);
+
+  useEffect(() => {
     if (isSiftRoute && !chatOpen) {
       openChat(false);
     }
   }, [chatOpen, isSiftRoute, openChat]);
+
+  useEffect(() => {
+    const onboarding =
+      !onboardingComplete &&
+      !me &&
+      !activeSiftOwnsSurface &&
+      !siftId &&
+      bubbles.length === 0;
+    if (!redesignV3 || redesignV3Booted.current || onboarding) return;
+    if (chatOpen || isSiftRoute) {
+      redesignV3Booted.current = true;
+      return;
+    }
+    redesignV3Booted.current = true;
+    beginLiveSift(false);
+  }, [
+    beginLiveSift,
+    bubbles.length,
+    chatOpen,
+    isSiftRoute,
+    me,
+    onboardingComplete,
+    redesignV3,
+    activeSiftOwnsSurface,
+    siftId,
+  ]);
 
   const finishOnboarding = useCallback(async () => {
     const profile = completeOnboardingProfile({
@@ -1341,162 +1400,15 @@ export default function Home() {
     !siftId &&
     bubbles.length === 0;
 
+  const sidebarActiveStep =
+    nextStepCommitted && recap?.nextStep
+      ? recap.nextStep
+      : showReturnStepStrip
+        ? recap?.nextStep
+        : null;
+
   return (
-    <div
-      className={cn(
-        "bedroom-session sift-base-session relative flex min-h-[100dvh] flex-col overflow-x-hidden bg-[color:var(--color-bg)] text-[color:var(--color-text)]",
-        baseMode === "light" && "sift-base-light-session",
-        activeSiftOwnsSurface && "sift-active-session",
-      )}
-    >
-      <SiftBaseBackground mode={baseMode} />
-      <SiftShellHeader
-        className="pointer-events-auto fixed inset-x-0 top-0 z-[30] bg-transparent px-4 pt-[max(env(safe-area-inset-top),0.35rem)] sm:px-5"
-        onSettingsClick={() => setSupportProfileOpen(true)}
-        settingsTestId="button-home-settings"
-      />
-
-      <div className="pointer-events-none relative z-10 flex w-full shrink-0 flex-col pb-8">
-        <div className="relative z-[18] flex w-full flex-col items-center gap-3 px-4 sm:px-5">
-          {me && !activeSiftOwnsSurface && !showOnboarding ? (
-            <HomeReEntryHint enabled mode={baseMode} className="mb-1" />
-          ) : null}
-          {gate ? (
-            <div className="pointer-events-auto w-full max-w-[640px] shrink-0">
-              <RedundancyGateCard
-                gate={gate}
-                busy={gateBusy}
-                onSomethingChanged={onGateSomethingChanged}
-                onKnowThis={onGateKnowThis}
-              />
-            </div>
-          ) : null}
-
-          {sortIntro && siftId ? (
-            <div className="pointer-events-auto w-full max-w-[640px] shrink-0">
-              <BedroomSortPromptCard
-                payload={sortIntro}
-                busy={sortBusy}
-                onSkip={() => void onSkipSort()}
-              />
-            </div>
-          ) : null}
-        </div>
-      </div>
-
-      {!activeSiftOwnsSurface && !showOnboarding ? (
-        <SiftBaseOpeningIntro mode={baseMode} onBegin={() => beginLiveSift(true)} />
-      ) : null}
-
-      {activeSiftOwnsSurface ? (
-        <div
-          className={cn(
-            "bedroom-chat-dock pointer-events-none fixed inset-x-0 bottom-0 z-[25] flex flex-col items-stretch transition-[opacity,transform] duration-500 ease-out",
-            chatRevealed
-              ? "translate-y-0 opacity-100"
-              : "translate-y-[calc(100%+2rem)] opacity-0",
-            SIFT_BASE_CHAT_DOCK_TOP,
-          )}
-        >
-          <div className="pointer-events-auto mx-auto flex h-full w-full max-w-[720px] items-end px-4 pb-[max(calc(0.75rem+env(safe-area-inset-bottom,0px)),1rem)] pt-0 sm:px-5">
-            <div
-              className={cn(
-                "bedroom-conversation-shell flex h-full min-h-0 w-full flex-col overflow-hidden rounded-3xl border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)] shadow-[var(--bedroom-paper-shadow)] transition-[max-height] duration-300 ease-out",
-                inSummaryMode
-                  ? "max-h-[72dvh] sm:max-h-[76dvh]"
-                  : "max-h-[68dvh] sm:max-h-[74dvh]",
-              )}
-              aria-label="Conversation"
-            >
-              <ConversationCard
-                bubbles={bubbles}
-                thinking={thinking}
-                recap={recapVisible}
-                phase={phase}
-                showCompanion={false}
-                nextStepDone={nextStepDone}
-                onToggleNextStep={() => setNextStepDone((v) => !v)}
-                footerVisible={shouldShowSummaryPrompt}
-                emptyState={
-                  !thinking ? (
-                    <EmptyConversationState
-                      disabled={composerLocked}
-                      onStarterSelect={selectStarterPrompt}
-                    />
-                  ) : null
-                }
-              />
-              {!me && unsavedGuestSiftId && !guestSavePromptDismissed ? (
-                <GuestSavePrompt
-                  onSave={() => openAuth("signup")}
-                  onDismiss={() => setGuestSavePromptDismissed(true)}
-                />
-              ) : null}
-              {showReturnStepStrip && recap?.nextStep && siftId && !thinking ? (
-                <NextStepReturnStrip
-                  nextStep={recap.nextStep}
-                  busy={nextStepLoopBusy}
-                  onDidIt={() => void handleNextStepLoop("did_it")}
-                  onDidNot={() => void handleNextStepLoop("did_not")}
-                  onKeepGoing={() => void handleNextStepLoop("in_progress")}
-                />
-              ) : null}
-              {shouldShowSummaryPrompt ? (
-                <SiftReadyPrompt
-                  busy={thinking}
-                  onRequestSummary={() => void onRequestSummary()}
-                  onDismiss={() => setSummaryPromptHidden(true)}
-                />
-              ) : null}
-              {dailyPromptHandoff ? (
-                <div className="mx-3 mb-2 shrink-0 rounded-2xl border border-[color:var(--color-border-soft)] bg-[color:var(--color-surface)]/88 px-3 py-2.5 shadow-[var(--bedroom-tray-shadow)] sm:mx-4">
-                  <p className="text-[11px] font-medium uppercase tracking-[0.05em] text-[color:var(--color-text-muted)]">
-                    Today&apos;s check-in
-                    {dailyPromptHandoff.themeName
-                      ? ` · ${dailyPromptHandoff.themeName}`
-                      : ""}
-                  </p>
-                  <p className="mt-1 text-[13px] leading-relaxed text-[color:var(--color-text)]">
-                    The prompt is in the composer — edit it or send when ready.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => setDailyPromptHandoff(null)}
-                    className="mt-2 text-[11px] text-[color:var(--color-text-muted)] underline-offset-4 hover:text-[color:var(--color-text)] hover:underline"
-                  >
-                    Dismiss
-                  </button>
-                </div>
-              ) : null}
-              <Composer
-                className="w-full shrink-0"
-                variant="embedded"
-                value={composer}
-                onChange={setComposer}
-                onSubmit={() => void submit()}
-                disabled={composerLocked}
-                onVoiceClick={toggleVoiceInput}
-                voiceListening={voiceListening}
-              />
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      <BedroomSummarySheet
-        summary={summary}
-        done={summaryDone}
-        activeStep={activeStep}
-        minimized={summarySheetMinimized}
-        onMinimizedChange={setSummarySheetMinimized}
-        onStartActiveStep={startActiveStep}
-        onCompleteActiveStepItem={completeActiveStepItem}
-        onToggleDone={() => setSummaryDone((v) => !v)}
-        onDismiss={() => {
-          setSummarySheetMinimized(true);
-        }}
-      />
-
+    <>
       {showOnboarding ? (
         <SiftOnboardingFlow
           step={onboardingStep}
@@ -1520,35 +1432,178 @@ export default function Home() {
           }}
           onFinish={() => void finishOnboarding()}
         />
-      ) : null}
+      ) : (
+        <SiftAppShell
+          activeTab="composer"
+          composerText={composer}
+          onSettingsClick={() => setSupportProfileOpen(true)}
+          settingsTestId="button-home-settings"
+        >
+          <div className="v3-home-layout">
+            <V3AppSidebar
+              recentItems={sidebarRecent}
+              userHandle={me?.handle ?? null}
+              activeStep={sidebarActiveStep}
+              microDoneCount={microDoneCount}
+              microTotal={microTotal}
+              onRelease={recap?.nextStep ? () => setReleaseOpen(true) : undefined}
+            />
 
-      <SiftBottomNav
-        hidden={activeSiftOwnsSurface || showOnboarding}
-        variant="pill"
-        onSiftClick={() => beginLiveSift(true)}
-      />
+            <main className="v3-composer-area">
+              {me ? (
+                <HomeReEntryHint enabled mode={baseMode} className="mb-4" />
+              ) : null}
 
-      <AuthDialog open={authOpen} onOpenChange={setAuthOpen} initialMode={authMode} baseMode={baseMode} />
-      <SupportProfileDialog
-        open={supportProfileOpen}
-        onOpenChange={setSupportProfileOpen}
-        profile={effectiveSupportProfile}
-        canPersist={Boolean(me)}
-        baseMode={baseMode}
-        onBaseModeChange={setBaseMode}
-        onSaveLocal={(profile) => {
-          setLocalOnboardingProfile(profile);
-          writeLocalSupportProfile(profile);
-          if (profile?.theme === "light") setBaseMode("light");
-          if (profile?.theme === "dark") setBaseMode("dark");
-        }}
-        me={me ?? null}
-        onRequestSignIn={() => {
-          setSupportProfileOpen(false);
-          openAuth("signin");
-        }}
-      />
-    </div>
+              {gate ? (
+                <div className="v3-stack-block">
+                  <RedundancyGateCard
+                    gate={gate}
+                    busy={gateBusy}
+                    onSomethingChanged={onGateSomethingChanged}
+                    onKnowThis={onGateKnowThis}
+                  />
+                </div>
+              ) : null}
+
+              {sortIntro && siftId ? (
+                <div className="v3-stack-block">
+                  <BedroomSortPromptCard
+                    payload={sortIntro}
+                    busy={sortBusy}
+                    onSkip={() => void onSkipSort()}
+                  />
+                </div>
+              ) : null}
+
+              {bubbles.length === 0 && !thinking ? (
+                <RedesignV3EmptyComposer
+                  disabled={composerLocked}
+                  onStarterSelect={selectStarterPrompt}
+                  dailyPrompt={dailyPromptCard}
+                  dailyPromptLoading={dailyPromptLoading}
+                  dailyPromptActive={dailyPromptActive}
+                />
+              ) : (
+                <>
+                  <ComposerIntro className="mb-6" />
+                  <V3ConversationThread bubbles={bubbles} thinking={thinking} />
+                </>
+              )}
+
+              <V3ComposerBox
+                className="mt-2"
+                value={composer}
+                onChange={setComposer}
+                onSubmit={() => void submit()}
+                disabled={composerLocked}
+                onVoiceClick={toggleVoiceInput}
+                voiceListening={voiceListening}
+                thinking={thinking}
+              />
+
+              {!me && unsavedGuestSiftId && !guestSavePromptDismissed ? (
+                <GuestSavePrompt
+                  onSave={() => openAuth("signup")}
+                  onDismiss={() => setGuestSavePromptDismissed(true)}
+                />
+              ) : null}
+
+              {shouldShowSummaryPrompt ? (
+                <div className="mt-4">
+                  <SiftReadyPrompt
+                    busy={thinking}
+                    onRequestSummary={() => void onRequestSummary()}
+                    onDismiss={() => setSummaryPromptHidden(true)}
+                  />
+                </div>
+              ) : null}
+
+              {recapVisible ? (
+                <div className="mt-8 border-t border-[color:var(--v3-border)] pt-8">
+                  <RedesignV3RecapOutput
+                    recap={recapVisible}
+                    busy={nextStepLoopBusy}
+                    onDidIt={() => void handleNextStepLoop("did_it")}
+                    onDidNot={() => void handleNextStepLoop("did_not")}
+                    onKeepGoing={() => void handleNextStepLoop("in_progress")}
+                    onCommitChange={setNextStepCommitted}
+                    onMicroProgress={(done, total) => {
+                      setMicroDoneCount(done);
+                      setMicroTotal(total);
+                    }}
+                    releaseOpen={releaseOpen}
+                    onReleaseOpenChange={setReleaseOpen}
+                  />
+                </div>
+              ) : null}
+
+              {showReturnStepStrip &&
+              recap?.nextStep &&
+              siftId &&
+              !thinking &&
+              !recapVisible ? (
+                <div className="mt-8">
+                  <NextStepSystem
+                    nextStep={recap.nextStep}
+                    busy={nextStepLoopBusy}
+                    onDidIt={() => void handleNextStepLoop("did_it")}
+                    onDidNot={() => void handleNextStepLoop("did_not")}
+                    onKeepGoing={() => void handleNextStepLoop("in_progress")}
+                    onCommitChange={setNextStepCommitted}
+                    onMicroProgress={(done, total) => {
+                      setMicroDoneCount(done);
+                      setMicroTotal(total);
+                    }}
+                    releaseOpen={releaseOpen}
+                    onReleaseOpenChange={setReleaseOpen}
+                  />
+                </div>
+              ) : null}
+            </main>
+          </div>
+
+          <BedroomSummarySheet
+            summary={summary}
+            done={summaryDone}
+            activeStep={activeStep}
+            minimized={summarySheetMinimized}
+            onMinimizedChange={setSummarySheetMinimized}
+            onStartActiveStep={startActiveStep}
+            onCompleteActiveStepItem={completeActiveStepItem}
+            onToggleDone={() => setSummaryDone((v) => !v)}
+            onDismiss={() => {
+              setSummarySheetMinimized(true);
+            }}
+          />
+
+          <AuthDialog
+            open={authOpen}
+            onOpenChange={setAuthOpen}
+            initialMode={authMode}
+            baseMode={baseMode}
+          />
+          <SupportProfileDialog
+            open={supportProfileOpen}
+            onOpenChange={setSupportProfileOpen}
+            profile={effectiveSupportProfile}
+            canPersist={Boolean(me)}
+            baseMode={baseMode}
+            onBaseModeChange={setBaseMode}
+            onSaveLocal={(profile) => {
+              setLocalOnboardingProfile(profile);
+              writeLocalSupportProfile(profile);
+              if (profile?.theme === "light") setBaseMode("light");
+              if (profile?.theme === "dark") setBaseMode("dark");
+            }}
+            me={me ?? null}
+            onRequestSignIn={() => {
+              setSupportProfileOpen(false);
+              openAuth("signin");
+            }}
+          />
+        </SiftAppShell>
+      )}
+    </>
   );
 }
 

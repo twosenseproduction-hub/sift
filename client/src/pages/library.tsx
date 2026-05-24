@@ -14,9 +14,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { LibrarySiftDetail, LibrarySiftItem, SupportProfile, ThreadTurn } from "@shared/schema";
-import { SiftBaseBackground } from "@/components/bedroom-session/sift-base-background";
-import { SiftBottomNav, SIFT_BOTTOM_NAV_RESERVE } from "@/components/sift-bottom-nav";
-import { SiftShellHeader } from "@/components/sift-shell-header";
+import { SiftAppShell } from "@/components/redesign-v3";
 import { AuthDialog } from "@/components/auth-dialog";
 import { SupportProfileDialog } from "@/components/support-profile-dialog";
 import { useMe } from "@/lib/auth";
@@ -107,62 +105,82 @@ export default function LibraryPage() {
   }, [items, query, filter]);
 
   return (
-    <main
-      className={cn(
-        "bedroom-session sift-base-session relative min-h-[100dvh] overflow-x-hidden bg-[color:var(--color-bg)] text-[color:var(--color-text)]",
-        baseMode === "light" && "sift-base-light-session",
-      )}
+    <SiftAppShell
+      activeTab="library"
+      onSettingsClick={() => setSupportProfileOpen(true)}
+      settingsTestId="button-library-settings"
     >
-      <SiftBaseBackground mode={baseMode} />
-      <SiftShellHeader
-        className="pointer-events-auto fixed inset-x-0 top-0 z-[30] bg-transparent px-4 pt-[max(env(safe-area-inset-top),0.35rem)] sm:px-5"
-        onSettingsClick={() => setSupportProfileOpen(true)}
-        settingsTestId="button-library-settings"
-      />
-      <div
-        className={cn(
-          "relative z-[30] mx-auto flex min-h-[100dvh] w-full max-w-[560px] flex-col px-4 sm:px-6",
-          "pt-[max(calc(env(safe-area-inset-top,0px)+3.75rem),4rem)]",
-          SIFT_BOTTOM_NAV_RESERVE,
-        )}
-      >
-        <section className="rounded-[2rem] border border-[#e1d5c5] bg-[#fbf7ef] p-4 shadow-[0_28px_90px_-50px_rgba(41,38,31,0.68)] sm:p-6">
-          {!me ? (
-            <div className="py-10 text-center">
-              <h1 className="font-serif text-3xl tracking-[-0.04em] text-[#241f18]">
-                Save your clarity.
-              </h1>
-              <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-[#675d4f]">
-                Create your space to keep Sifts, return later, and build a Library over time.
-              </p>
-              <button
-                type="button"
-                onClick={() => openAuth("signup")}
-                className="mt-5 rounded-full bg-[#1f6f72] px-5 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-[#1a5f62]"
-              >
-                Keep this Sift
-              </button>
+      {!me ? (
+        <div className="v3-library-main">
+          <div className="v3-empty-state py-16 text-center">
+            <p className="v3-empty-state-title">Save your clarity.</p>
+            <p className="mt-3 max-w-md mx-auto">
+              Create your space to keep Sifts, return later, and build a Library over time.
+            </p>
+            <button
+              type="button"
+              onClick={() => openAuth("signup")}
+              className="v3-sift-btn mt-6"
+            >
+              Keep this Sift
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="v3-library-layout">
+          <aside className="v3-library-filters">
+            <h1 className="v3-filter-title">Library</h1>
+            <div className="v3-filter-group">
+              <p className="v3-filter-group-label">Browse</p>
+              <div className="v3-filter-chips">
+                {FILTERS.map(({ id, label }) => (
+                  <button
+                    key={id}
+                    type="button"
+                    className={cn("v3-filter-chip", filter === id && "active")}
+                    onClick={() => setFilter(id)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
-          ) : selectedId ? (
-            <LibraryDetail
-              item={detailQuery.data?.item}
-              loading={detailQuery.isLoading}
-              onBack={() => setLocation("/library")}
-            />
-          ) : (
-            <LibraryList
-              items={filtered}
-              recurringThemes={listQuery.data?.recurringThemes ?? []}
-              filter={filter}
-              query={query}
-              loading={listQuery.isLoading}
-              onQueryChange={setQuery}
-              onFilterChange={setFilter}
-            />
-          )}
-        </section>
-      </div>
-      <SiftBottomNav variant="pill" />
+            {listQuery.data?.recurringThemes?.length ? (
+              <div className="v3-filter-group">
+                <p className="v3-filter-group-label">Themes</p>
+                <div className="v3-filter-chips">
+                  {listQuery.data.recurringThemes.slice(0, 4).map((theme) => (
+                    <span key={theme.label} className="v3-filter-chip">
+                      {theme.label} · {theme.count}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </aside>
+
+          <div className="v3-library-main">
+            {selectedId ? (
+              <LibraryDetail
+                item={detailQuery.data?.item}
+                loading={detailQuery.isLoading}
+                onBack={() => setLocation("/library")}
+              />
+            ) : (
+              <LibraryList
+                items={filtered}
+                recurringThemes={listQuery.data?.recurringThemes ?? []}
+                filter={filter}
+                query={query}
+                loading={listQuery.isLoading}
+                onQueryChange={setQuery}
+                onFilterChange={setFilter}
+              />
+            )}
+          </div>
+        </div>
+      )}
+
       <AuthDialog open={authOpen} onOpenChange={setAuthOpen} initialMode={authMode} baseMode={baseMode} />
       <SupportProfileDialog
         open={supportProfileOpen}
@@ -183,13 +201,12 @@ export default function LibraryPage() {
           openAuth("signin");
         }}
       />
-    </main>
+    </SiftAppShell>
   );
 }
 
 function LibraryList({
   items,
-  recurringThemes,
   filter,
   query,
   loading,
@@ -197,95 +214,69 @@ function LibraryList({
   onFilterChange,
 }: {
   items: LibrarySiftItem[];
-  recurringThemes: Array<{ label: string; count: number }>;
+  recurringThemes?: Array<{ label: string; count: number }>;
   filter: LibraryFilter;
   query: string;
   loading: boolean;
   onQueryChange: (query: string) => void;
   onFilterChange: (filter: LibraryFilter) => void;
 }) {
-  const [expandedId, setExpandedId] = useState<string | null>(items[0]?.id ?? null);
-
-  useEffect(() => {
-    if (!expandedId && items[0]) setExpandedId(items[0].id);
-  }, [expandedId, items]);
-
   return (
     <div>
-      <div className="mb-5">
-        <h1 className="font-serif text-[42px] leading-none tracking-[-0.055em] text-[#0f4f52] sm:text-[48px]">
-          Library
-        </h1>
-        <p className="mt-2 text-[15px] leading-relaxed text-[#5f5548]">
-          Your past clarity, organized.
+      <div className="v3-library-header">
+        <p className="v3-library-count">
+          {loading ? "Opening the shelves…" : `${items.length} saved ${items.length === 1 ? "sift" : "sifts"}`}
         </p>
-      </div>
-
-      <div className="mb-4 rounded-2xl border border-[#e1d5c5] bg-[#fffaf5] shadow-[0_14px_36px_-32px_rgba(48,38,25,0.8)]">
-        <div className="flex items-center gap-3 px-4 py-3">
-          <Search className="h-4 w-4 shrink-0 text-[#1f6f72]" />
         <input
           value={query}
           onChange={(event) => onQueryChange(event.target.value)}
           placeholder="Search your sessions"
-          className="min-w-0 flex-1 bg-transparent text-sm text-[#2f2a22] outline-none placeholder:text-[#a59784]"
+          className="v3-search-input"
         />
-        </div>
       </div>
 
-      <div className="mb-5 flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {FILTERS.map(({ id, label, Icon }) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => onFilterChange(id)}
-              className={filterChipClass(filter === id)}
-            >
-              {filter === id ? null : <Icon className="h-3.5 w-3.5" />}
-              {label}
-            </button>
+      <div className="v3-mobile-filters">
+        {FILTERS.map(({ id, label }) => (
+          <button
+            key={id}
+            type="button"
+            className={cn("v3-filter-chip", filter === id && "active")}
+            onClick={() => onFilterChange(id)}
+          >
+            {label}
+          </button>
         ))}
       </div>
 
-      {recurringThemes.length ? (
-        <div className="mb-5 rounded-2xl border border-[#d7c8b4] bg-[#fffaf5] p-3">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#726656]">
-            Recurring themes
-          </p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {recurringThemes.slice(0, 4).map((theme) => (
-              <span key={theme.label} className="rounded-full bg-[#e7f0eb] px-2.5 py-1 text-xs text-[#1f6f72]">
-                {theme.label} · {theme.count}
-              </span>
-            ))}
-          </div>
-          <p className="mt-2 text-xs leading-relaxed text-[#675d4f]">
-            These are observations from saved Sifts, not labels or diagnoses.
-          </p>
-        </div>
-      ) : null}
-
       {loading ? (
-        <p className="py-8 text-sm text-[#675d4f]">Opening the shelves...</p>
+        <p className="v3-empty-state">Opening the shelves…</p>
       ) : items.length ? (
-        <div className="space-y-3">
+        <div>
           {items.map((item) => (
-            <LibraryCard
-              key={item.id}
-              item={item}
-              expanded={expandedId === item.id}
-              onToggle={() => setExpandedId(expandedId === item.id ? null : item.id)}
-            />
+            <Link key={item.id} href={`/library/${item.id}`}>
+              <a className="v3-entry-row">
+                <V3EntryDate value={item.createdAt} />
+                <div>
+                  <p className="v3-entry-signal">{item.title}</p>
+                  <p className="v3-entry-preview">{item.summary}</p>
+                </div>
+                {item.tags[0] ? (
+                  <span className="v3-entry-tag">{item.tags[0]}</span>
+                ) : (
+                  <span />
+                )}
+              </a>
+            </Link>
           ))}
         </div>
       ) : (
-        <div className="rounded-2xl border border-[#d7c8b4] bg-[#fffaf2] p-6 text-sm leading-relaxed text-[#675d4f]">
-          <p className="font-serif text-lg text-[#241f18]">Your notebook is empty.</p>
+        <div className="v3-empty-state">
+          <p className="v3-empty-state-title">Your notebook is empty.</p>
           <p className="mt-2">
             Saved sifts land here with what mattered, what was noise, and the next step you left with.
           </p>
           <Link href="/sift">
-            <a className="mt-4 inline-flex text-[13px] font-medium text-[#1f6f72] underline-offset-4 hover:underline">
+            <a className="mt-4 inline-block text-[13px] text-[color:var(--v3-sage)] underline-offset-4 hover:underline">
               Start a sift
             </a>
           </Link>
@@ -413,6 +404,19 @@ function LibraryCard({
   );
 }
 
+function V3EntryDate({ value }: { value: number }) {
+  const date = new Date(value);
+  const month = new Intl.DateTimeFormat(undefined, { month: "short" }).format(date);
+  const day = new Intl.DateTimeFormat(undefined, { day: "numeric" }).format(date);
+  return (
+    <div className="v3-entry-date">
+      {month}
+      <br />
+      {day}
+    </div>
+  );
+}
+
 function DateBlock({ value }: { value: number }) {
   const date = new Date(value);
   const month = new Intl.DateTimeFormat(undefined, { month: "short" }).format(date);
@@ -489,180 +493,91 @@ function LibraryDetail({
 
   return (
     <div>
-      <button
-        type="button"
-        onClick={onBack}
-        className="mb-5 text-sm font-medium text-[#675d4f] transition hover:text-[#241f18]"
-      >
-        Back to Library
+      <button type="button" onClick={onBack} className="v3-detail-back">
+        ← Back to Library
       </button>
 
-      <article className="rounded-2xl border border-[#d7c8b4] bg-[#fffaf2] p-4 sm:p-5">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#675d4f]">
-          Clarity Sheet
-        </p>
-        <div className="mt-2 flex flex-wrap items-start justify-between gap-3">
+      <div className="v3-detail-meta">
+        <span className="v3-detail-date">{formatDate(item.createdAt)}</span>
+        {item.environment ? (
+          <span className="v3-entry-tag">{item.environment}</span>
+        ) : null}
+      </div>
+
+      <p className="v3-detail-tangle-label">What you brought</p>
+      <p className="v3-detail-tangle">{item.input || item.preview.summary}</p>
+
+      <hr className="v3-detail-divider" />
+
+      <div className="space-y-6">
+        <div>
+          <p className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--v3-leaf-accent)]">
+            Signal
+          </p>
+          <p className="mt-2 font-serif text-[22px] font-light leading-snug text-[color:var(--v3-text-primary)]">
+            {item.preview.summary}
+          </p>
+        </div>
+
+        {item.preview.matters?.length ? (
           <div>
-            <h1 className="font-serif text-[34px] leading-none tracking-[-0.045em] text-[#241f18]">
-              {item.title}
-            </h1>
-            <p className="mt-2 text-sm text-[#7a6e5d]">{formatDate(item.createdAt)}</p>
-          </div>
-          {item.environment ? (
-            <span className="rounded-full border border-[#d7c8b4] px-3 py-1.5 text-[11px] uppercase tracking-[0.12em] text-[#675d4f]">
-              {item.environment}
-            </span>
-          ) : null}
-        </div>
-
-        <p className="mt-5 text-[16px] leading-relaxed text-[#2f2a22]">
-          {item.preview.summary}
-        </p>
-
-        <div className="mt-5 grid gap-3 sm:grid-cols-2">
-          <SignalList title="What mattered" items={item.preview.matters} />
-          <SignalList title="What was noise" items={item.preview.noise} quiet />
-        </div>
-
-        {item.preview.nextStep ? (
-          <div className="mt-5 rounded-2xl border border-[#65765c]/25 bg-[#e7eddf] p-4">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#4f6048]">
-              Next step
+            <p className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--v3-leaf-accent)]">
+              What mattered
             </p>
-            <p className="mt-2 text-sm font-medium leading-relaxed text-[#25301f]">
-              {item.preview.nextStep}
-            </p>
-            <div className="mt-3 flex flex-wrap gap-3">
-              <Link href={`/s/${encodeURIComponent(item.id)}`}>
-                <a className="text-[13px] font-medium text-[#1f6f72] underline-offset-4 hover:underline">
-                  Continue thread
-                </a>
-              </Link>
-              <Link href={`/s/${encodeURIComponent(item.id)}`}>
-                <a className="text-[13px] font-medium text-[#746858] underline-offset-4 hover:underline">
-                  Check in on this step
-                </a>
-              </Link>
-            </div>
-          </div>
-        ) : (
-          <div className="mt-5">
-            <Link href={`/s/${encodeURIComponent(item.id)}`}>
-              <a className="text-[13px] font-medium text-[#1f6f72] underline-offset-4 hover:underline">
-                Continue thread
-              </a>
-            </Link>
-          </div>
-        )}
-
-        {item.movement ? (
-          <div className="mt-4 grid gap-2 sm:grid-cols-3">
-            <MovementNote label="What shifted" value={item.movement.shifted} />
-            <MovementNote label="Where you left off" value={item.movement.leftOff} />
-            <MovementNote
-              label="What recurred"
-              value={item.movement.recurring ?? "No recurring pattern yet."}
-            />
+            <ul className="mt-2 space-y-2">
+              {item.preview.matters.map((m) => (
+                <li key={m} className="text-[14px] font-light text-[color:var(--v3-text-secondary)]">
+                  — {m}
+                </li>
+              ))}
+            </ul>
           </div>
         ) : null}
-      </article>
 
-      {item.themes.length ? (
-        <section className="mt-4 rounded-2xl border border-[#d7c8b4] bg-[#fffaf2] p-4">
-          <h2 className="font-serif text-2xl text-[#241f18]">Key themes</h2>
-          <div className="mt-3 grid gap-2 sm:grid-cols-2">
-            {item.themes.map((theme) => (
-              <div key={theme.title} className="rounded-xl border border-[#d7c8b4] bg-[#f6efe3] p-3">
-                <p className="font-medium text-[#2f2a22]">{theme.title}</p>
-                <p className="mt-1 text-sm leading-relaxed text-[#675d4f]">{theme.summary}</p>
-              </div>
-            ))}
+        {item.preview.noise?.length ? (
+          <div>
+            <p className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--v3-leaf-accent)]">
+              Noise
+            </p>
+            <ul className="mt-2 space-y-2">
+              {item.preview.noise.map((n) => (
+                <li key={n} className="text-[14px] font-light text-[color:var(--v3-text-secondary)]">
+                  — {n}
+                </li>
+              ))}
+            </ul>
           </div>
-        </section>
-      ) : null}
+        ) : null}
 
-      <section className="mt-4 rounded-2xl border border-[#d7c8b4] bg-[#fffaf2] p-4">
-        <h2 className="font-serif text-2xl text-[#241f18]">Session memory</h2>
-        <p className="mt-1 text-sm leading-relaxed text-[#675d4f]">
-          Choose what stays from this Sift. Clarity can remain even if the transcript is removed.
-        </p>
-        <div className="mt-3 flex flex-wrap gap-2">
+        {item.preview.nextStep ? (
+          <div className="rounded-[3px] border border-[color:var(--v3-border)] bg-[rgba(215,210,196,0.45)] p-5">
+            <p className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--v3-sage)]">
+              One next step
+            </p>
+            <p className="mt-2 font-serif text-[19px] font-light italic leading-relaxed text-[color:var(--v3-text-primary)]">
+              {item.preview.nextStep}
+            </p>
+          </div>
+        ) : null}
+      </div>
+
+      {item.transcript?.length ? (
+        <div className="mt-10">
           <button
             type="button"
-            onClick={() => void updateLibraryMemory(item.id, { memoryMode: "clarity_only" })}
-            className="rounded-full border border-[#d7c8b4] px-3 py-1.5 text-xs font-medium text-[#675d4f] hover:border-[#65765c]/45"
+            onClick={() => setShowTranscript(!showTranscript)}
+            className="v3-hint-tag"
           >
-            Save Clarity only
+            {showTranscript ? "Hide" : "Show"} full thread
           </button>
-          <button
-            type="button"
-            onClick={() => void updateLibraryMemory(item.id, { memoryMode: "full", transcriptExpiresAt: null })}
-            className="rounded-full border border-[#d7c8b4] px-3 py-1.5 text-xs font-medium text-[#675d4f] hover:border-[#65765c]/45"
-          >
-            Save full session
-          </button>
-          <button
-            type="button"
-            onClick={() => void updateLibraryMemory(item.id, { transcriptExpiresAt: Date.now() + 1000 * 60 * 60 * 24 * 30 })}
-            className="rounded-full border border-[#d7c8b4] px-3 py-1.5 text-xs font-medium text-[#675d4f] hover:border-[#65765c]/45"
-          >
-            Auto-delete transcript in 30 days
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              if (window.confirm("Delete this saved Sift? This removes its Clarity Sheet and transcript.")) {
-                void updateLibraryMemory(item.id, { memoryMode: "do_not_remember" });
-              }
-            }}
-            className="rounded-full border border-red-200 bg-red-50/70 px-3 py-1.5 text-xs font-medium text-red-700"
-          >
-            Do not remember this session
-          </button>
+          {showTranscript ? (
+            <div className="mt-4 space-y-3 border-l-2 border-[color:var(--v3-border)] pl-5">
+              {item.transcript.map((turn) => (
+                <TranscriptTurn key={turn.id} turn={turn} />
+              ))}
+            </div>
+          ) : null}
         </div>
-      </section>
-
-      <section className="mt-4 rounded-2xl border border-[#d7c8b4] bg-[#fffaf2] p-4">
-        <button
-          type="button"
-          onClick={() => setShowTranscript((value) => !value)}
-          className="text-sm font-semibold text-[#2f2a22]"
-        >
-          {showTranscript ? "Hide transcript" : "Reveal transcript"}
-        </button>
-        {showTranscript ? (
-          <div className="mt-3 space-y-2">
-            {item.memoryMode === "clarity_only" ? (
-              <p className="rounded-xl border border-[#d7c8b4] bg-[#f6efe3] p-3 text-sm leading-relaxed text-[#4c4338]">
-                This session is stored as Clarity-only. The raw transcript is not retained here.
-              </p>
-            ) : (
-              <>
-                <p className="rounded-xl border border-[#d7c8b4] bg-[#f6efe3] p-3 text-sm leading-relaxed text-[#4c4338]">
-                  Opening input: {item.input}
-                </p>
-                {item.transcript.map((turn) => (
-                  <TranscriptTurn key={turn.id} turn={turn} />
-                ))}
-              </>
-            )}
-          </div>
-        ) : (
-          <p className="mt-2 text-sm leading-relaxed text-[#675d4f]">
-            The raw conversation is kept here, but the Library leads with the sifted read.
-          </p>
-        )}
-      </section>
-
-      {item.related.length ? (
-        <section className="mt-4">
-          <h2 className="mb-3 font-serif text-2xl text-[#241f18]">Related past Sifts</h2>
-          <div className="grid gap-3 sm:grid-cols-3">
-            {item.related.map((related) => (
-              <MiniLibraryCard key={related.id} item={related} />
-            ))}
-          </div>
-        </section>
       ) : null}
     </div>
   );

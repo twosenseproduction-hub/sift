@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Sift — Energy Background</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;1,300;1,400&family=DM+Sans:opsz,wght@9..40,300;9..40,400&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg:             #f0ebe0;
+    --leaf-dark:      #263d1a;
+    --leaf-mid:       #3a5530;
+    --leaf-accent:    #628840;
+    --sage:           #7a9460;
+    --text-primary:   #2c3d1e;
+    --text-secondary: #5a7040;
+    --text-muted:     rgba(78,104,50,0.5);
+    --border:         rgba(90,112,60,0.13);
+    --border-hover:   rgba(90,112,60,0.26);
+    --surface:        rgba(225,218,204,0.55);
+    --serif: 'Cormorant Garamond', Georgia, serif;
+    --sans:  'DM Sans', system-ui, sans-serif;
+  }
+
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text-primary);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── BACKGROUND ── */
+  .bg-canvas {
+    position: fixed; inset: 0; z-index: 0;
+    background: var(--bg);
+    transition: background 4s ease;
+    overflow: hidden;
+  }
+  .blob {
+    position: absolute; border-radius: 50%;
+    transition:
+      width 4s cubic-bezier(0.4,0,0.2,1),
+      height 4s cubic-bezier(0.4,0,0.2,1),
+      left 4s cubic-bezier(0.4,0,0.2,1),
+      top 4s cubic-bezier(0.4,0,0.2,1),
+      opacity 3.5s ease,
+      background 4s ease,
+      animation-duration 2s ease;
+    will-change: transform, opacity;
+  }
+  /* Primary orb */
+  #b0 { animation: b0drift 13s ease-in-out infinite; }
+  /* Secondary blobs — hidden by default */
+  #b1 { opacity: 0; animation: b1drift 9s ease-in-out infinite; }
+  #b2 { opacity: 0; animation: b2drift 11s ease-in-out infinite; }
+  #b3 { opacity: 0; animation: b3drift 7s ease-in-out infinite; }
+
+  @keyframes b0drift {
+    0%,100% { transform: scale(1) translate(0%,  0%); }
+    40%     { transform: scale(1.05) translate(2%,  3%); }
+    70%     { transform: scale(0.97) translate(-1%, 1%); }
+  }
+  @keyframes b1drift {
+    0%,100% { transform: translate(0%,  0%) scale(1); }
+    50%     { transform: translate(-4%, 3%) scale(1.08); }
+  }
+  @keyframes b2drift {
+    0%,100% { transform: translate(0%,  0%) scale(1); }
+    45%     { transform: translate(5%,  -4%) scale(1.06); }
+    75%     { transform: translate(-2%, 2%) scale(0.95); }
+  }
+  @keyframes b3drift {
+    0%,100% { transform: translate(0%,  0%) scale(1); }
+    35%     { transform: translate(-3%, 4%) scale(1.10); }
+    65%     { transform: translate(4%,  -2%) scale(0.93); }
+  }
+
+  .noise-layer {
+    position: fixed; inset: 0; z-index: 1; pointer-events: none;
+    opacity: 0.16;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-size: 256px 256px;
+    mix-blend-mode: multiply;
+  }
+
+  /* ── NAV ── */
+  nav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 44px;
+    background: rgba(240,235,226,0.78); backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--border);
+  }
+  .nav-logo { font-family: var(--serif); font-size: 22px; font-weight: 300; color: var(--text-primary); letter-spacing: 0.08em; }
+
+  /* Energy label */
+  .energy-label {
+    display: flex; align-items: center; gap: 8px;
+    opacity: 0; transition: opacity 0.8s;
+  }
+  .energy-label.visible { opacity: 1; }
+  .energy-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--sage); flex-shrink: 0;
+    transition: background 2s ease;
+  }
+  .energy-word {
+    font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--text-muted); transition: color 2s ease;
+  }
+
+  .nav-hint { font-size: 11px; letter-spacing: 0.12em; color: var(--text-muted); }
+
+  /* ── COMPOSER ── */
+  .composer-wrap {
+    position: relative; z-index: 2;
+    min-height: 100vh; display: flex; flex-direction: column;
+    align-items: flex-start; justify-content: center;
+    padding: 80px 52px 60px; max-width: 760px;
+  }
+  .composer-date {
+    font-family: var(--serif); font-size: 13px; font-style: italic;
+    color: var(--text-muted); margin-bottom: 10px;
+  }
+  .composer-prompt {
+    font-family: var(--serif); font-size: clamp(28px,3.5vw,42px);
+    font-weight: 300; color: var(--text-primary); margin-bottom: 40px; line-height: 1.2;
+  }
+
+  .composer-box {
+    width: 100%; max-width: 640px;
+    border: 1px solid var(--border); border-radius: 3px;
+    background: rgba(225,218,204,0.45);
+    backdrop-filter: blur(8px);
+    transition: border-color 0.25s, background 0.25s;
+    margin-bottom: 12px;
+  }
+  .composer-box:focus-within {
+    border-color: var(--border-hover);
+    background: rgba(225,218,204,0.62);
+  }
+  textarea {
+    width: 100%; background: transparent; border: none; outline: none; resize: none;
+    font-family: var(--sans); font-size: 15px; font-weight: 300; line-height: 1.9;
+    color: var(--text-primary); padding: 24px; min-height: 200px;
+    caret-color: var(--sage);
+  }
+  textarea::placeholder { color: var(--text-muted); font-style: italic; }
+  .composer-toolbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 20px; border-top: 1px solid var(--border);
+  }
+  .hint-tags { display: flex; gap: 16px; }
+  .hint-tag {
+    font-size: 11px; font-style: italic; color: var(--text-muted); cursor: pointer;
+    transition: color 0.15s; letter-spacing: 0.03em;
+  }
+  .hint-tag:hover { color: var(--text-secondary); }
+  .sift-btn {
+    font-family: var(--sans); font-size: 11px; font-weight: 400; letter-spacing: 0.14em;
+    text-transform: uppercase; color: #f0ebe0; background: var(--sage);
+    border: none; padding: 10px 22px; border-radius: 2px; cursor: pointer;
+    transition: background 0.18s, transform 0.1s;
+  }
+  .sift-btn:hover { background: var(--leaf-mid); }
+  .sift-btn:active { transform: scale(0.97); }
+
+  /* ── OUTPUT ── */
+  .output-section {
+    max-width: 640px; width: 100%;
+    border-top: 1px solid var(--border); padding-top: 36px; margin-top: 36px;
+    display: none;
+  }
+  .output-section.visible { display: block; animation: fadeUp 0.4s ease; }
+  .out-label { font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 28px; }
+  .signal-block { margin-bottom: 24px; }
+  .signal-heading { font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--leaf-accent); margin-bottom: 10px; }
+  .signal-text { font-family: var(--serif); font-size: 24px; font-weight: 300; line-height: 1.5; color: var(--text-primary); }
+  .noise-list { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+  .noise-list li { font-size: 13px; font-weight: 300; color: var(--text-secondary); display: flex; gap: 12px; line-height: 1.7; }
+  .noise-list li::before { content: '—'; color: var(--text-muted); flex-shrink: 0; }
+  .next-step-card {
+    background: rgba(110,136,80,0.09); border: 1px solid rgba(90,112,60,0.18);
+    border-radius: 3px; padding: 20px 24px; margin-top: 20px;
+  }
+  .next-step-label { font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--leaf-accent); margin-bottom: 8px; opacity: 0.9; }
+  .next-step-text { font-family: var(--serif); font-size: 19px; font-weight: 300; font-style: italic; color: var(--text-primary); line-height: 1.6; }
+
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+  /* Sample presets */
+  .presets {
+    display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 32px;
+  }
+  .preset-btn {
+    font-size: 11px; letter-spacing: 0.06em; color: var(--text-muted);
+    background: rgba(225,218,204,0.4); border: 1px solid var(--border);
+    border-radius: 100px; padding: 5px 14px; cursor: pointer;
+    transition: all 0.15s; font-family: var(--sans);
+  }
+  .preset-btn:hover { background: rgba(225,218,204,0.7); color: var(--text-secondary); border-color: var(--border-hover); }
+</style>
+</head>
+<body>
+
+<div class="bg-canvas" id="bgCanvas">
+  <div class="blob" id="b0"></div>
+  <div class="blob" id="b1"></div>
+  <div class="blob" id="b2"></div>
+  <div class="blob" id="b3"></div>
+</div>
+<div class="noise-layer"></div>
+
+<nav>
+  <span class="nav-logo">sift</span>
+  <div class="energy-label" id="energyLabel">
+    <div class="energy-dot" id="energyDot"></div>
+    <span class="energy-word" id="energyWord"></span>
+  </div>
+  <span class="nav-hint">energy canvas</span>
+</nav>
+
+<div class="composer-wrap">
+  <p class="composer-date">Saturday, May 23</p>
+  <h1 class="composer-prompt">What's occupying<br>your mind?</h1>
+
+  <div class="presets">
+    <button class="preset-btn" onclick="loadPreset('anxious')">anxious</button>
+    <button class="preset-btn" onclick="loadPreset('grief')">grief</button>
+    <button class="preset-btn" onclick="loadPreset('hopeful')">hopeful</button>
+    <button class="preset-btn" onclick="loadPreset('overwhelmed')">overwhelmed</button>
+    <button class="preset-btn" onclick="loadPreset('tangled')">tangled</button>
+  </div>
+
+  <div class="composer-box">
+    <textarea id="inputText" placeholder="Type or paste the tangle. Unpolished is fine." rows="7"
+      oninput="onTextInput(this.value)"></textarea>
+    <div class="composer-toolbar">
+      <div class="hint-tags">
+        <span class="hint-tag" onclick="clearText()">clear</span>
+      </div>
+      <button class="sift-btn" onclick="sift()">Sift →</button>
+    </div>
+  </div>
+
+  <div class="output-section" id="outputSection">
+    <p class="out-label">What Sift found</p>
+    <div class="signal-block">
+      <p class="signal-heading">Signal</p>
+      <p class="signal-text" id="signalText"></p>
+    </div>
+    <div class="signal-block">
+      <p class="signal-heading">Noise</p>
+      <ul class="noise-list" id="noiseList"></ul>
+    </div>
+    <div class="next-step-card">
+      <p class="next-step-label">One next step</p>
+      <p class="next-step-text" id="stepText"></p>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────
+//  ENERGY STATES
+// ─────────────────────────────────────────────
+const STATES = {
+  blank: {
+    label: '',
+    dotColor: '#7a9460',
+    bg: '#f0ebe0',
+    blobs: [
+      { w:75, h:68, l:12.5, t:20,
+        grad:'radial-gradient(ellipse at center, #6b8854 0%, rgba(107,136,84,0.75) 25%, rgba(107,136,84,0.30) 52%, transparent 72%)',
+        spd:'13s', op:1 },
+      { w:0, h:0, l:50, t:50, grad:'transparent', spd:'9s',  op:0 },
+      { w:0, h:0, l:50, t:50, grad:'transparent', spd:'11s', op:0 },
+      { w:0, h:0, l:50, t:50, grad:'transparent', spd:'7s',  op:0 },
+    ]
+  },
+  tangled: {
+    label: 'tangled',
+    dotColor: '#7a8860',
+    bg: '#eae5d8',
+    blobs: [
+      { w:60, h:55, l:18, t:22,
+        grad:'radial-gradient(ellipse at center, #5e7d48 0%, rgba(94,125,72,0.68) 30%, rgba(94,125,72,0.22) 58%, transparent 74%)',
+        spd:'10s', op:1 },
+      { w:38, h:32, l:48, t:8,
+        grad:'radial-gradient(ellipse at center, rgba(80,105,58,0.55) 0%, transparent 70%)',
+        spd:'9s', op:0.85 },
+      { w:30, h:26, l:4, t:58,
+        grad:'radial-gradient(ellipse at center, rgba(72,96,52,0.42) 0%, transparent 70%)',
+        spd:'12s', op:0.7 },
+      { w:0, h:0, l:50, t:50, grad:'transparent', spd:'7s', op:0 },
+    ]
+  },
+  anxious: {
+    label: 'anxious',
+    dotColor: '#6a7850',
+    bg: '#e5dfd4',
+    blobs: [
+      { w:48, h:44, l:26, t:28,
+        grad:'radial-gradient(ellipse at center, #4a6e38 0%, rgba(74,110,56,0.82) 22%, rgba(74,110,56,0.32) 50%, transparent 68%)',
+        spd:'6s', op:1 },
+      { w:36, h:30, l:54, t:5,
+        grad:'radial-gradient(ellipse at center, rgba(60,90,44,0.62) 0%, transparent 68%)',
+        spd:'5s', op:0.9 },
+      { w:32, h:28, l:8, t:62,
+        grad:'radial-gradient(ellipse at center, rgba(55,82,40,0.55) 0%, transparent 68%)',
+        spd:'7s', op:0.85 },
+      { w:22, h:20, l:62, t:65,
+        grad:'radial-gradient(ellipse at center, rgba(65,95,48,0.48) 0%, transparent 65%)',
+        spd:'4.5s', op:0.75 },
+    ]
+  },
+  grief: {
+    label: 'grief',
+    dotColor: '#4a6848',
+    bg: '#e8e3d9',
+    blobs: [
+      { w:85, h:52, l:7, t:46,
+        grad:'radial-gradient(ellipse at center, #3d5e42 0%, rgba(61,94,66,0.72) 28%, rgba(61,94,66,0.28) 58%, transparent 74%)',
+        spd:'22s', op:1 },
+      { w:42, h:35, l:28, t:14,
+        grad:'radial-gradient(ellipse at center, rgba(50,75,54,0.28) 0%, transparent 65%)',
+        spd:'20s', op:0.5 },
+      { w:0, h:0, l:50, t:50, grad:'transparent', spd:'11s', op:0 },
+      { w:0, h:0, l:50, t:50, grad:'transparent', spd:'7s',  op:0 },
+    ]
+  },
+  hopeful: {
+    label: 'hopeful',
+    dotColor: '#8aaa65',
+    bg: '#f5f0e5',
+    blobs: [
+      { w:72, h:70, l:14, t:8,
+        grad:'radial-gradient(ellipse at center, #88a865 0%, rgba(136,168,101,0.65) 28%, rgba(136,168,101,0.22) 55%, transparent 72%)',
+        spd:'16s', op:0.85 },
+      { w:45, h:40, l:28, t:55,
+        grad:'radial-gradient(ellipse at center, rgba(120,155,88,0.32) 0%, transparent 68%)',
+        spd:'18s', op:0.6 },
+      { w:0, h:0, l:50, t:50, grad:'transparent', spd:'11s', op:0 },
+      { w:0, h:0, l:50, t:50, grad:'transparent', spd:'7s',  op:0 },
+    ]
+  },
+  overwhelmed: {
+    label: 'overwhelmed',
+    dotColor: '#526440',
+    bg: '#ddd8ce',
+    blobs: [
+      { w:52, h:48, l:24, t:22,
+        grad:'radial-gradient(ellipse at center, #526840 0%, rgba(82,104,64,0.88) 20%, rgba(82,104,64,0.38) 48%, transparent 66%)',
+        spd:'5.5s', op:1 },
+      { w:44, h:40, l:48, t:2,
+        grad:'radial-gradient(ellipse at center, rgba(65,88,48,0.68) 0%, transparent 65%)',
+        spd:'4.5s', op:0.9 },
+      { w:40, h:36, l:0,  t:52,
+        grad:'radial-gradient(ellipse at center, rgba(60,82,44,0.62) 0%, transparent 65%)',
+        spd:'6.5s', op:0.88 },
+      { w:48, h:44, l:36, t:60,
+        grad:'radial-gradient(ellipse at center, rgba(58,78,42,0.72) 0%, transparent 65%)',
+        spd:'3.8s', op:0.92 },
+    ]
+  }
+};
+
+// ─────────────────────────────────────────────
+//  KEYWORD SCORING
+// ─────────────────────────────────────────────
+const KEYWORDS = {
+  anxious:     ['afraid','scared','fear','anxious','anxiety','nervous','worry','worried','panic','terrified','dread','what if','can\'t','cannot','won\'t','going to','danger','threat','risk','test','deadline','fail','failing','wrong','mistake','regret'],
+  grief:       ['miss','missing','lost','lose','gone','empty','alone','lonely','sad','grief','mourn','died','death','end','over','never','wish','hope you','hurt','pain','cry','crying','tears','broken','numb','hollow','ache'],
+  hopeful:     ['better','improve','maybe','could','want','wish','hope','looking forward','excited','happy','glad','grateful','thankful','opportunity','chance','possible','try','trying','will','going to','new','fresh','ready'],
+  overwhelmed: ['everything','all of','too much','can\'t handle','so many','pile','piling','list','tasks','responsibilities','both','and also','not only','plus','on top','at the same time','juggling','drowning','keep up','keep going','behind','falling behind','exhausted'],
+  tangled:     ['but','however','although','not sure','don\'t know','confused','unclear','uncertain','torn','mixed','complicated','complex','hard to explain','i think','i feel','i don\'t','i can\'t','i keep','back and forth','going around','in circles']
+};
+
+function scoreText(text) {
+  const lower = text.toLowerCase();
+  const scores = { anxious:0, grief:0, hopeful:0, overwhelmed:0, tangled:0 };
+  for (const [cat, words] of Object.entries(KEYWORDS)) {
+    for (const w of words) {
+      let idx = 0;
+      while ((idx = lower.indexOf(w, idx)) !== -1) {
+        scores[cat]++;
+        idx += w.length;
+      }
+    }
+  }
+  // Intensity signals
+  const exclaim  = (text.match(/!/g) || []).length;
+  const allcaps  = (text.match(/\b[A-Z]{3,}\b/g) || []).length;
+  scores.anxious     += exclaim * 0.8 + allcaps * 1.2;
+  scores.overwhelmed += (text.split(',').length - 1) * 0.4;
+  scores.tangled     += (text.split(/[.?]/).length - 1) * 0.3;
+
+  const total = Object.values(scores).reduce((a,b) => a+b, 0);
+  if (total < 1) return 'blank';
+  const dominant = Object.entries(scores).sort((a,b) => b[1]-a[1])[0][0];
+  if (scores[dominant] < 0.8) return text.trim().length > 20 ? 'tangled' : 'blank';
+  return dominant;
+}
+
+// ─────────────────────────────────────────────
+//  APPLY STATE
+// ─────────────────────────────────────────────
+let currentState = 'blank';
+
+function applyState(name) {
+  if (name === currentState) return;
+  currentState = name;
+  const s = STATES[name];
+  const canvas = document.getElementById('bgCanvas');
+  canvas.style.background = s.bg;
+
+  for (let i = 0; i < 4; i++) {
+    const el = document.getElementById('b' + i);
+    const b  = s.blobs[i];
+    el.style.width      = b.w + '%';
+    el.style.height     = b.h + '%';
+    el.style.left       = b.l + '%';
+    el.style.top        = b.t + '%';
+    el.style.background = b.grad;
+    el.style.opacity    = b.op;
+    el.style.animationDuration = b.spd;
+  }
+
+  // Energy label
+  const label = document.getElementById('energyLabel');
+  const dot   = document.getElementById('energyDot');
+  const word  = document.getElementById('energyWord');
+  if (s.label) {
+    label.classList.add('visible');
+    dot.style.background  = s.dotColor;
+    dot.style.transition  = 'background 2s ease';
+    word.textContent      = s.label;
+    word.style.color      = s.dotColor;
+    word.style.transition = 'color 2s ease';
+  } else {
+    label.classList.remove('visible');
+  }
+}
+
+// ─────────────────────────────────────────────
+//  TEXT INPUT → DEBOUNCED SCORING
+// ─────────────────────────────────────────────
+let debounceTimer = null;
+function onTextInput(val) {
+  clearTimeout(debounceTimer);
+  if (!val.trim()) { applyState('blank'); return; }
+  debounceTimer = setTimeout(() => {
+    const state = scoreText(val);
+    applyState(state);
+  }, 400);
+}
+
+// ─────────────────────────────────────────────
+//  PRESET SAMPLES
+// ─────────────────────────────────────────────
+const PRESETS = {
+  anxious:     "I can't stop thinking about the meeting tomorrow. What if I say the wrong thing? What if they already think I'm not capable? I keep replaying every interaction and looking for signs I'm being pushed out. I'm scared I'm going to ruin everything.",
+  grief:       "I miss her every day. The house is quiet in a way it never used to be. I find myself reaching for the phone to call her and then remembering. I don't know how to do this. I don't know who I am now that she's gone.",
+  hopeful:     "I think I'm finally ready to try something new. It's scary but there's this feeling underneath it that maybe this could be it. I want to believe things can be different. I'm trying to stay open to what's possible.",
+  overwhelmed: "I have the project deadline and the school thing for the kids and I still haven't dealt with the tax stuff and my sister needs help moving and I haven't exercised in weeks and I keep telling myself I'll deal with it but everything just keeps piling up and I can't keep up.",
+  tangled:     "I don't know if it's the right move but I also don't know if staying is right either. Part of me thinks I should go for it but then another part says I'm not ready. I think I know what I want but maybe I'm just telling myself what I want to hear."
+};
+const OUTPUTS = {
+  anxious:     { signal:'The fear isn\'t about the meeting. It\'s about whether you\'re enough — and you\'ve already decided you might not be.', noise:['Replaying scenarios that haven\'t happened','Treating your anxiety as evidence','Seeking warning signs to confirm a story you\'re already telling'], step:'Write down one thing you did well this week that no one saw.' },
+  grief:       { signal:'You\'re not lost. You\'re in the part of grief where the world hasn\'t caught up with the loss yet.', noise:['Looking for a shortcut through the pain','Measuring progress by how much you feel','Expecting to know who you are right now'], step:'Let yourself not know, just for today. You don\'t have to figure anything out.' },
+  hopeful:     { signal:'The readiness is real. You\'re not performing hope — you\'re feeling it.', noise:['Waiting for certainty before you move','Treating fear as a sign you\'re not ready','Comparing this beginning to someone else\'s middle'], step:'Take one small action in the direction you want to go. Today.' },
+  overwhelmed: { signal:'You\'re not behind. You\'re carrying more than one person is supposed to carry alone.', noise:['Treating the list as something to conquer rather than triage','Measuring your worth by throughput','Waiting until it\'s all done to rest'], step:'Choose the one thing that, if done, would make everything else feel lighter. Only that.' },
+  tangled:     { signal:'You already know what you want. You\'re negotiating with the part of you that\'s afraid to want it.', noise:['Treating uncertainty as a reason to wait','Looking for the right answer instead of your answer','Confusing ambivalence with wisdom'], step:'Finish this sentence without thinking: "If I\'m honest, I want to…"' }
+};
+
+function loadPreset(name) {
+  const ta = document.getElementById('inputText');
+  ta.value = PRESETS[name];
+  onTextInput(ta.value);
+  document.getElementById('outputSection').classList.remove('visible');
+}
+function clearText() {
+  document.getElementById('inputText').value = '';
+  applyState('blank');
+  document.getElementById('outputSection').classList.remove('visible');
+}
+function sift() {
+  const val = document.getElementById('inputText').value.trim();
+  if (!val) return;
+  const state = currentState === 'blank' ? 'tangled' : currentState;
+  const out   = OUTPUTS[state] || OUTPUTS.tangled;
+  document.getElementById('signalText').textContent = out.signal;
+  document.getElementById('noiseList').innerHTML = out.noise.map(n => `<li>${n}</li>`).join('');
+  document.getElementById('stepText').textContent  = out.step;
+  const section = document.getElementById('outputSection');
+  section.classList.add('visible');
+  section.scrollIntoView({ behavior:'smooth', block:'start' });
+}
+
+// Init blank state
+applyState('blank');
+</script>
+</body>
+</html>

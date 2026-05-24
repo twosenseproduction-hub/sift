@@ -1,0 +1,1360 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sift · Zen aesthetic mock v2 (interactive)</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Outfit:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --sans: "Outfit", system-ui, sans-serif;
+        --serif: "Instrument Serif", Georgia, serif;
+        --ink: rgba(255, 255, 255, 0.94);
+        --ink-soft: rgba(255, 255, 255, 0.72);
+        --ink-faint: rgba(255, 255, 255, 0.45);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        height: 100%;
+      }
+
+      body {
+        margin: 0;
+        font-family: var(--sans);
+        color: var(--ink);
+        background: #0a1812;
+        overflow: hidden;
+      }
+
+      /* —— Grain overlay —— */
+      .grain-overlay {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 9999;
+        opacity: 0.14;
+        mix-blend-mode: overlay;
+      }
+
+      .grain-overlay svg {
+        width: 100%;
+        height: 100%;
+      }
+
+      /* —— Zen canvas —— */
+      .zen-canvas {
+        position: relative;
+        overflow: hidden;
+        min-height: 100%;
+        flex: 1;
+        background-color: #253d32;
+        background-image:
+          radial-gradient(
+            ellipse 120% 85% at 18% -8%,
+            rgba(230, 220, 245, 0.55),
+            transparent 52%
+          ),
+          radial-gradient(
+            ellipse 90% 70% at 88% 12%,
+            rgba(165, 220, 140, 0.35),
+            transparent 50%
+          ),
+          radial-gradient(
+            ellipse 80% 60% at 70% 88%,
+            rgba(34, 78, 58, 0.85),
+            transparent 58%
+          ),
+          radial-gradient(circle at 50% 112%, rgba(15, 40, 28, 0.75), transparent 45%),
+          linear-gradient(165deg, #e8e4f4 0%, #c8dfb8 35%, #3d7358 72%, #13261c 100%);
+      }
+
+      .zen-canvas::before {
+        content: "";
+        position: absolute;
+        inset: auto;
+        left: 50%;
+        bottom: -18vh;
+        width: min(120vw, 640px);
+        height: min(120vw, 640px);
+        transform: translateX(-50%);
+        border-radius: 50%;
+        background: radial-gradient(
+          circle at 50% 40%,
+          rgba(255, 255, 255, 0.08),
+          transparent 62%
+        );
+        filter: blur(48px);
+        pointer-events: none;
+      }
+
+      .zen-canvas::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
+        opacity: 0.5;
+        mix-blend-mode: soft-light;
+        pointer-events: none;
+      }
+
+      .zen-canvas.dark {
+        background-image:
+          radial-gradient(ellipse 95% 80% at 12% 20%, rgba(240, 250, 230, 0.22), transparent 52%),
+          radial-gradient(ellipse 70% 55% at 92% 8%, rgba(45, 120, 90, 0.5), transparent 46%),
+          radial-gradient(ellipse 100% 80% at 50% 100%, rgba(8, 22, 16, 0.95), transparent 52%),
+          linear-gradient(195deg, #1e4a38 0%, #143228 42%, #0a1812 100%);
+      }
+
+      /* —— SPA shell —— */
+      .app-shell {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .toc {
+        position: fixed;
+        top: 1rem;
+        right: 1rem;
+        z-index: 100;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+        justify-content: flex-end;
+        max-width: min(340px, 92vw);
+      }
+
+      .toc button {
+        font-family: inherit;
+        font-size: 0.62rem;
+        letter-spacing: 0.28em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+        padding: 0.35rem 0.5rem;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        background: rgba(0, 0, 0, 0.12);
+        backdrop-filter: blur(8px);
+        cursor: pointer;
+      }
+
+      .toc button:hover {
+        color: var(--ink);
+        border-color: rgba(255, 255, 255, 0.4);
+      }
+
+      .panel-stack {
+        flex: 1;
+        position: relative;
+        z-index: 1;
+      }
+
+      .panel {
+        position: absolute;
+        inset: 0;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        -webkit-overflow-scrolling: touch;
+        padding: 4rem 1.5rem calc(6rem + env(safe-area-inset-bottom));
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        visibility: hidden;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.25s ease;
+      }
+
+      .panel.active {
+        visibility: visible;
+        opacity: 1;
+        pointer-events: auto;
+      }
+
+      .toast {
+        position: fixed;
+        bottom: calc(4.75rem + env(safe-area-inset-bottom));
+        left: 50%;
+        transform: translateX(-50%) translateY(140%);
+        z-index: 80;
+        max-width: min(22rem, 88vw);
+        padding: 0.55rem 1rem;
+        border-radius: 999px;
+        font-size: 0.72rem;
+        letter-spacing: 0.06em;
+        background: rgba(0, 0, 0, 0.45);
+        backdrop-filter: blur(12px);
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        color: var(--ink-soft);
+        opacity: 0;
+        transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.25s ease;
+        pointer-events: none;
+      }
+
+      body.toast-on .toast {
+        transform: translateX(-50%) translateY(0);
+        opacity: 1;
+      }
+
+      .phone-label {
+        position: absolute;
+        top: 1.25rem;
+        left: 1.5rem;
+        font-size: 0.65rem;
+        letter-spacing: 0.32em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+      }
+
+      .flow-note {
+        max-width: 36rem;
+        margin: 0 auto 2rem;
+        font-size: 0.8125rem;
+        line-height: 1.55;
+        color: var(--ink-soft);
+        text-align: center;
+        border-top: 1px solid rgba(255, 255, 255, 0.12);
+        padding-top: 1.25rem;
+      }
+
+      .mixed-headline {
+        text-align: center;
+        max-width: 22rem;
+        margin: 2rem auto 0;
+      }
+
+      .mixed-headline .serif-ital {
+        font-family: var(--serif);
+        font-style: italic;
+        font-weight: 400;
+        font-size: clamp(1.35rem, 4.2vw, 1.85rem);
+        line-height: 1.35;
+        color: var(--ink-soft);
+        display: block;
+      }
+
+      .mixed-headline .sans-hit {
+        font-family: var(--sans);
+        font-weight: 700;
+        font-size: clamp(1.75rem, 5.5vw, 2.45rem);
+        letter-spacing: -0.03em;
+        line-height: 1.08;
+        display: block;
+        margin-top: 0.15rem;
+      }
+
+      .path-wrap {
+        width: 100%;
+        max-width: 20rem;
+        margin: 2rem auto 0;
+        opacity: 0.85;
+      }
+
+      .composer-input {
+        display: block;
+        width: min(26rem, 92vw);
+        margin: 2.5rem auto 0;
+        border: none;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.35);
+        padding: 0.75rem 0 0.5rem;
+        font-family: var(--serif);
+        font-style: italic;
+        font-size: 1.05rem;
+        color: var(--ink);
+        background: transparent;
+        resize: vertical;
+        min-height: 3rem;
+        outline: none;
+        line-height: 1.35;
+      }
+
+      .composer-input::placeholder {
+        color: var(--ink-faint);
+      }
+
+      .composer-hint {
+        text-align: center;
+        font-size: 0.7rem;
+        letter-spacing: 0.06em;
+        color: var(--ink-faint);
+        margin-top: 0.75rem;
+      }
+
+      .inline-hint {
+        width: min(26rem, 92vw);
+        margin: 0.65rem auto 0;
+        font-size: 0.75rem;
+        line-height: 1.45;
+        color: rgba(255, 235, 200, 0.85);
+        border-left: 2px solid rgba(255, 220, 180, 0.45);
+        padding-left: 0.65rem;
+        display: none;
+      }
+
+      .inline-hint.on {
+        display: block;
+      }
+
+      /* Re-entry strip */
+      .reentry-chip {
+        width: min(26rem, 92vw);
+        margin: 1.75rem auto 0;
+        padding: 1rem 1.15rem;
+        border-radius: 1rem;
+        border: 1px solid rgba(255, 255, 255, 0.28);
+        background: rgba(255, 255, 255, 0.06);
+        backdrop-filter: blur(14px);
+        box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04) inset, 0 18px 50px -30px rgba(0, 0, 0, 0.45);
+      }
+
+      .reentry-chip.strip-hidden {
+        display: none !important;
+      }
+
+      .reentry-chip.pickup {
+        border-color: rgba(255, 255, 255, 0.55);
+        background:
+          radial-gradient(ellipse 80% 120% at 50% -20%, rgba(255, 255, 255, 0.18), transparent 55%),
+          rgba(255, 255, 255, 0.08);
+        box-shadow: 0 0 40px rgba(190, 255, 210, 0.12), 0 0 0 1px rgba(255, 255, 255, 0.06) inset;
+      }
+
+      .reentry-chip p {
+        margin: 0;
+        font-size: 0.875rem;
+        line-height: 1.45;
+        color: var(--ink-soft);
+      }
+
+      .reentry-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.75rem;
+        margin-top: 0.75rem;
+      }
+
+      button.ghost-btn {
+        font-family: var(--sans);
+        font-size: 0.75rem;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        color: var(--ink);
+        background: transparent;
+        border: 1px solid rgba(255, 255, 255, 0.45);
+        padding: 0.45rem 0.95rem;
+        border-radius: 999px;
+        cursor: pointer;
+      }
+
+      button.ghost-btn:active {
+        transform: translateY(1px);
+      }
+
+      span.quiet-link,
+      button.quiet-link-btn {
+        font-family: inherit;
+        font-size: 0.68rem;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+        cursor: pointer;
+        background: none;
+        border: none;
+      }
+
+      .tab-nav-real {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        z-index: 60;
+        display: flex;
+        justify-content: center;
+        gap: 0.35rem;
+        padding: 0.65rem 1rem calc(0.65rem + env(safe-area-inset-bottom));
+        background: linear-gradient(to top, rgba(10, 20, 14, 0.75), transparent);
+        backdrop-filter: blur(12px);
+      }
+
+      .tab-nav-real button {
+        font-family: inherit;
+        font-size: 0.58rem;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+        padding: 0.4rem 0.65rem;
+        border-radius: 999px;
+        color: var(--ink-faint);
+        border: 1px solid transparent;
+        background: transparent;
+        cursor: pointer;
+      }
+
+      .tab-nav-real button[aria-current="true"] {
+        color: var(--ink);
+        border-color: rgba(255, 255, 255, 0.3);
+        background: rgba(255, 255, 255, 0.07);
+      }
+
+      .intro-wrap {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+      }
+
+      .intro-banner {
+        max-width: 40rem;
+        margin: 0 auto 3rem;
+        padding: 1rem 1.25rem;
+        border-radius: 0.85rem;
+        border: 1px dashed rgba(255, 255, 255, 0.25);
+        font-size: 0.8125rem;
+        line-height: 1.5;
+        color: var(--ink-soft);
+        text-align: center;
+      }
+
+      .intro-actions {
+        text-align: center;
+        margin-top: 2rem;
+      }
+
+      button.enter-primary {
+        font-family: inherit;
+        font-weight: 600;
+        letter-spacing: 0.28em;
+        text-transform: uppercase;
+        font-size: 0.68rem;
+        padding: 0.75rem 1.75rem;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 255, 255, 0.45);
+        color: var(--ink);
+        background: rgba(255, 255, 255, 0.08);
+        cursor: pointer;
+      }
+
+      button.enter-primary:hover {
+        background: rgba(255, 255, 255, 0.12);
+      }
+
+      .section-kicker-float {
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.45em;
+        text-transform: uppercase;
+        text-align: right;
+        align-self: flex-end;
+        margin-right: 1rem;
+        margin-top: 1rem;
+        color: rgba(255, 255, 255, 0.55);
+      }
+
+      .thread-cards {
+        display: flex;
+        gap: 0.85rem;
+        overflow-x: auto;
+        padding: 1rem 1.5rem 0.5rem;
+        width: 100%;
+        max-width: 480px;
+        scroll-snap-type: x mandatory;
+        -webkit-overflow-scrolling: touch;
+      }
+
+      .thread-cards::-webkit-scrollbar {
+        display: none;
+      }
+
+      .t-card {
+        flex: 0 0 11.5rem;
+        scroll-snap-align: start;
+        border-radius: 1rem;
+        padding: 1rem;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        background: rgba(0, 0, 0, 0.1);
+        cursor: pointer;
+        transition:
+          border-color 0.2s ease,
+          background 0.2s ease,
+          box-shadow 0.2s ease,
+          transform 0.2s ease;
+      }
+
+      .t-card:hover {
+        border-color: rgba(255, 255, 255, 0.35);
+      }
+
+      .t-card.pickup {
+        border-color: rgba(255, 255, 255, 0.5);
+        background: rgba(255, 255, 255, 0.09);
+      }
+
+      .t-card.active {
+        border-color: rgba(255, 255, 235, 0.75);
+        background: rgba(255, 255, 255, 0.12);
+        box-shadow: 0 0 26px rgba(195, 255, 218, 0.18);
+        transform: translateY(-1px);
+      }
+
+      .t-card .title {
+        font-weight: 600;
+        font-size: 0.88rem;
+        line-height: 1.35;
+      }
+
+      .t-card .meta {
+        margin-top: 0.65rem;
+        font-family: var(--serif);
+        font-style: italic;
+        font-size: 0.78rem;
+        color: var(--ink-faint);
+      }
+
+      /* History timeline */
+      .timeline {
+        width: min(26rem, 92vw);
+        margin: 2rem auto 0;
+      }
+
+      .tline-row {
+        position: relative;
+        padding-bottom: 1.75rem;
+      }
+
+      .tline-rule {
+        border: none;
+        border-top: 1px solid rgba(255, 255, 255, 0.28);
+        margin: 0 0 0.5rem;
+      }
+
+      .tline-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 1rem;
+        flex-wrap: wrap;
+      }
+
+      .tline-top .date-sans {
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .tline-top .intent {
+        font-family: var(--sans);
+        font-weight: 600;
+        font-size: 0.95rem;
+      }
+
+      .tline-bot {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-top: 0.35rem;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+      }
+
+      .tline-bot .serif-note {
+        font-family: var(--serif);
+        font-style: italic;
+        font-size: 0.82rem;
+        color: var(--ink-soft);
+        max-width: 14rem;
+      }
+
+      .tline-node {
+        width: 0.5rem;
+        height: 0.5rem;
+        border: 1px solid rgba(255, 255, 255, 0.75);
+        border-radius: 50%;
+        flex-shrink: 0;
+        margin-top: 0.2rem;
+        background: transparent;
+      }
+
+      .tline-row.pickup .tline-node {
+        box-shadow: 0 0 14px rgba(200, 255, 230, 0.45);
+        border-color: #fff;
+      }
+
+      .result-panel {
+        width: min(26rem, 92vw);
+        margin: 2rem auto;
+        padding: 1.35rem 1.35rem 1.5rem;
+        border-radius: 1.25rem;
+        border: 1px solid rgba(255, 255, 255, 0.22);
+        background: rgba(0, 0, 0, 0.15);
+      }
+
+      .result-panel h3 {
+        margin: 0 0 0.75rem;
+        font-family: var(--serif);
+        font-style: italic;
+        font-weight: 400;
+        font-size: 0.92rem;
+        color: var(--ink-soft);
+      }
+
+      details.result-hit {
+        margin: 0.35rem 0;
+        padding: 0.45rem 0;
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+      }
+
+      details.result-hit:first-of-type {
+        border-top: none;
+        padding-top: 0;
+      }
+
+      details.result-hit summary {
+        cursor: pointer;
+        font-family: var(--sans);
+        font-weight: 600;
+        font-size: 0.85rem;
+        list-style-position: outside;
+      }
+
+      details.result-hit p {
+        margin: 0.5rem 0 0;
+        font-size: 0.8rem;
+        line-height: 1.5;
+        color: var(--ink-soft);
+      }
+
+      .result-panel .next {
+        margin-top: 1.1rem;
+        padding-top: 1rem;
+        border-top: 1px solid rgba(255, 255, 255, 0.12);
+        font-size: 0.78rem;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        font-weight: 600;
+      }
+
+      .banner-operator {
+        display: inline-block;
+        margin-bottom: 0.75rem;
+        font-size: 0.58rem;
+        letter-spacing: 0.32em;
+        text-transform: uppercase;
+        opacity: 0.55;
+      }
+
+      .garden-big {
+        font-size: clamp(2.75rem, 14vw, 4.75rem);
+        font-weight: 700;
+        letter-spacing: 0.35em;
+        text-transform: uppercase;
+        text-align: center;
+        margin: 14vh 0 1rem;
+        opacity: 0.35;
+      }
+
+      .garden-sub {
+        text-align: center;
+        font-family: var(--serif);
+        font-style: italic;
+        font-size: 1rem;
+        color: var(--ink-soft);
+        max-width: 20rem;
+        margin: 0 auto;
+        line-height: 1.5;
+      }
+
+      .constellation {
+        width: min(22rem, 88vw);
+        height: 9rem;
+        margin: 2.5rem auto 0;
+        position: relative;
+      }
+
+      .constellation span.dot {
+        position: absolute;
+        width: 0.45rem;
+        height: 0.45rem;
+        border-radius: 50%;
+        border: 1px solid rgba(255, 255, 255, 0.5);
+        transition:
+          transform 0.42s cubic-bezier(0.22, 1, 0.36, 1),
+          box-shadow 0.42s ease,
+          border-color 0.42s ease,
+          background-color 0.42s ease;
+      }
+
+      .constellation span.dot:hover {
+        transform: scale(1.42);
+        box-shadow:
+          0 0 0 6px rgba(200, 255, 228, 0.08),
+          0 0 18px rgba(200, 255, 228, 0.35);
+        border-color: rgba(255, 255, 255, 0.92);
+        background: rgba(255, 255, 255, 0.06);
+      }
+
+      code {
+        font-size: 0.78em;
+        background: rgba(0, 0, 0, 0.2);
+        padding: 0.1rem 0.35rem;
+        border-radius: 0.25rem;
+      }
+
+      .nav-label-shift {
+        font-size: 0.58rem;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        opacity: 0.45;
+        margin-top: 0.75rem;
+        text-align: center;
+        min-height: 1em;
+        transition: opacity 0.2s ease;
+      }
+
+      @media (min-width: 720px) {
+        .panel {
+          padding-inline: 2.5rem;
+        }
+
+        .thread-cards {
+          max-width: 640px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="grain-overlay" aria-hidden="true">
+      <svg xmlns="http://www.w3.org/2000/svg">
+        <filter id="heavyGrain">
+          <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" stitchTiles="stitch" />
+          <feColorMatrix type="saturate" values="0" />
+        </filter>
+        <rect width="100%" height="100%" filter="url(#heavyGrain)" />
+      </svg>
+    </div>
+
+    <nav class="toc" aria-label="Jump screens" id="jump-nav">
+      <button type="button" data-target="intro">Splash</button>
+      <button type="button" data-target="home">Home</button>
+      <button type="button" data-target="result">Result</button>
+      <button type="button" data-target="threads">Threads</button>
+      <button type="button" data-target="history">History</button>
+      <button type="button" data-target="garden">Garden</button>
+    </nav>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <div class="app-shell">
+      <div class="panel-stack">
+        <!-- INTRO -->
+        <section
+          id="panel-intro"
+          class="panel zen-canvas dark active"
+          data-screen="intro"
+          aria-labelledby="intro-title"
+        >
+          <p class="phone-label">Exploration mock · v2</p>
+          <div class="intro-wrap">
+            <p class="intro-banner" id="intro-title">
+              This interactive HTML is still <strong>not</strong> the live Sift app. It adds a shallow
+              “app shell” (<code>sessionStorage</code> composer strip, SPA-style panels, and working
+              nav) while keeping v1 typography and gradients intact.
+              <br /><br />
+              Open at
+              <code>http://localhost:5173/mockups/zen-sift-flow-v2.html</code> · port follows
+              <code>PORT</code> if set.
+              <br /><br />
+              File: <code>client/public/mockups/zen-sift-flow-v2.html</code>
+            </p>
+            <div class="intro-actions">
+              <button type="button" class="enter-primary" id="btn-enter-home">Enter</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- HOME -->
+        <section id="panel-home" class="panel zen-canvas" data-screen="home">
+          <p class="phone-label">Home · composer entry</p>
+          <span class="section-kicker-float" style="align-self: flex-end">Now</span>
+          <p class="nav-label-shift" id="nav-sub-label" aria-hidden="true"></p>
+
+          <div class="mixed-headline">
+            <span class="serif-ital">Be gentle with what's on</span>
+            <span class="sans-hit">your mind</span>
+          </div>
+
+          <svg class="path-wrap" viewBox="0 0 280 72" fill="none" aria-hidden="true">
+            <path
+              d="M8 52 Q 48 8, 92 42 T 180 34 T 272 46"
+              stroke="rgba(255,255,255,0.5)"
+              stroke-width="1.25"
+              stroke-linecap="round"
+            />
+            <circle cx="8" cy="52" r="4" stroke="rgba(255,255,255,0.7)" />
+            <circle cx="92" cy="42" r="4" stroke="rgba(255,255,255,0.7)" />
+            <circle cx="180" cy="34" r="4" stroke="rgba(255,255,255,0.7)" />
+            <circle cx="272" cy="46" r="4" stroke="rgba(255,255,255,0.7)" />
+          </svg>
+
+          <textarea
+            id="composer-draft"
+            class="composer-input"
+            rows="2"
+            placeholder="What feels loudest…"
+            aria-label="What feels loudest"
+          ></textarea>
+          <p class="composer-hint">Messy is fine · one honest line is enough</p>
+
+          <p id="composer-wrong-hint" class="inline-hint" role="note">
+            Adjust what you typed—Sift can refine once the line carries the knot you mean.
+          </p>
+
+          <div class="reentry-chip pickup" id="reentry-home-strip">
+            <p id="reentry-home-copy">
+              Still on the thread about <strong style="font-weight: 600">shipping scope</strong>—last
+              time the move was naming one cut by Friday.
+            </p>
+            <div class="reentry-row">
+              <button type="button" class="ghost-btn" data-action="pickup-threads">Pick up</button>
+              <button type="button" class="quiet-link-btn" data-action="dismiss-strip-home">Dismiss</button>
+            </div>
+          </div>
+
+          <p class="flow-note">
+            <strong>Functional v2 hooks:</strong> composer draft survives refresh within the browser session;
+            dismiss hides this strip until a new tab. Bottom nav swaps full-height panels instead of scrolling
+            the whole HTML stack.
+          </p>
+        </section>
+
+        <!-- RESULT -->
+        <section id="panel-result" class="panel zen-canvas" data-screen="result">
+          <p class="phone-label">Result · sift card output</p>
+
+          <div class="mixed-headline" style="margin-top: 3rem">
+            <span class="serif-ital">Sift hears this as</span>
+            <span class="sans-hit" style="font-size: clamp(1.5rem, 4.5vw, 2rem)"
+              >load‑bearing sequencing</span
+            >
+          </div>
+
+          <article class="result-panel">
+            <span class="banner-operator">Operator thread</span>
+            <h3>What stood out</h3>
+            <details class="result-hit">
+              <summary>Matter vs noise</summary>
+              <ul>
+                <li><strong>Matter:</strong> the launch date is hostage to unnamed scope boundaries.</li>
+                <li><strong>Noise:</strong> branding tweaks that feel urgent but aren’t sequencing.</li>
+              </ul>
+            </details>
+            <details class="result-hit">
+              <summary>Open loops named</summary>
+              <p>Two threads tug on the plan: launch scope negotiation and stakeholder alignment on date.</p>
+            </details>
+            <p class="next">One move · write the smallest shippable version in one bullet</p>
+          </article>
+
+          <div class="reentry-chip" style="margin-top: 0">
+            <div class="reentry-row">
+              <button type="button" class="ghost-btn" data-action="comeback-threads">Come back</button>
+              <button type="button" class="ghost-btn" data-action="say-more-home">Say more</button>
+              <button type="button" class="ghost-btn" data-action="wrong-partial">Wrong / partial</button>
+            </div>
+          </div>
+
+          <p class="flow-note">
+            <strong>Flow tie‑in:</strong> “Wrong / partial” jumps Home and asks for a sharper line—as in the
+            product’s correction negotiation loop.
+          </p>
+        </section>
+
+        <!-- THREADS -->
+        <section id="panel-threads" class="panel zen-canvas dark" data-screen="threads">
+          <p class="phone-label">Threads · continuity strip</p>
+          <span class="section-kicker-float">Threads</span>
+
+          <p
+            style="
+              text-align: center;
+              font-family: var(--serif);
+              font-style: italic;
+              font-size: 0.92rem;
+              color: var(--ink-soft);
+              max-width: 20rem;
+              margin: 0.5rem auto 0;
+            "
+          >
+            Live threads—not all equally foreground.
+          </p>
+
+          <div class="reentry-chip pickup" id="threads-strip-mini">
+            <p>You had a move on the launch thread. Still on the table?</p>
+            <div class="reentry-row">
+              <button type="button" class="ghost-btn" data-action="threads-pick-result">Pick it up</button>
+              <button type="button" class="quiet-link-btn" data-action="dismiss-strip-threads">dismiss</button>
+            </div>
+          </div>
+
+          <div class="thread-cards" id="threads-row">
+            <div class="t-card pickup" tabindex="0" role="button" data-thread="launch">
+              <div class="title">Launch sliding on scope creep</div>
+              <div class="meta">Pick up · <span style="opacity: 0.75">today</span></div>
+            </div>
+            <div class="t-card" tabindex="0" role="button" data-thread="conversation">
+              <div class="title">Conversation with K</div>
+              <div class="meta">Waiting on one sentence sent</div>
+            </div>
+            <div class="t-card" tabindex="0" role="button" data-thread="runway">
+              <div class="title">Runway vs contracting attention</div>
+              <div class="meta">Open · operator lane</div>
+            </div>
+          </div>
+
+          <svg class="path-wrap" viewBox="0 0 280 48" aria-hidden="true">
+            <path
+              d="M12 32 L260 26"
+              stroke="rgba(255,255,255,0.25)"
+              stroke-width="1"
+              stroke-dasharray="4 6"
+              stroke-linecap="round"
+            />
+            <circle cx="92" cy="30" r="3.5" stroke="rgba(255,255,255,0.6)" />
+            <circle cx="164" cy="27" r="3.5" stroke="rgba(255,255,255,0.5)" />
+            <circle cx="236" cy="26" r="3.5" stroke="rgba(255,255,255,0.5)" />
+          </svg>
+
+          <p class="flow-note">
+            <strong>Flow tie‑in:</strong> Horizontally scroll persists; tapping a thread card toggles active
+            glow for this prototype.
+          </p>
+        </section>
+
+        <!-- HISTORY -->
+        <section id="panel-history" class="panel zen-canvas dark" data-screen="history">
+          <p class="phone-label">Your thread · history</p>
+          <span class="section-kicker-float">Archive</span>
+
+          <p
+            style="
+              text-align: center;
+              font-family: var(--sans);
+              font-size: 0.68rem;
+              letter-spacing: 0.4em;
+              text-transform: uppercase;
+              opacity: 0.5;
+              margin-top: 0.75rem;
+            "
+          >
+            Everything you've sifted
+          </p>
+
+          <div class="timeline">
+            <div class="tline-row pickup">
+              <hr class="tline-rule" />
+              <div class="tline-top">
+                <span class="date-sans">May · open</span>
+                <span class="intent">Runway vs contract pulls</span>
+              </div>
+              <div class="tline-bot">
+                <p class="serif-note">Pick up · attention cost mapped, not negotiated yet</p>
+                <div class="tline-node"></div>
+              </div>
+            </div>
+
+            <div class="tline-row">
+              <hr class="tline-rule" />
+              <div class="tline-top">
+                <span class="date-sans">May · closed</span>
+                <span class="intent">Said it to K</span>
+              </div>
+              <div class="tline-bot">
+                <p class="serif-note">Lesson · one sentence was the whole hinge</p>
+                <div class="tline-node"></div>
+              </div>
+            </div>
+
+            <div class="tline-row">
+              <hr class="tline-rule" />
+              <div class="tline-top" style="width: 100%">
+                <span class="intent" style="flex: 1">Pattern sift</span>
+                <span class="date-sans">meta</span>
+              </div>
+              <div class="tline-bot">
+                <p class="serif-note">Landscape read across loops</p>
+                <div class="tline-node"></div>
+              </div>
+            </div>
+          </div>
+
+          <p class="flow-note">
+            FLOAT-style rulings: sans for rails, serif summary. Still static copy in this mock.
+          </p>
+        </section>
+
+        <!-- GARDEN -->
+        <section id="panel-garden" class="panel zen-canvas dark" data-screen="garden">
+          <p class="phone-label">Garden · patterns</p>
+
+          <div class="garden-big">Garden</div>
+          <p class="garden-sub">
+            This month's pull shows up softer than urgency—patterns across closed and open loops.
+          </p>
+
+          <div class="constellation" aria-hidden="true">
+            <span class="dot" style="left: 12%; top: 52%"></span>
+            <span class="dot" style="left: 28%; top: 38%"></span>
+            <span class="dot" style="left: 44%; top: 61%"></span>
+            <span class="dot" style="left: 58%; top: 42%"></span>
+            <span class="dot" style="left: 72%; top: 55%"></span>
+            <span class="dot" style="left: 86%; top: 36%"></span>
+          </div>
+
+          <svg
+            viewBox="0 0 340 140"
+            style="width: min(340px, 86vw); height: auto; margin: 0 auto; opacity: 0.4"
+            aria-hidden="true"
+          >
+            <path d="M40 96 C 110 28, 200 132, 300 52" fill="none" stroke="rgba(255,255,255,0.28)" stroke-width="1" />
+          </svg>
+
+          <div class="thread-cards" style="max-width: 360px">
+            <div class="t-card pickup">
+              <div
+                class="title"
+                style="font-size: 0.78rem; letter-spacing: 0.2em; text-transform: uppercase; opacity: 0.6"
+              >
+                Signals
+              </div>
+              <div class="title" style="margin-top: 0.35rem">Conversation with&nbsp;K</div>
+              <div class="meta">3 threads · recurring</div>
+            </div>
+            <div class="t-card">
+              <div
+                class="title"
+                style="font-size: 0.78rem; letter-spacing: 0.2em; text-transform: uppercase; opacity: 0.6"
+              >
+                Open
+              </div>
+              <div class="title" style="margin-top: 0.35rem">Launch readiness</div>
+              <div class="meta">Still breathing</div>
+            </div>
+          </div>
+
+          <p class="flow-note">
+            Constellation dots scale on hover via CSS-only motion—no scripting required here.
+          </p>
+        </section>
+      </div>
+
+      <nav class="tab-nav-real" aria-label="Primary mock navigation">
+        <button type="button" data-tab="home" aria-current="false">Sift</button>
+        <button type="button" data-tab="threads">Threads</button>
+        <button type="button" data-tab="history">History</button>
+        <button type="button" data-tab="garden">Garden</button>
+      </nav>
+    </div>
+
+    <script>
+      (function () {
+        var STORAGE = {
+          intro: "zen-sift-flow-v2:intro_done",
+          draft: "zen-sift-flow-v2:composer_draft",
+          strips: "zen-sift-flow-v2:strip_dismiss_json",
+          threadActive: "zen-sift-flow-v2:active_thread",
+        };
+
+        var panels = document.querySelectorAll(".panel[data-screen]");
+        var bottomNavBtns = document.querySelectorAll(".tab-nav-real [data-tab]");
+        var tocBtns = document.querySelectorAll("#jump-nav button[data-target]");
+        var composer = document.getElementById("composer-draft");
+        var wrongHint = document.getElementById("composer-wrong-hint");
+        var toastEl = document.getElementById("toast");
+        var subLabel = document.getElementById("nav-sub-label");
+        var reentryStrip = document.getElementById("reentry-home-strip");
+        var threadsMiniStrip = document.getElementById("threads-strip-mini");
+        var enterBtn = document.getElementById("btn-enter-home");
+
+        /** @type {{ home?:boolean, threads?:boolean } | null} */
+        var stripDismiss = null;
+        /** @type {number | undefined} */
+        var toastTimer;
+
+        function parseStrips(raw) {
+          try {
+            return JSON.parse(raw || "{}") || {};
+          } catch (_) {
+            return {};
+          }
+        }
+
+        function saveStrips(o) {
+          sessionStorage.setItem(STORAGE.strips, JSON.stringify(o || {}));
+        }
+
+        function getStrips() {
+          if (!stripDismiss) stripDismiss = parseStrips(sessionStorage.getItem(STORAGE.strips));
+          return stripDismiss;
+        }
+
+        function setIntroDone() {
+          sessionStorage.setItem(STORAGE.intro, "1");
+        }
+
+        function introDone() {
+          return sessionStorage.getItem(STORAGE.intro) === "1";
+        }
+
+        function hydrateComposer() {
+          if (!composer) return;
+          var d = sessionStorage.getItem(STORAGE.draft);
+          composer.value = d || "";
+          composer.addEventListener("input", function () {
+            sessionStorage.setItem(STORAGE.draft, composer.value);
+            if (wrongHint) wrongHint.classList.remove("on");
+          });
+        }
+
+        function hydrateStripsUI() {
+          var s = getStrips();
+          if (reentryStrip && s.home) {
+            reentryStrip.classList.add("strip-hidden");
+          }
+          if (threadsMiniStrip && s.threads) {
+            threadsMiniStrip.classList.add("strip-hidden");
+          }
+        }
+
+        function tabFor(screen) {
+          if (screen === "threads") return "threads";
+          if (screen === "history") return "history";
+          if (screen === "garden") return "garden";
+          return "home";
+        }
+
+        function setNavActive(screen) {
+          var activeTabId = tabFor(screen);
+          bottomNavBtns.forEach(function (b) {
+            var tid = b.getAttribute("data-tab");
+            var isCurr = tid === activeTabId;
+            b.setAttribute("aria-current", isCurr ? "true" : "false");
+          });
+
+          tocBtns.forEach(function (b) {
+            var t = b.getAttribute("data-target");
+            var on = screen === t;
+            b.style.opacity = on ? "1" : "";
+            if (on) {
+              b.style.borderColor = "rgba(255,255,255,0.5)";
+              b.style.color = "rgba(255,255,255,0.94)";
+            } else {
+              b.style.borderColor = "";
+              b.style.color = "";
+            }
+          });
+        }
+
+        function activate(screen) {
+          panels.forEach(function (el) {
+            var id = el.getAttribute("data-screen");
+            var on = id === screen;
+            el.classList.toggle("active", on);
+            if (on && el.scrollTo) el.scrollTo(0, 0);
+          });
+          setNavActive(screen);
+          window.location.hash = screen === "intro" ? "" : "#" + screen;
+        }
+
+        function focusComposerSoon() {
+          if (!composer) return;
+          window.requestAnimationFrame(function () {
+            composer.focus();
+          });
+        }
+
+        function showToast(text) {
+          toastEl.textContent = text || "";
+          document.body.classList.add("toast-on");
+          window.clearTimeout(toastTimer);
+          toastTimer = window.setTimeout(function () {
+            document.body.classList.remove("toast-on");
+          }, 2600);
+        }
+
+        bottomNavBtns.forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            if (wrongHint) wrongHint.classList.remove("on");
+            activate(btn.getAttribute("data-tab"));
+            subLabel.textContent = "";
+          });
+        });
+
+        tocBtns.forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            if (wrongHint) wrongHint.classList.remove("on");
+            activate(btn.getAttribute("data-target"));
+            subLabel.textContent = "";
+          });
+        });
+
+        enterBtn &&
+          enterBtn.addEventListener("click", function () {
+            setIntroDone();
+            if (wrongHint) wrongHint.classList.remove("on");
+            activate("home");
+            showToast("Welcome in · draft saves for this tab session.");
+            focusComposerSoon();
+          });
+
+        function dismissHomeStrip() {
+          var s = getStrips();
+          s.home = true;
+          saveStrips(s);
+          if (reentryStrip) {
+            reentryStrip.classList.add("strip-hidden");
+          }
+          showToast("Quiet for now—strip stays dismissed this session.");
+        }
+
+        function dismissThreadsStrip() {
+          var s = getStrips();
+          s.threads = true;
+          saveStrips(s);
+          if (threadsMiniStrip) {
+            threadsMiniStrip.classList.add("strip-hidden");
+          }
+          showToast("Threads strip dismissed · still in session memory.");
+        }
+
+        hydrateComposer();
+        hydrateStripsUI();
+
+        if (introDone()) {
+          var allowed = ["home", "result", "threads", "history", "garden"];
+          var hh = window.location.hash.replace(/^#/, "");
+          var next = hh && allowed.indexOf(hh) >= 0 ? hh : "home";
+          activate(next);
+        } else {
+          activate("intro");
+        }
+
+        window.addEventListener("hashchange", function () {
+          var allowedHash = ["home", "result", "threads", "history", "garden"];
+          var h = window.location.hash.replace(/^#/, "");
+          if (allowedHash.indexOf(h) < 0) return;
+          if (!introDone() && h !== "intro") return;
+          if (wrongHint) wrongHint.classList.remove("on");
+          activate(h);
+        });
+
+        enterBtn &&
+          document.addEventListener("keydown", function (e) {
+            if (
+              document.getElementById("panel-intro").classList.contains("active") &&
+              (e.key === "Enter" || e.code === "Enter")
+            ) {
+              var ae = document.activeElement;
+              var typingInTextarea = ae && ae.tagName && ae.tagName.toUpperCase() === "TEXTAREA";
+              if (document.activeElement === enterBtn || !typingInTextarea) {
+                e.preventDefault();
+                enterBtn.click();
+              }
+            }
+          });
+
+        document.body.addEventListener("click", function (e) {
+          var t = e.target;
+          if (!(t instanceof Element)) return;
+          var btn = t.closest("[data-action]");
+          if (!btn) return;
+
+          if (wrongHint) wrongHint.classList.remove("on");
+
+          var act = btn.getAttribute("data-action");
+          if (act === "dismiss-strip-home") {
+            dismissHomeStrip();
+            return;
+          }
+          if (act === "dismiss-strip-threads") {
+            dismissThreadsStrip();
+            return;
+          }
+
+          subLabel.textContent = "";
+
+          if (act === "pickup-threads") {
+            activate("threads");
+            showToast("Picked up launch thread.");
+            subLabel.textContent = "Continuity cue → Threads tab";
+          }
+          if (act === "comeback-threads") {
+            activate("threads");
+            showToast("Returning to Threads.");
+            subLabel.textContent = "Come back routed to Threads";
+          }
+
+          if (act === "threads-pick-result") {
+            activate("result");
+            showToast("Opens result card for continuity.");
+          }
+
+          if (act === "say-more-home") {
+            activate("home");
+            showToast("Add a line—still session-saved.");
+            focusComposerSoon();
+            subLabel.textContent = "Composer refocus · session draft";
+          }
+
+          if (act === "wrong-partial") {
+            activate("home");
+            focusComposerSoon();
+            if (wrongHint) wrongHint.classList.add("on");
+            showToast("Wrong / partial—tweak the line.");
+          }
+        });
+
+        /** Thread cards: active persistence */
+        var threadRow = document.getElementById("threads-row");
+        if (threadRow) {
+          var savedActive = sessionStorage.getItem(STORAGE.threadActive);
+          threadRow.querySelectorAll(".t-card").forEach(function (card) {
+            var id = card.getAttribute("data-thread");
+            if (id && savedActive === id) {
+              threadRow.querySelectorAll(".t-card.active").forEach(function (x) {
+                x.classList.remove("active");
+              });
+              card.classList.add("active");
+            }
+
+            card.addEventListener("click", function () {
+              threadRow.querySelectorAll(".t-card.active").forEach(function (x) {
+                x.classList.remove("active");
+              });
+              card.classList.add("active");
+              var nid = card.getAttribute("data-thread");
+              if (nid) sessionStorage.setItem(STORAGE.threadActive, nid);
+            });
+
+            card.addEventListener("keydown", function (ev) {
+              if (ev.key === "Enter" || ev.key === " ") {
+                ev.preventDefault();
+                card.click();
+              }
+            });
+          });
+        }
+      })();
+    </script>
+  </body>
+</html>

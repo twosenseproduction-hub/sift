@@ -1,0 +1,966 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg:            #f0ebe0;
+    --leaf-dark:     #263d1a;
+    --leaf-mid:      #3a5530;
+    --leaf-accent:   #628840;
+    --sage:          #7a9460;
+    --mist:          #b8cca0;
+    --cream:         #2c3d1e;
+
+    --text-primary:  #2c3d1e;
+    --text-secondary:#5a7040;
+    --text-muted:    rgba(78,104,50,0.5);
+
+    --border:        rgba(90,112,60,0.13);
+    --border-hover:  rgba(90,112,60,0.26);
+    --surface:       rgba(225,218,204,0.55);
+    --surface-hover: rgba(215,208,192,0.7);
+
+    --serif: 'Cormorant Garamond', Georgia, serif;
+    --sans:  'DM Sans', system-ui, sans-serif;
+  }
+
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text-primary);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── ANIMATED BACKGROUND ── */
+  .leaf-bg {
+    position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background: var(--bg); overflow: hidden;
+  }
+  .blob { position: absolute; border-radius: 50%; will-change: transform; }
+  .blob-orb {
+    width: 75%; height: 68%; left: 12.5%; top: 20%;
+    background: radial-gradient(ellipse at center,
+      #6b8854 0%,
+      rgba(107,136,84,0.78) 22%,
+      rgba(107,136,84,0.35) 52%,
+      transparent 72%);
+    animation: orbBreathe 13s ease-in-out infinite;
+  }
+  @keyframes orbBreathe {
+    0%,100% { transform: scale(1)    translate(0%,   0%); }
+    40%     { transform: scale(1.04) translate(1.5%, 2%); }
+    70%     { transform: scale(0.97) translate(-1%,  1%); }
+  }
+  .noise-layer {
+    position: fixed; inset: 0; z-index: 1; pointer-events: none;
+    opacity: 0.18;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-size: 256px 256px;
+    mix-blend-mode: multiply;
+  }
+
+  /* NAV */
+  nav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 40px;
+    background: rgba(13,26,15,0.72);
+    backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--border);
+  }
+  .nav-logo {
+    font-family: var(--serif);
+    font-size: 22px; font-weight: 300; letter-spacing: 0.08em;
+    color: var(--cream);
+  }
+  .nav-tabs {
+    display: flex; gap: 2px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border);
+    border-radius: 100px; padding: 4px;
+  }
+  .tab-btn {
+    font-family: var(--sans);
+    font-size: 12px; font-weight: 400; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--text-secondary);
+    background: transparent; border: none;
+    padding: 7px 18px; border-radius: 100px; cursor: pointer;
+    transition: all 0.22s;
+  }
+  .tab-btn.active  { background: rgba(100,155,80,0.16); color: var(--cream); }
+  .tab-btn:hover:not(.active) { color: var(--mist); }
+  .nav-hint { font-size: 11px; letter-spacing: 0.12em; color: var(--text-muted); }
+
+  /* PAGES */
+  .page { display: none; padding-top: 60px; min-height: 100vh; position: relative; z-index: 2; }
+  .page.active { display: block; }
+
+  /* ── LANDING ── */
+  .landing-hero {
+    display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-end;
+    min-height: calc(100vh - 60px);
+    padding: 0 52px 88px;
+  }
+  .landing-eyebrow {
+    font-size: 11px; font-weight: 400; letter-spacing: 0.22em; text-transform: uppercase;
+    color: var(--text-secondary); margin-bottom: 22px;
+  }
+  .landing-headline {
+    font-family: var(--serif);
+    font-size: clamp(52px,7.5vw,94px); font-weight: 300; line-height: 1.05;
+    color: var(--cream); max-width: 680px; margin-bottom: 26px; letter-spacing: -0.01em;
+  }
+  .landing-headline em { font-style: italic; color: var(--sage); }
+  .landing-sub {
+    font-size: 15px; font-weight: 300; line-height: 1.8;
+    color: var(--text-secondary); max-width: 390px; margin-bottom: 44px;
+  }
+  .landing-cta { display: flex; gap: 18px; align-items: center; }
+
+  .btn-primary {
+    font-family: var(--sans);
+    font-size: 13px; font-weight: 400; letter-spacing: 0.07em;
+    color: var(--bg); background: var(--mist);
+    border: none; padding: 13px 30px; border-radius: 2px; cursor: pointer;
+    transition: background 0.18s;
+  }
+  .btn-primary:hover { background: var(--cream); }
+
+  .btn-ghost {
+    font-family: var(--sans);
+    font-size: 13px; font-weight: 300; color: var(--text-secondary);
+    background: transparent; border: none; cursor: pointer;
+    display: flex; align-items: center; gap: 7px;
+    transition: color 0.18s; padding: 0;
+  }
+  .btn-ghost:hover { color: var(--cream); }
+  .btn-ghost svg { transition: transform 0.18s; }
+  .btn-ghost:hover svg { transform: translateX(4px); }
+
+  .features-strip {
+    display: grid; grid-template-columns: repeat(3,1fr);
+    border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+    background: rgba(20,38,16,0.5); backdrop-filter: blur(8px);
+  }
+  .feature-cell { padding: 48px 40px; }
+  .feature-cell + .feature-cell { border-left: 1px solid var(--border); }
+  .feature-num { font-family: var(--serif); font-size: 11px; letter-spacing: 0.2em; color: var(--text-muted); margin-bottom: 18px; }
+  .feature-title { font-family: var(--serif); font-size: 27px; font-weight: 300; color: var(--cream); margin-bottom: 12px; line-height: 1.2; }
+  .feature-desc { font-size: 13px; font-weight: 300; line-height: 1.9; color: var(--text-secondary); }
+
+  .landing-quote { padding: 100px 52px; }
+  .quote-text {
+    font-family: var(--serif);
+    font-size: clamp(28px,4vw,50px); font-weight: 300; font-style: italic; line-height: 1.35;
+    color: rgba(184,212,160,0.45); max-width: 580px;
+  }
+
+  /* ── HOME / COMPOSER ── */
+  .home-layout {
+    display: grid; grid-template-columns: 210px 1fr;
+    min-height: calc(100vh - 60px);
+  }
+  .sidebar {
+    border-right: 1px solid var(--border);
+    padding: 36px 0;
+    position: sticky; top: 60px; height: calc(100vh - 60px); overflow-y: auto;
+    background: rgba(13,26,15,0.5); backdrop-filter: blur(8px);
+    display: flex; flex-direction: column;
+  }
+  .sidebar-section { padding: 0 18px 24px; }
+  .sidebar-label { font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 10px; }
+  .sidebar-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 10px; border-radius: 3px; cursor: pointer;
+    font-size: 13px; font-weight: 300; color: var(--text-secondary);
+    transition: all 0.15s; margin-bottom: 1px; border: 1px solid transparent;
+  }
+  .sidebar-item:hover { background: var(--surface-hover); color: var(--cream); }
+  .sidebar-item.active { background: rgba(100,155,80,0.12); color: var(--cream); border-color: var(--border-hover); }
+  .sidebar-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--leaf-accent); flex-shrink: 0; }
+  .sidebar-spacer { flex: 1; }
+  .sidebar-footer { padding: 18px 18px 0; border-top: 1px solid var(--border); }
+  .sidebar-user { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--text-secondary); }
+  .user-avatar {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: rgba(100,155,80,0.18);
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--serif); font-size: 14px; color: var(--sage);
+  }
+
+  .composer-area { padding: 60px 52px 48px; max-width: 700px; }
+  .composer-greeting { font-family: var(--serif); font-size: 13px; font-weight: 300; font-style: italic; letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 8px; }
+  .composer-prompt { font-family: var(--serif); font-size: 34px; font-weight: 300; color: var(--cream); margin-bottom: 44px; line-height: 1.25; }
+
+  .composer-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 3px; margin-bottom: 14px;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  .composer-box:focus-within { border-color: var(--border-hover); background: rgba(255,255,255,0.06); }
+
+  .composer-textarea {
+    width: 100%; background: transparent; border: none; outline: none; resize: none;
+    font-family: var(--sans); font-size: 15px; font-weight: 300; line-height: 1.85;
+    color: var(--text-primary);
+    padding: 24px; min-height: 175px; caret-color: var(--sage);
+  }
+  .composer-textarea::placeholder { color: var(--text-muted); font-style: italic; }
+
+  .composer-toolbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 11px 20px; border-top: 1px solid var(--border);
+  }
+  .toolbar-hints { display: flex; gap: 16px; }
+  .hint-tag { font-size: 11px; letter-spacing: 0.04em; color: var(--text-muted); cursor: pointer; font-style: italic; transition: color 0.15s; }
+  .hint-tag:hover { color: var(--text-secondary); }
+
+  .sift-btn {
+    font-family: var(--sans); font-size: 12px; font-weight: 400; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--bg); background: var(--sage);
+    border: none; padding: 10px 22px; border-radius: 2px; cursor: pointer;
+    transition: background 0.18s;
+  }
+  .sift-btn:hover { background: var(--mist); }
+
+  /* Output */
+  .output-section { margin-top: 40px; border-top: 1px solid var(--border); padding-top: 36px; }
+  .output-label { font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 28px; }
+  .signal-block { margin-bottom: 28px; }
+  .signal-heading { font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--leaf-accent); margin-bottom: 10px; }
+  .signal-text { font-family: var(--serif); font-size: 23px; font-weight: 300; line-height: 1.5; color: var(--cream); }
+  .noise-list { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+  .noise-list li {
+    font-size: 13px; font-weight: 300; color: var(--text-secondary);
+    display: flex; gap: 12px; line-height: 1.7;
+  }
+  .noise-list li::before { content: '—'; color: var(--text-muted); flex-shrink: 0; }
+
+  .next-step-card {
+    background: rgba(100,155,80,0.08); border: 1px solid rgba(100,155,80,0.2);
+    border-radius: 3px; padding: 20px 24px; margin-top: 24px;
+  }
+  .next-step-label { font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--sage); margin-bottom: 8px; opacity: 0.8; }
+  .next-step-text { font-family: var(--serif); font-size: 19px; font-weight: 300; font-style: italic; color: var(--cream); line-height: 1.55; }
+
+  /* ── LIBRARY ── */
+  .library-layout { display: grid; grid-template-columns: 230px 1fr; min-height: calc(100vh - 60px); }
+  .library-filters {
+    border-right: 1px solid var(--border); padding: 40px 22px;
+    position: sticky; top: 60px; height: calc(100vh - 60px); overflow-y: auto;
+    background: rgba(13,26,15,0.5); backdrop-filter: blur(8px);
+  }
+  .filter-title { font-family: var(--serif); font-size: 24px; font-weight: 300; color: var(--cream); margin-bottom: 34px; }
+  .filter-group { margin-bottom: 26px; }
+  .filter-group-label { font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 11px; }
+  .filter-chip {
+    display: inline-flex; align-items: center;
+    padding: 5px 12px; border: 1px solid var(--border); border-radius: 100px;
+    font-size: 12px; font-weight: 300; color: var(--text-secondary);
+    cursor: pointer; margin: 3px 3px 3px 0; transition: all 0.15s; background: transparent;
+  }
+  .filter-chip:hover, .filter-chip.active {
+    background: rgba(100,155,80,0.12); border-color: var(--border-hover); color: var(--cream);
+  }
+
+  .library-main { padding: 40px 48px; }
+  .library-header {
+    display: flex; align-items: flex-end; justify-content: space-between;
+    margin-bottom: 40px; padding-bottom: 22px; border-bottom: 1px solid var(--border);
+  }
+  .library-count { font-family: var(--serif); font-size: 13px; font-weight: 300; font-style: italic; color: var(--text-secondary); }
+  .search-input {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 2px;
+    padding: 9px 16px; font-family: var(--sans); font-size: 13px; font-weight: 300;
+    color: var(--text-primary); outline: none; width: 210px; transition: border-color 0.2s;
+  }
+  .search-input::placeholder { color: var(--text-muted); font-style: italic; }
+  .search-input:focus { border-color: var(--border-hover); }
+
+  .entry-row {
+    display: grid; grid-template-columns: 72px 1fr auto; gap: 22px; align-items: start;
+    padding: 22px 0; border-bottom: 1px solid var(--border); cursor: pointer; transition: all 0.15s;
+  }
+  .entry-row:hover { background: var(--surface-hover); padding-left: 12px; padding-right: 12px; margin: 0 -12px; border-bottom-color: transparent; }
+  .entry-date { font-family: var(--serif); font-size: 12px; font-weight: 300; color: var(--text-muted); line-height: 1.5; padding-top: 2px; }
+  .entry-signal { font-family: var(--serif); font-size: 17px; font-weight: 300; color: var(--cream); margin-bottom: 6px; line-height: 1.35; }
+  .entry-preview { font-size: 12px; font-weight: 300; color: var(--text-secondary); line-height: 1.7; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .entry-tag { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; padding: 4px 10px; border: 1px solid var(--border); border-radius: 100px; color: var(--text-secondary); white-space: nowrap; margin-top: 2px; }
+
+  /* ── ENTRY DETAIL ── */
+  .entry-detail { display: none; padding: 48px 52px; max-width: 720px; animation: fadeUp 0.25s ease; }
+  .entry-detail.visible { display: block; }
+  .detail-back {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--text-muted); cursor: pointer; margin-bottom: 40px;
+    background: none; border: none; transition: color 0.15s;
+  }
+  .detail-back:hover { color: var(--text-secondary); }
+  .detail-back svg { transition: transform 0.15s; }
+  .detail-back:hover svg { transform: translateX(-3px); }
+  .detail-meta { display: flex; align-items: center; gap: 14px; margin-bottom: 32px; }
+  .detail-date { font-family: var(--serif); font-size: 13px; font-style: italic; color: var(--text-muted); }
+  .detail-tag { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; padding: 4px 10px; border: 1px solid var(--border); border-radius: 100px; color: var(--text-secondary); }
+  .detail-tangle-label { font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 14px; }
+  .detail-tangle {
+    font-size: 14px; font-weight: 300; line-height: 1.9; color: var(--text-secondary);
+    border-left: 2px solid var(--border); padding-left: 20px; margin-bottom: 44px;
+    font-style: italic;
+  }
+  .detail-divider { border: none; border-top: 1px solid var(--border); margin-bottom: 36px; }
+  .library-main-list { display: block; }
+  .library-main-list.hidden { display: none; }
+
+  /* ── PATTERNS ── */
+  .patterns-layout { display: grid; grid-template-columns: 260px 1fr; min-height: calc(100vh - 60px); }
+  .patterns-sidebar {
+    border-right: 1px solid var(--border); padding: 48px 28px;
+    background: rgba(13,26,15,0.5); backdrop-filter: blur(8px);
+    position: sticky; top: 60px; height: calc(100vh - 60px); overflow-y: auto;
+  }
+  .patterns-sidebar-title { font-family: var(--serif); font-size: 24px; font-weight: 300; color: var(--cream); margin-bottom: 8px; }
+  .patterns-sidebar-sub { font-size: 12px; font-weight: 300; color: var(--text-muted); margin-bottom: 44px; line-height: 1.7; }
+  .stat-block { margin-bottom: 32px; }
+  .stat-num { font-family: var(--serif); font-size: 44px; font-weight: 300; color: var(--cream); line-height: 1; margin-bottom: 4px; }
+  .stat-label { font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-muted); }
+  .stat-divider { border: none; border-top: 1px solid var(--border); margin: 28px 0; }
+
+  .patterns-main { padding: 48px 52px; }
+  .patterns-section { margin-bottom: 60px; }
+  .patterns-section-label { font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 28px; }
+
+  /* Heatmap */
+  .heatmap-wrap { display: flex; flex-direction: column; gap: 6px; }
+  .heatmap-months { display: flex; gap: 4px; margin-bottom: 4px; padding-left: 32px; }
+  .heatmap-month-label { font-size: 10px; color: var(--text-muted); letter-spacing: 0.06em; width: 28px; text-align: center; flex-shrink: 0; }
+  .heatmap-row { display: flex; align-items: center; gap: 4px; }
+  .heatmap-day-label { font-size: 9px; color: var(--text-muted); width: 26px; text-align: right; flex-shrink: 0; }
+  .heatmap-cells { display: flex; gap: 4px; flex-wrap: nowrap; }
+  .hm-cell {
+    width: 12px; height: 12px; border-radius: 2px;
+    background: rgba(100,155,80,0.08); border: 1px solid rgba(100,155,80,0.06);
+    flex-shrink: 0; cursor: default; transition: transform 0.1s;
+  }
+  .hm-cell:hover { transform: scale(1.3); }
+  .hm-cell.l1 { background: rgba(100,155,80,0.18); border-color: rgba(100,155,80,0.22); }
+  .hm-cell.l2 { background: rgba(100,155,80,0.35); border-color: rgba(100,155,80,0.4); }
+  .hm-cell.l3 { background: rgba(100,155,80,0.58); border-color: rgba(100,155,80,0.65); }
+  .hm-cell.l4 { background: var(--sage); border-color: var(--sage); }
+
+  /* Recurring themes */
+  .theme-row {
+    display: flex; align-items: baseline; gap: 0; justify-content: space-between;
+    padding: 18px 0; border-bottom: 1px solid var(--border); cursor: default;
+    transition: padding-left 0.15s;
+  }
+  .theme-row:hover { padding-left: 6px; }
+  .theme-name { font-family: var(--serif); font-size: 22px; font-weight: 300; color: var(--cream); }
+  .theme-bar-wrap { flex: 1; margin: 0 22px; padding-bottom: 2px; }
+  .theme-bar { height: 1px; background: var(--border); position: relative; }
+  .theme-bar-fill { position: absolute; left: 0; top: 0; height: 1px; background: var(--leaf-accent); transition: width 0.8s ease; }
+  .theme-count { font-size: 12px; color: var(--text-muted); font-family: var(--serif); font-style: italic; }
+
+  /* Returning signals */
+  .returning-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 3px; padding: 24px 28px; margin-bottom: 14px;
+    transition: border-color 0.18s, background 0.18s;
+    cursor: default;
+  }
+  .returning-card:hover { border-color: var(--border-hover); background: rgba(255,255,255,0.05); }
+  .returning-card-signal { font-family: var(--serif); font-size: 19px; font-weight: 300; line-height: 1.45; color: var(--cream); margin-bottom: 10px; }
+  .returning-card-meta { display: flex; align-items: center; gap: 14px; }
+  .returning-card-freq { font-size: 11px; letter-spacing: 0.1em; color: var(--leaf-accent); }
+  .returning-card-dates { font-size: 11px; color: var(--text-muted); font-style: italic; }
+
+  /* Distilled note */
+  .distilled-block {
+    background: rgba(100,155,80,0.06); border: 1px solid rgba(100,155,80,0.16);
+    border-radius: 3px; padding: 32px 36px;
+  }
+  .distilled-eyebrow { font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--sage); margin-bottom: 18px; opacity: 0.8; }
+  .distilled-text {
+    font-family: var(--serif); font-size: 24px; font-weight: 300; font-style: italic;
+    line-height: 1.5; color: var(--cream);
+  }
+
+  /* Voice recording state */
+  .voice-recording { display: none; align-items: center; gap: 12px; }
+  .voice-recording.active { display: flex; }
+  .voice-pulse {
+    width: 8px; height: 8px; border-radius: 50%; background: #e07070;
+    animation: voicePulse 1.2s ease-in-out infinite;
+  }
+  @keyframes voicePulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.7); }
+  }
+  .voice-bars { display: flex; align-items: center; gap: 2px; }
+  .voice-bar {
+    width: 2px; border-radius: 2px; background: var(--leaf-accent);
+    animation: voiceBar 0.8s ease-in-out infinite;
+  }
+  .voice-bar:nth-child(1) { height: 8px; animation-delay: 0s; }
+  .voice-bar:nth-child(2) { height: 14px; animation-delay: 0.15s; }
+  .voice-bar:nth-child(3) { height: 10px; animation-delay: 0.3s; }
+  .voice-bar:nth-child(4) { height: 18px; animation-delay: 0.1s; }
+  .voice-bar:nth-child(5) { height: 7px; animation-delay: 0.25s; }
+  @keyframes voiceBar {
+    0%, 100% { transform: scaleY(1); }
+    50% { transform: scaleY(0.35); }
+  }
+  .voice-stop { font-size: 11px; letter-spacing: 0.08em; color: var(--text-muted); cursor: pointer; font-style: italic; transition: color 0.15s; }
+  .voice-stop:hover { color: var(--text-secondary); }
+  .hint-tag.hidden { display: none; }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ── LIGHT MODE OVERRIDES ── */
+  nav, .scenes-nav {
+    background: rgba(240,235,226,0.82) !important;
+    border-bottom-color: rgba(90,112,60,0.12) !important;
+  }
+  .sidebar, .mock-sidebar, .library-filters, .patterns-sidebar,
+  .history-sidebar, .patterns-sidebar {
+    background: rgba(238,232,220,0.60) !important;
+    backdrop-filter: blur(12px);
+  }
+  .composer-box { background: rgba(232,226,214,0.55) !important; }
+  .composer-box:focus-within { background: rgba(225,218,205,0.7) !important; }
+  .next-step-system, .release-panel { background: rgba(232,226,214,0.55) !important; }
+  .nss-header { background: rgba(215,210,196,0.5) !important; }
+  .next-step-card, .distilled-block, .returning-card {
+    background: rgba(215,210,196,0.5) !important;
+  }
+  .sidebar-active-step { background: rgba(110,136,80,0.10) !important; }
+  .micro-steps { border-top-color: rgba(90,112,60,0.12) !important; }
+  .micro-step:hover:not(.done) { background: rgba(110,136,80,0.06) !important; }
+  .features-strip { background: rgba(232,226,214,0.55) !important; }
+  .overlay-demo { background: rgba(240,235,226,0.97) !important; }
+  .search-input { background: rgba(232,226,214,0.6) !important; }
+  .tab-btn.active, .scene-tab.active { background: rgba(90,112,60,0.14) !important; }
+  .composer-textarea { color: var(--text-primary) !important; }
+  .composer-textarea::placeholder { color: var(--text-muted) !important; }
+  .signal-text, .nss-step-text, .next-step-text,
+  .overlay-step-text, .release-step-preview,
+  .landing-headline, .feature-title, .filter-title,
+  .entry-signal, .distilled-text, .returning-card-signal,
+  .reflection-q, .released-title, .step-entry-text,
+  .history-sidebar-title, .patterns-sidebar-title,
+  .composer-prompt, .detail-tangle { color: var(--text-primary) !important; }
+  .landing-sub, .feature-desc, .entry-preview, .nss-subtext,
+  .micro-step-text, .released-sub, .history-sidebar-sub,
+  .patterns-sidebar-sub, .detail-tangle { color: var(--text-secondary) !important; }
+  .landing-headline em { color: var(--sage) !important; }
+  .quote-text { color: rgba(60,88,38,0.42) !important; }
+  .btn-primary { background: var(--leaf-mid) !important; color: #f0ebe0 !important; }
+  .btn-primary:hover { background: var(--leaf-dark) !important; }
+  .sift-btn { background: var(--sage) !important; color: #f0ebe0 !important; }
+  .sift-btn:hover { background: var(--leaf-mid) !important; }
+  .commit-btn { background: var(--sage) !important; color: #f0ebe0 !important; }
+  .commit-btn:hover:not(.committed) { background: var(--leaf-mid) !important; }
+  .commit-btn.committed { background: transparent !important; color: var(--leaf-accent) !important; }
+  .carry-btn, .release-primary-btn, .release-confirm-btn {
+    background: var(--sage) !important; color: #f0ebe0 !important;
+  }
+  .carry-btn:hover, .release-primary-btn:hover, .release-confirm-btn:hover {
+    background: var(--leaf-mid) !important;
+  }
+  .released-next-btn { color: var(--text-secondary) !important; }
+  .micro-release-hint { color: var(--sage) !important; }
+  .micro-release-hint:hover { color: var(--leaf-mid) !important; }
+  .noise-list li, .step-entry-reflection { color: var(--text-secondary) !important; }
+  .signal-heading, .output-label, .nss-label, .next-step-label,
+  .release-eyebrow, .micro-steps-label, .detail-tangle-label,
+  .distilled-eyebrow { color: var(--leaf-accent) !important; opacity: 1 !important; }
+  .entry-row:hover { background: rgba(110,136,80,0.07) !important; }
+  .sidebar-item:hover, .mock-sidebar-item:hover { background: rgba(110,136,80,0.09) !important; color: var(--text-primary) !important; }
+  .sidebar-item.active, .mock-sidebar-item.active { background: rgba(110,136,80,0.14) !important; color: var(--text-primary) !important; border-color: var(--border-hover) !important; }
+  .filter-chip.active, .history-chip.active { background: rgba(90,112,60,0.12) !important; border-color: var(--border-hover) !important; color: var(--text-primary) !important; }
+  .frame-line { background: rgba(90,112,60,0.2) !important; }
+  .frame-corner.tl, .frame-corner.tr,
+  .frame-corner.bl, .frame-corner.br { border-color: var(--sage) !important; }
+  .step-thread::before { background: var(--border) !important; }
+  .user-avatar { background: rgba(90,112,60,0.14) !important; color: var(--sage) !important; }
+</style>
+</head>
+<body>
+
+<div class="leaf-bg">
+  <div class="blob blob-center"></div>
+  <div class="blob blob-tl"></div>
+  <div class="blob blob-tr"></div>
+  <div class="blob blob-bot"></div>
+  <div class="blob blob-mid"></div>
+</div>
+
+<nav>
+  <span class="nav-logo">sift</span>
+  <div class="nav-tabs">
+    <button class="tab-btn active" onclick="showPage('landing',this)">Overview</button>
+    <button class="tab-btn" onclick="showPage('home',this)">Composer</button>
+    <button class="tab-btn" onclick="showPage('library',this)">Library</button>
+    <button class="tab-btn" onclick="showPage('patterns',this)">Patterns</button>
+  </div>
+  <span class="nav-hint">v2</span>
+</nav>
+
+<!-- LANDING -->
+<div id="landing" class="page active">
+  <div class="landing-hero">
+    <p class="landing-eyebrow">A quiet tool for a noisy mind</p>
+    <h1 class="landing-headline">Noise in.<br><em>Signal out.</em><br>One next step.</h1>
+    <p class="landing-sub">Speak or type the tangle. Sift separates what matters from what doesn't, and tells you exactly what to do next.</p>
+    <div class="landing-cta">
+      <button class="btn-primary" onclick="showPage('home',document.querySelectorAll('.tab-btn')[1])">Begin sifting</button>
+      <button class="btn-ghost">How it works <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 7h10M8 3l4 4-4 4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+    </div>
+  </div>
+
+  <div class="features-strip">
+    <div class="feature-cell">
+      <p class="feature-num">01</p>
+      <h3 class="feature-title">Capture the tangle</h3>
+      <p class="feature-desc">Type or speak what's occupying your mind — unpolished, incomplete, real. Sift accepts it as it is.</p>
+    </div>
+    <div class="feature-cell">
+      <p class="feature-num">02</p>
+      <h3 class="feature-title">Receive the signal</h3>
+      <p class="feature-desc">What you actually mean — distilled from the noise. Not therapy. Not summary. Signal.</p>
+    </div>
+    <div class="feature-cell">
+      <p class="feature-num">03</p>
+      <h3 class="feature-title">One next step</h3>
+      <p class="feature-desc">Clarity without overwhelm. One precise, actionable step forward. Nothing more than what's needed.</p>
+    </div>
+  </div>
+
+  <div class="landing-quote">
+    <p class="quote-text">"Not everything that weighs on you belongs to you. Sift helps you find out which is which."</p>
+  </div>
+</div>
+
+<!-- HOME -->
+<div id="home" class="page">
+  <div class="home-layout">
+    <aside class="sidebar">
+      <div class="sidebar-section">
+        <p class="sidebar-label">Today</p>
+        <div class="sidebar-item active"><span class="sidebar-dot"></span><span>New entry</span></div>
+      </div>
+      <div class="sidebar-section">
+        <p class="sidebar-label">Recent</p>
+        <div class="sidebar-item"><span style="width:5px;flex-shrink:0;"></span>The job offer</div>
+        <div class="sidebar-item"><span style="width:5px;flex-shrink:0;"></span>What I owe Dad</div>
+        <div class="sidebar-item"><span style="width:5px;flex-shrink:0;"></span>Moving timeline</div>
+        <div class="sidebar-item"><span style="width:5px;flex-shrink:0;"></span>Feeling behind</div>
+      </div>
+      <div class="sidebar-spacer"></div>
+      <div class="sidebar-footer">
+        <div class="sidebar-user">
+          <div class="user-avatar">A</div>
+          <span>Ale</span>
+        </div>
+      </div>
+    </aside>
+
+    <main class="composer-area">
+      <p class="composer-greeting">Saturday, May 23</p>
+      <h2 class="composer-prompt">What's occupying your mind?</h2>
+      <div class="composer-box">
+        <textarea class="composer-textarea" id="composerText" placeholder="Type or paste the tangle. Unpolished is fine." rows="6"></textarea>
+        <div class="composer-toolbar">
+          <div class="toolbar-hints">
+            <span class="hint-tag" onclick="fillSample()">paste something old</span>
+            <span class="hint-tag" id="voiceHint" onclick="startVoice()">use voice</span>
+            <div class="voice-recording" id="voiceRecording">
+              <div class="voice-pulse"></div>
+              <div class="voice-bars">
+                <div class="voice-bar"></div><div class="voice-bar"></div><div class="voice-bar"></div><div class="voice-bar"></div><div class="voice-bar"></div>
+              </div>
+              <span class="voice-stop" onclick="stopVoice()">tap to stop</span>
+            </div>
+          </div>
+          <button class="sift-btn" onclick="showOutput()">Sift →</button>
+        </div>
+      </div>
+      <div class="output-section" id="outputSection" style="display:none;">
+        <p class="output-label">What Sift found</p>
+        <div class="signal-block">
+          <p class="signal-heading">Signal</p>
+          <p class="signal-text">You're not afraid of the decision — you're afraid of what it would say about you if you got it wrong.</p>
+        </div>
+        <div class="signal-block">
+          <p class="signal-heading">Noise</p>
+          <ul class="noise-list">
+            <li>Replaying the conversation from two weeks ago</li>
+            <li>Comparing this to what someone else would do</li>
+            <li>Worrying about how it looks to others</li>
+          </ul>
+        </div>
+        <div class="next-step-card">
+          <p class="next-step-label">One next step</p>
+          <p class="next-step-text">Write down what you'd tell a close friend if they were in your exact position.</p>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- LIBRARY -->
+<div id="library" class="page">
+  <div class="library-layout">
+    <aside class="library-filters">
+      <h2 class="filter-title">Library</h2>
+      <div class="filter-group">
+        <p class="filter-group-label">Time</p>
+        <span class="filter-chip active">All time</span>
+        <span class="filter-chip">This week</span>
+        <span class="filter-chip">This month</span>
+      </div>
+      <div class="filter-group">
+        <p class="filter-group-label">Theme</p>
+        <span class="filter-chip">Work</span>
+        <span class="filter-chip">Relationships</span>
+        <span class="filter-chip">Direction</span>
+        <span class="filter-chip">Grief</span>
+        <span class="filter-chip">Identity</span>
+        <span class="filter-chip">Decisions</span>
+      </div>
+      <div class="filter-group">
+        <p class="filter-group-label">Clarity</p>
+        <span class="filter-chip">Resolved</span>
+        <span class="filter-chip">Open</span>
+        <span class="filter-chip">Returning</span>
+      </div>
+    </aside>
+    <main class="library-main">
+      <div class="library-main-list" id="libraryList">
+      <div class="library-header">
+        <p class="library-count">24 entries</p>
+        <input class="search-input" type="text" placeholder="Search entries…" />
+      </div>
+      <div>
+        <div class="entry-row" onclick="showDetail(0)">
+          <p class="entry-date">May 22<br>2026</p>
+          <div><p class="entry-signal">You're not afraid of the decision. You're afraid of what it would say about you.</p><p class="entry-preview">I keep going back and forth about the offer and I can't tell if it's fear or genuine doubt. Part of me thinks I should just…</p></div>
+          <span class="entry-tag">Work</span>
+        </div>
+        <div class="entry-row" onclick="showDetail(1)">
+          <p class="entry-date">May 18<br>2026</p>
+          <div><p class="entry-signal">The distance you feel from him isn't resentment — it's grief for what you hoped it would be.</p><p class="entry-preview">I don't know why talking to Dad leaves me feeling empty. It's not anger. More like…</p></div>
+          <span class="entry-tag">Relationships</span>
+        </div>
+        <div class="entry-row" onclick="showDetail(2)">
+          <p class="entry-date">May 12<br>2026</p>
+          <div><p class="entry-signal">You haven't fallen behind. You've been carrying more than you're admitting.</p><p class="entry-preview">Everything feels like it's piling up. The app, the family stuff, the health stuff. I feel like I'm running but standing still…</p></div>
+          <span class="entry-tag">Identity</span>
+        </div>
+        <div class="entry-row" onclick="showDetail(3)">
+          <p class="entry-date">Apr 30<br>2026</p>
+          <div><p class="entry-signal">The ambivalence is information. You don't actually want what you said you want.</p><p class="entry-preview">I keep saying I want to move but I never do anything about it. I make plans then quietly let them dissolve…</p></div>
+          <span class="entry-tag">Direction</span>
+        </div>
+        <div class="entry-row" onclick="showDetail(4)">
+          <p class="entry-date">Apr 20<br>2026</p>
+          <div><p class="entry-signal">Busyness has become a way to avoid the question, not answer it.</p><p class="entry-preview">I fill every hour and still feel like I'm not doing enough. There's this constant sense that I'm missing something…</p></div>
+          <span class="entry-tag">Identity</span>
+        </div>
+        <div class="entry-row" onclick="showDetail(5)">
+          <p class="entry-date">Apr 8<br>2026</p>
+          <div><p class="entry-signal">You're not looking for permission. You're looking for someone to tell you it's safe.</p><p class="entry-preview">I've been asking everyone around me what they think I should do, but I think I already know…</p></div>
+          <span class="entry-tag">Decisions</span>
+        </div>
+      </div>
+      </div>
+
+      <!-- Entry detail view -->
+      <div class="entry-detail" id="entryDetail">
+        <button class="detail-back" onclick="closeDetail()">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M12 7H2M6 3l-4 4 4 4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          All entries
+        </button>
+        <div class="detail-meta">
+          <span class="detail-date" id="detailDate"></span>
+          <span class="detail-tag" id="detailTag"></span>
+        </div>
+        <p class="detail-tangle-label">The tangle</p>
+        <p class="detail-tangle" id="detailTangle"></p>
+        <hr class="detail-divider">
+        <p class="output-label">What Sift found</p>
+        <div class="signal-block">
+          <p class="signal-heading">Signal</p>
+          <p class="signal-text" id="detailSignal"></p>
+        </div>
+        <div class="signal-block">
+          <p class="signal-heading">Noise</p>
+          <ul class="noise-list" id="detailNoise"></ul>
+        </div>
+        <div class="next-step-card">
+          <p class="next-step-label">One next step</p>
+          <p class="next-step-text" id="detailNextStep"></p>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- PATTERNS -->
+<div id="patterns" class="page">
+  <div class="patterns-layout">
+    <aside class="patterns-sidebar">
+      <p class="patterns-sidebar-title">Patterns</p>
+      <p class="patterns-sidebar-sub">What Sift has noticed across all your entries.</p>
+      <div class="stat-block">
+        <p class="stat-num">24</p>
+        <p class="stat-label">Total entries</p>
+      </div>
+      <hr class="stat-divider">
+      <div class="stat-block">
+        <p class="stat-num">11</p>
+        <p class="stat-label">Week streak</p>
+      </div>
+      <hr class="stat-divider">
+      <div class="stat-block">
+        <p class="stat-num">6</p>
+        <p class="stat-label">Returning themes</p>
+      </div>
+      <hr class="stat-divider">
+      <div class="stat-block">
+        <p class="stat-num">3</p>
+        <p class="stat-label">Signals resolved</p>
+      </div>
+    </aside>
+
+    <main class="patterns-main">
+
+      <!-- Distilled meta-signal -->
+      <div class="patterns-section">
+        <p class="patterns-section-label">What Sift sees in you</p>
+        <div class="distilled-block">
+          <p class="distilled-eyebrow">Meta-signal</p>
+          <p class="distilled-text">Most of what weighs on you isn't uncertainty — it's the gap between what you know and what you're willing to act on. You already have the answers. You're still waiting for permission.</p>
+        </div>
+      </div>
+
+      <!-- Activity heatmap -->
+      <div class="patterns-section">
+        <p class="patterns-section-label">Activity — past 15 weeks</p>
+        <div class="heatmap-wrap">
+          <div class="heatmap-months" id="heatmapMonthLabels"></div>
+          <div id="heatmapCells"></div>
+        </div>
+      </div>
+
+      <!-- Recurring themes -->
+      <div class="patterns-section">
+        <p class="patterns-section-label">Recurring themes</p>
+        <div class="theme-row">
+          <span class="theme-name">Identity</span>
+          <div class="theme-bar-wrap"><div class="theme-bar"><div class="theme-bar-fill" style="width:82%"></div></div></div>
+          <span class="theme-count">9 entries</span>
+        </div>
+        <div class="theme-row">
+          <span class="theme-name">Decisions</span>
+          <div class="theme-bar-wrap"><div class="theme-bar"><div class="theme-bar-fill" style="width:64%"></div></div></div>
+          <span class="theme-count">7 entries</span>
+        </div>
+        <div class="theme-row">
+          <span class="theme-name">Work</span>
+          <div class="theme-bar-wrap"><div class="theme-bar"><div class="theme-bar-fill" style="width:55%"></div></div></div>
+          <span class="theme-count">6 entries</span>
+        </div>
+        <div class="theme-row">
+          <span class="theme-name">Relationships</span>
+          <div class="theme-bar-wrap"><div class="theme-bar"><div class="theme-bar-fill" style="width:36%"></div></div></div>
+          <span class="theme-count">4 entries</span>
+        </div>
+        <div class="theme-row">
+          <span class="theme-name">Direction</span>
+          <div class="theme-bar-wrap"><div class="theme-bar"><div class="theme-bar-fill" style="width:27%"></div></div></div>
+          <span class="theme-count">3 entries</span>
+        </div>
+        <div class="theme-row">
+          <span class="theme-name">Grief</span>
+          <div class="theme-bar-wrap"><div class="theme-bar"><div class="theme-bar-fill" style="width:14%"></div></div></div>
+          <span class="theme-count">2 entries</span>
+        </div>
+      </div>
+
+      <!-- Returning signals -->
+      <div class="patterns-section">
+        <p class="patterns-section-label">Signals that keep returning</p>
+        <div class="returning-card">
+          <p class="returning-card-signal">You confuse knowing what you want with having permission to want it.</p>
+          <div class="returning-card-meta">
+            <span class="returning-card-freq">appeared 4×</span>
+            <span class="returning-card-dates">Mar 3 · Apr 8 · May 12 · May 22</span>
+          </div>
+        </div>
+        <div class="returning-card">
+          <p class="returning-card-signal">Busyness is a defence. Not a life.</p>
+          <div class="returning-card-meta">
+            <span class="returning-card-freq">appeared 3×</span>
+            <span class="returning-card-dates">Feb 14 · Mar 28 · Apr 20</span>
+          </div>
+        </div>
+        <div class="returning-card">
+          <p class="returning-card-signal">The relationships that exhaust you are exhausting you for a reason.</p>
+          <div class="returning-card-meta">
+            <span class="returning-card-freq">appeared 2×</span>
+            <span class="returning-card-dates">Jan 31 · May 18</span>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<script>
+  function showPage(id, btn) {
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+    if (btn) btn.classList.add('active');
+  }
+  function fillSample() {
+    document.getElementById('composerText').value = "I keep going back and forth about the offer and I can't tell if it's genuine doubt or just fear. Part of me thinks I should take it. Part of me thinks I'm running away. I've asked five people and gotten five different answers. I think I already know what I want but I'm looking for someone to tell me I'm not making a mistake.";
+  }
+  function showOutput() {
+    const s = document.getElementById('outputSection');
+    s.style.display = 'block';
+    s.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  // Voice
+  let voiceTimer = null;
+  function startVoice() {
+    document.getElementById('voiceHint').classList.add('hidden');
+    document.getElementById('voiceRecording').classList.add('active');
+    voiceTimer = setTimeout(() => {
+      stopVoice();
+      document.getElementById('composerText').value = "I keep going back and forth about the offer and I can't tell if it's genuine doubt or just fear. Part of me thinks I should take it — it's more money, more responsibility, the kind of thing I said I wanted. But something keeps stopping me. I've talked to five people and gotten five different answers and I think at this point I just need someone to tell me it's okay.";
+    }, 4000);
+  }
+  function stopVoice() {
+    clearTimeout(voiceTimer);
+    document.getElementById('voiceRecording').classList.remove('active');
+    document.getElementById('voiceHint').classList.remove('hidden');
+  }
+
+  document.querySelectorAll('.filter-chip').forEach(chip => {
+    chip.addEventListener('click', function() {
+      this.closest('.filter-group').querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+      this.classList.add('active');
+    });
+  });
+
+  // Entry detail data
+  const entries = [
+    {
+      date: 'May 22, 2026', tag: 'Work',
+      tangle: "I keep going back and forth about the offer and I can't tell if it's genuine doubt or just fear. Part of me thinks I should take it — it's more money, more responsibility, the kind of thing I said I wanted. But I feel paralysed. I've asked five people and gotten five different answers. I just want someone to tell me I'm not going to regret this either way.",
+      signal: "You're not afraid of the decision — you're afraid of what it would say about you if you got it wrong.",
+      noise: ["Replaying the conversation from two weeks ago", "Comparing this to what someone else would do", "Worrying about how it looks to others"],
+      step: "Write down what you'd tell a close friend if they were in your exact position."
+    },
+    {
+      date: 'May 18, 2026', tag: 'Relationships',
+      tangle: "I don't know why talking to Dad leaves me feeling empty. It's not anger exactly. I want to feel closer to him but every conversation just sort of ends and I'm left wondering why I even picked up the phone. I don't think he knows how to say what he actually means. Maybe I don't either.",
+      signal: "The distance you feel from him isn't resentment — it's grief for what you hoped it would be.",
+      noise: ["Tallying past conversations as evidence", "Expecting him to change without saying what you need", "Confusing love with ease"],
+      step: "Write him one sentence — not to send — that says what you actually wish he'd hear."
+    },
+    {
+      date: 'May 12, 2026', tag: 'Identity',
+      tangle: "Everything feels like it's piling up. The app, the family stuff, the health stuff. I feel like I'm running but standing still. Like every week I reset and start over and never actually get anywhere. I used to be better at this. I don't know when that changed.",
+      signal: "You haven't fallen behind. You've been carrying more than you're admitting.",
+      noise: ["Measuring progress by output instead of capacity", "Comparing this season to a different one", "Treating exhaustion as a character flaw"],
+      step: "List three things you're carrying right now that aren't actually yours to carry."
+    },
+    {
+      date: 'Apr 30, 2026', tag: 'Direction',
+      tangle: "I keep saying I want to move but I never do anything about it. I look at apartments and close the tab. I make plans and then quietly let them dissolve. I don't know if it's fear or if it's that I don't actually want to leave, which is worse somehow.",
+      signal: "The ambivalence is information. You don't actually want what you said you want.",
+      noise: ["Performing wanting to leave without investigating what staying gives you", "Treating inaction as failure rather than a signal", "Confusing what you want with what sounds right to say"],
+      step: "Finish this sentence honestly: 'If I stayed, the real reason would be…'"
+    },
+    {
+      date: 'Apr 20, 2026', tag: 'Identity',
+      tangle: "I fill every hour and still feel like I'm not doing enough. There's this constant sense that I'm missing something, like the real work is happening somewhere else and I haven't found it yet. I keep adding things to the list.",
+      signal: "Busyness has become a way to avoid the question, not answer it.",
+      noise: ["Confusing movement with progress", "Filling the silence before it can say anything", "Measuring worth by throughput"],
+      step: "Block two hours this week with no task attached. See what surfaces."
+    },
+    {
+      date: 'Apr 8, 2026', tag: 'Decisions',
+      tangle: "I've been asking everyone around me what they think I should do, but I think I already know. I just don't trust it. Every time I land somewhere I immediately look for reasons it's wrong. I want someone external to give me permission.",
+      signal: "You're not looking for permission. You're looking for someone to tell you it's safe.",
+      noise: ["Treating other people's confidence as more reliable than your own", "Delaying action until certainty you can't actually obtain", "Collecting opinions to diffuse responsibility"],
+      step: "Write down the decision you'd make if no one was watching. That's it."
+    }
+  ];
+
+  function showDetail(i) {
+    const e = entries[i];
+    document.getElementById('detailDate').textContent = e.date;
+    document.getElementById('detailTag').textContent = e.tag;
+    document.getElementById('detailTangle').textContent = e.tangle;
+    document.getElementById('detailSignal').textContent = e.signal;
+    document.getElementById('detailNextStep').textContent = e.step;
+    const noiseEl = document.getElementById('detailNoise');
+    noiseEl.innerHTML = e.noise.map(n => `<li>${n}</li>`).join('');
+    document.getElementById('libraryList').classList.add('hidden');
+    const detail = document.getElementById('entryDetail');
+    detail.classList.add('visible');
+    detail.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  function closeDetail() {
+    document.getElementById('libraryList').classList.remove('hidden');
+    document.getElementById('entryDetail').classList.remove('visible');
+  }
+
+  // Build heatmap
+  (function buildHeatmap() {
+    const data = [0,0,1,0,2,0,1,3,0,0,2,1,0,0,0,4,0,1,2,0,0,1,0,3,0,0,1,0,0,2,1,0,0,0,3,0,1,0,2,0,0,0,1,0,2,3,0,0,1,0,0,2,0,1,0,0,0,0,3,1,0,2,0,1,0,0,2,0,1,3,0,0,0,1,2,0,0,1,0,0,3,0,2,1,0,0,0,1,0,2];
+    const days = ['Mon','','Wed','','Fri','',''];
+    const months = ['Dec','Jan','Feb','Mar','Apr','May'];
+    const wrap = document.getElementById('heatmapCells');
+    if (!wrap) return;
+    const monthLabels = document.getElementById('heatmapMonthLabels');
+    months.forEach(m => {
+      const el = document.createElement('span');
+      el.className = 'heatmap-month-label'; el.textContent = m;
+      monthLabels.appendChild(el);
+    });
+    const cols = 15; // weeks per row shown
+    for (let d = 0; d < 7; d++) {
+      const row = document.createElement('div'); row.className = 'heatmap-row';
+      const lbl = document.createElement('span'); lbl.className = 'heatmap-day-label'; lbl.textContent = days[d];
+      row.appendChild(lbl);
+      const cells = document.createElement('div'); cells.className = 'heatmap-cells';
+      for (let w = 0; w < cols; w++) {
+        const idx = w * 7 + d;
+        const cell = document.createElement('div');
+        const v = data[idx % data.length];
+        cell.className = 'hm-cell' + (v > 0 ? ' l' + Math.min(v,4) : '');
+        cells.appendChild(cell);
+      }
+      row.appendChild(cells); wrap.appendChild(row);
+    }
+  })();
+</script>
+</body>
+</html>

@@ -18,18 +18,25 @@ import Landing from "@/pages/landing";
 import Pricing from "@/pages/pricing";
 import PrivacyPage from "@/pages/privacy";
 import LibraryPage from "@/pages/library";
+import PatternsPage from "@/pages/patterns";
+import RedirectPatterns from "@/pages/redirect-patterns";
+import ClaritySheetPreviewPage from "@/pages/clarity-sheet-preview";
 import { ThemeProvider } from "@/lib/theme";
+import { HashQueryRedirect } from "@/components/hash-query-redirect";
 
 function AppRouter() {
   return (
     <Switch>
       <Route path="/onboarding-preview" component={OnboardingPreview} />
       <Route path="/shell-preview" component={ShellPreview} />
+      {import.meta.env.DEV ? (
+        <Route path="/clarity-sheet-preview" component={ClaritySheetPreviewPage} />
+      ) : null}
       <Route path="/reset-passphrase" component={ResetPassphrasePage} />
       <Route path="/companion" component={RedirectHome} />
       <Route path="/history" component={RedirectHome} />
       <Route path="/threads" component={RedirectHome} />
-      <Route path="/garden" component={RedirectHome} />
+      <Route path="/garden" component={RedirectPatterns} />
       <Route path="/ways-in" component={RedirectHome} />
       <Route path="/field-notes" component={RedirectHome} />
       <Route path="/demo-sift" component={RedirectHome} />
@@ -43,6 +50,7 @@ function AppRouter() {
       <Route path="/privacy" component={PrivacyPage} />
       <Route path="/library" component={LibraryPage} />
       <Route path="/library/:id" component={LibraryPage} />
+      <Route path="/patterns" component={PatternsPage} />
       <Route path="/admin" component={AdminPage} />
       <Route path="/admin/feedback" component={AdminFeedbackPage} />
       <Route path="/sift" component={Home} />
@@ -59,6 +67,7 @@ function App() {
         <TooltipProvider delayDuration={200}>
           <Toaster />
           <Router hook={useHashLocation}>
+            <HashQueryRedirect />
             <AppRouter />
           </Router>
         </TooltipProvider>

@@ -1,6 +1,13 @@
 import { Mic } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useRedesignV3 } from "@/lib/use-redesign-v3";
+import { RedesignV3EmptyComposer } from "@/components/redesign-v3/empty-composer";
 import { SessionComposer } from "./session-composer";
+import {
+  DailyPromptCard,
+  DailyPromptCardSkeleton,
+  type DailyPromptCardModel,
+} from "./daily-prompt-card";
 
 export const FIRST_USE_STARTERS = [
   "Something's been sitting heavy",
@@ -56,18 +63,58 @@ export function StarterPromptChips({
 export function EmptyConversationState({
   onStarterSelect,
   disabled,
+  dailyPrompt,
+  dailyPromptLoading,
+  dailyPromptActive,
 }: {
   onStarterSelect: (prompt: string) => void;
   disabled?: boolean;
+  dailyPrompt?: DailyPromptCardModel | null;
+  dailyPromptLoading?: boolean;
+  dailyPromptActive?: boolean;
 }) {
+  const { enabled: redesignV3 } = useRedesignV3();
+  const showDaily = dailyPromptLoading || Boolean(dailyPrompt?.promptText);
+
+  if (redesignV3) {
+    return (
+      <RedesignV3EmptyComposer
+        disabled={disabled}
+        onStarterSelect={onStarterSelect}
+        dailyPrompt={dailyPrompt}
+        dailyPromptLoading={dailyPromptLoading}
+        dailyPromptActive={dailyPromptActive}
+      />
+    );
+  }
+
   return (
     <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-5 py-8">
       <FirstUseWelcome />
       <p className="mt-7 max-w-[24rem] text-center text-[12px] leading-relaxed text-[color:var(--color-text-muted)]">
         Speak or type the tangle. I&apos;ll help you find the signal underneath.
       </p>
+
+      {showDaily ? (
+        <div className="mt-6 flex w-full flex-col items-center gap-4">
+          {dailyPromptLoading && !dailyPrompt ? (
+            <DailyPromptCardSkeleton />
+          ) : dailyPrompt ? (
+            <DailyPromptCard
+              prompt={dailyPrompt}
+              disabled={disabled}
+              active={dailyPromptActive}
+              onSelect={onStarterSelect}
+            />
+          ) : null}
+          <p className="text-[11px] text-[color:var(--color-text-muted)]">
+            Or choose a softer entry
+          </p>
+        </div>
+      ) : null}
+
       <StarterPromptChips
-        className="mt-5 max-w-[25rem]"
+        className={cn("max-w-[25rem]", showDaily ? "mt-3" : "mt-5")}
         disabled={disabled}
         onSelect={onStarterSelect}
       />
