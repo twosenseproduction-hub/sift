@@ -8,10 +8,11 @@
   --v3-leaf-accent: #628840;
   --v3-sage: #7a9460;
   --v3-cream: #f0ebe0;
-  --v3-text-primary: #2c3d1e;
-  --v3-text-secondary: #5a7040;
-  --v3-text-muted: rgba(78, 104, 50, 0.5);
-  --v3-border: rgba(90, 112, 60, 0.13);
+  --v3-text-primary: #1a2414;
+  --v3-text-secondary: #3a4a2e;
+  --v3-text-muted: #4f6040;
+  --v3-text-placeholder: #627552;
+  --v3-border: rgba(90, 112, 60, 0.18);
   --v3-border-hover: rgba(90, 112, 60, 0.26);
   --v3-surface: rgba(225, 218, 204, 0.55);
   --v3-serif: "Cormorant Garamond", Georgia, serif;
@@ -31,7 +32,38 @@
     0 1px 0 rgba(90, 112, 60, 0.06);
 
   font-family: var(--v3-sans);
+  font-size: 16px;
+  line-height: 1.5;
   color: var(--v3-text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Body copy: solid color, regular weight, comfortable size */
+.sift-redesign-v3-theme .v3-composer-textarea,
+.sift-redesign-v3-session .v3-composer-textarea,
+.sift-redesign-v3-theme .v3-thread-text,
+.sift-redesign-v3-session .v3-thread-text,
+.sift-redesign-v3-theme .v3-entry-preview,
+.sift-redesign-v3-session .v3-entry-preview,
+.sift-redesign-v3-theme .v3-detail-tangle,
+.sift-redesign-v3-session .v3-detail-tangle,
+.sift-redesign-v3-theme .v3-micro-step-text,
+.sift-redesign-v3-session .v3-micro-step-text,
+.sift-redesign-v3-theme .v3-nss-subtext,
+.sift-redesign-v3-session .v3-nss-subtext,
+.sift-redesign-v3-theme .v3-empty-state,
+.sift-redesign-v3-session .v3-empty-state,
+.sift-redesign-v3-theme .v3-search-input,
+.sift-redesign-v3-session .v3-search-input,
+.sift-redesign-v3-theme .v3-filter-chip,
+.sift-redesign-v3-session .v3-filter-chip,
+.sift-redesign-v3-theme .v3-patterns-sidebar-sub,
+.sift-redesign-v3-session .v3-patterns-sidebar-sub,
+.sift-redesign-v3-theme .v3-daily-prompt-body,
+.sift-redesign-v3-session .v3-daily-prompt-body {
+  font-weight: 400;
 }
 
 .sift-redesign-v3-session .sift-shell-header {
@@ -49,23 +81,25 @@
 
 .sift-redesign-v3-session .v3-composer-date {
   font-family: var(--v3-serif);
-  font-size: 13px;
+  font-size: 14px;
   font-style: italic;
-  color: var(--v3-text-muted);
+  font-weight: 400;
+  color: var(--v3-text-secondary);
 }
 
 .sift-redesign-v3-session .v3-composer-prompt {
   font-family: var(--v3-serif);
-  font-size: clamp(26px, 3.2vw, 34px);
-  font-weight: 300;
-  line-height: 1.2;
+  font-size: clamp(28px, 3.4vw, 36px);
+  font-weight: 400;
+  line-height: 1.22;
   color: var(--v3-text-primary);
 }
 
 .sift-redesign-v3-session .v3-starter-chip {
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  color: var(--v3-text-muted);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  color: var(--v3-text-secondary);
   background: rgba(225, 218, 204, 0.4);
   border: 1px solid var(--v3-border);
   border-radius: 100px;
@@ -98,18 +132,19 @@
 }
 
 .sift-redesign-v3-session .v3-daily-prompt-eyebrow {
-  font-size: 10px;
-  letter-spacing: 0.22em;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--v3-text-muted);
 }
 
 .sift-redesign-v3-session .v3-daily-prompt-body {
   font-family: var(--v3-serif);
-  font-size: 20px;
-  font-weight: 300;
+  font-size: 21px;
+  font-weight: 400;
   font-style: italic;
-  line-height: 1.45;
+  line-height: 1.5;
   color: var(--v3-text-primary);
   margin-top: 10px;
 }
@@ -328,9 +363,11 @@
 }
 
 .sift-energy-word {
-  font-size: 11px;
-  letter-spacing: 0.18em;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
+  color: var(--v3-text-secondary);
   transition: color 2s ease;
 }
 
@@ -352,11 +389,11 @@
 }
 
 .v3-nss-label {
-  font-size: 10px;
-  letter-spacing: 0.22em;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--v3-sage);
-  opacity: 0.85;
+  color: var(--v3-leaf-mid);
 }
 
 .v3-nss-body {
@@ -365,10 +402,10 @@
 
 .v3-nss-step-text {
   font-family: var(--v3-serif);
-  font-size: 22px;
-  font-weight: 300;
+  font-size: 24px;
+  font-weight: 400;
   font-style: italic;
-  line-height: 1.5;
+  line-height: 1.45;
   color: var(--v3-text-primary);
   margin-bottom: 22px;
 }
@@ -403,12 +440,12 @@
 }
 
 .v3-nss-subtext {
-  font-size: 12px;
-  font-weight: 300;
-  color: var(--v3-text-muted);
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--v3-text-secondary);
   font-style: italic;
   max-width: 280px;
-  line-height: 1.7;
+  line-height: 1.65;
 }
 
 .v3-commit-btn {
@@ -517,15 +554,15 @@
 }
 
 .v3-micro-step-text {
-  font-size: 14px;
-  font-weight: 300;
-  color: var(--v3-text-secondary);
-  line-height: 1.7;
+  font-size: 15px;
+  font-weight: 400;
+  color: var(--v3-text-primary);
+  line-height: 1.65;
 }
 
 .v3-micro-step-hint {
-  font-size: 11px;
-  color: var(--v3-text-muted);
+  font-size: 12px;
+  color: var(--v3-text-secondary);
   font-style: italic;
   margin-top: 2px;
   line-height: 1.6;
@@ -533,7 +570,7 @@
 
 .v3-micro-step.done .v3-micro-step-text,
 .v3-micro-step.done .v3-micro-step-hint {
-  opacity: 0.45;
+  opacity: 0.62;
 }
 
 .v3-micro-steps-footer {
@@ -545,8 +582,9 @@
 }
 
 .v3-micro-progress {
-  font-size: 11px;
-  color: var(--v3-text-muted);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--v3-text-secondary);
   font-style: italic;
 }
 
@@ -686,9 +724,9 @@
 
 .v3-tab-btn {
   font-family: var(--v3-sans);
-  font-size: 11px;
-  font-weight: 400;
-  letter-spacing: 0.08em;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--v3-text-secondary);
   background: transparent;
@@ -807,8 +845,9 @@
 }
 
 .v3-sidebar-label {
-  font-size: 10px;
-  letter-spacing: 0.22em;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--v3-text-muted);
   margin-bottom: 10px;
@@ -820,8 +859,8 @@
   gap: 10px;
   padding: 9px 10px;
   border-radius: 3px;
-  font-size: 13px;
-  font-weight: 300;
+  font-size: 14px;
+  font-weight: 400;
   color: var(--v3-text-secondary);
   margin-bottom: 1px;
   border: 1px solid transparent;
@@ -959,9 +998,9 @@
   outline: none;
   resize: none;
   font-family: var(--v3-sans);
-  font-size: 15px;
-  font-weight: 300;
-  line-height: 1.85;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.7;
   color: var(--v3-text-primary);
   padding: 24px;
   min-height: 175px;
@@ -969,8 +1008,9 @@
 }
 
 .v3-composer-textarea::placeholder {
-  color: var(--v3-text-muted);
+  color: var(--v3-text-placeholder);
   font-style: italic;
+  opacity: 1;
 }
 
 .v3-composer-toolbar {
@@ -990,9 +1030,10 @@
 }
 
 .v3-hint-tag {
-  font-size: 11px;
-  letter-spacing: 0.04em;
-  color: var(--v3-text-muted);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  color: var(--v3-text-secondary);
   cursor: pointer;
   font-style: italic;
   background: none;
@@ -1001,11 +1042,11 @@
 }
 
 .v3-hint-tag:hover:not(:disabled) {
-  color: var(--v3-text-secondary);
+  color: var(--v3-text-primary);
 }
 
 .v3-hint-tag:disabled {
-  opacity: 0.45;
+  opacity: 0.55;
   cursor: default;
 }
 
@@ -1125,31 +1166,33 @@
 
 .v3-thread-bubble.is-sift {
   padding: 16px 18px;
-  background: rgba(215, 210, 196, 0.45);
-  border: 1px solid var(--v3-border);
+  background: rgba(248, 245, 238, 0.92);
+  border: 1px solid var(--v3-border-hover);
   border-radius: 3px;
 }
 
 .v3-thread-label {
-  font-size: 10px;
-  letter-spacing: 0.2em;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--v3-leaf-accent);
+  color: var(--v3-leaf-mid);
   margin-bottom: 8px;
 }
 
 .v3-thread-text {
-  font-size: 15px;
-  font-weight: 300;
-  line-height: 1.75;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.7;
   color: var(--v3-text-primary);
   white-space: pre-wrap;
 }
 
 .v3-thread-thinking {
-  font-size: 12px;
+  font-size: 13px;
+  font-weight: 400;
   font-style: italic;
-  color: var(--v3-text-muted);
+  color: var(--v3-text-secondary);
 }
 
 .v3-stack-block {
@@ -1200,8 +1243,9 @@
 }
 
 .v3-filter-group-label {
-  font-size: 10px;
-  letter-spacing: 0.2em;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--v3-text-muted);
   margin-bottom: 10px;
@@ -1219,8 +1263,8 @@
   padding: 5px 12px;
   border: 1px solid var(--v3-border);
   border-radius: 100px;
-  font-size: 12px;
-  font-weight: 300;
+  font-size: 13px;
+  font-weight: 400;
   color: var(--v3-text-secondary);
   cursor: pointer;
   background: transparent;
@@ -1268,10 +1312,10 @@
   background: rgba(232, 226, 214, 0.6);
   border: 1px solid var(--v3-border);
   border-radius: 2px;
-  padding: 9px 16px;
+  padding: 10px 16px;
   font-family: var(--v3-sans);
-  font-size: 13px;
-  font-weight: 300;
+  font-size: 14px;
+  font-weight: 400;
   color: var(--v3-text-primary);
   outline: none;
   width: 100%;
@@ -1280,8 +1324,9 @@
 }
 
 .v3-search-input::placeholder {
-  color: var(--v3-text-muted);
+  color: var(--v3-text-placeholder);
   font-style: italic;
+  opacity: 1;
 }
 
 .v3-search-input:focus {
@@ -1323,8 +1368,8 @@
 
 .v3-entry-date {
   font-family: var(--v3-serif);
-  font-size: 12px;
-  font-weight: 300;
+  font-size: 13px;
+  font-weight: 400;
   color: var(--v3-text-muted);
   line-height: 1.5;
   padding-top: 2px;
@@ -1332,18 +1377,18 @@
 
 .v3-entry-signal {
   font-family: var(--v3-serif);
-  font-size: 17px;
-  font-weight: 300;
+  font-size: 18px;
+  font-weight: 400;
   color: var(--v3-text-primary);
   margin-bottom: 6px;
-  line-height: 1.35;
+  line-height: 1.4;
 }
 
 .v3-entry-preview {
-  font-size: 12px;
-  font-weight: 300;
+  font-size: 13px;
+  font-weight: 400;
   color: var(--v3-text-secondary);
-  line-height: 1.7;
+  line-height: 1.65;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -1377,9 +1422,9 @@
 
 .v3-empty-state {
   padding: 40px 0;
-  font-size: 14px;
-  font-weight: 300;
-  line-height: 1.8;
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.7;
   color: var(--v3-text-secondary);
 }
 
@@ -1433,9 +1478,9 @@
 }
 
 .v3-detail-tangle {
-  font-size: 14px;
-  font-weight: 300;
-  line-height: 1.9;
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.75;
   color: var(--v3-text-secondary);
   border-left: 2px solid var(--v3-border);
   padding-left: 20px;
@@ -1490,11 +1535,11 @@
 }
 
 .v3-patterns-sidebar-sub {
-  font-size: 12px;
-  font-weight: 300;
-  color: var(--v3-text-muted);
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--v3-text-secondary);
   margin-bottom: 32px;
-  line-height: 1.7;
+  line-height: 1.65;
 }
 
 @media (min-width: 900px) {
@@ -1517,8 +1562,9 @@
 }
 
 .v3-stat-label {
-  font-size: 11px;
-  letter-spacing: 0.16em;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--v3-text-muted);
 }
@@ -1563,8 +1609,9 @@
 }
 
 .v3-patterns-section-label {
-  font-size: 10px;
-  letter-spacing: 0.22em;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--v3-text-muted);
   margin-bottom: 24px;
@@ -1815,8 +1862,9 @@
 
 .sift-v3-onboarding-screen .v3-onboarding-kicker {
   font-family: var(--v3-sans);
-  font-size: 10px;
-  letter-spacing: 0.22em;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--v3-text-muted);
 }
@@ -1873,6 +1921,8 @@
   border: 1px solid var(--v3-border);
   background: rgba(225, 218, 204, 0.35);
   color: var(--v3-text-secondary);
+  font-size: 14px;
+  font-weight: 400;
   border-radius: 3px;
   transition: border-color 0.15s, background 0.15s, color 0.15s;
 }
@@ -1890,8 +1940,9 @@
 
 .sift-v3-onboarding-screen .v3-onboarding-label {
   font-family: var(--v3-sans);
-  font-size: 10px;
-  letter-spacing: 0.14em;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--v3-text-muted);
 }
@@ -1961,9 +2012,9 @@
 
 .sift-v3-field-label {
   font-family: var(--v3-sans);
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.12em;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--v3-text-muted);
 }
