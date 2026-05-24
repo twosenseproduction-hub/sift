@@ -1456,7 +1456,7 @@ export default function Home() {
 
             <main className="v3-composer-area">
               {me ? (
-                <HomeReEntryHint enabled mode={baseMode} className="mb-4" />
+                <HomeReEntryHint enabled className="mb-4" />
               ) : null}
 
               {gate ? (

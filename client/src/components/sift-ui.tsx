@@ -24,6 +24,7 @@ import { isCareResponse, isRedundancyGateResult } from "@shared/schema";
 import { ClarifyPrompt } from "./clarify-prompt";
 import { previewModeFromInput } from "@/lib/routeThread";
 import { cn } from "@/lib/utils";
+import { reentryPrimaryHref, reentryPrimaryLabel } from "@/lib/reentry-navigation";
 import { SIFT_LUMA_MOOD_EVENT, type LumaMood } from "@/lib/lumaGrainEngine";
 
 // Deterministic thin-input heuristic. Returns true when the submission is
@@ -1012,17 +1013,8 @@ export function ReEntryBlock({
 
   const { prompt, action } = data;
 
-  const primaryHref =
-    action.type === "compare"
-      ? `/s/${encodeURIComponent(action.currentSiftId)}`
-      : `/s/${encodeURIComponent(action.threadId)}`;
-
-  const primaryLabel =
-    action.type === "compare"
-      ? "Open this sift"
-      : action.type === "checkin"
-        ? "Pick it up"
-        : "Take a look";
+  const primaryHref = reentryPrimaryHref(action);
+  const primaryLabel = reentryPrimaryLabel(action);
 
   const dismiss = () => {
     try {

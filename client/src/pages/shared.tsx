@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useRoute, Link } from "wouter";
+import { useRoute, Link, useLocation } from "wouter";
+import { isRedesignV3Enabled } from "@/lib/use-redesign-v3";
 import { clearResume, readResume } from "@/lib/resume";
 import { Header, Footnote } from "@/components/brand";
 import { AppShell } from "@/components/app-shell";
@@ -27,6 +28,7 @@ type View = "bookmark" | "deepening" | "care";
 
 export default function Shared() {
   const [, params] = useRoute("/s/:id");
+  const [, setLocation] = useLocation();
   const id = params?.id ?? "";
   const [view, setView] = useState<View>("bookmark");
   // Locally held bookmark so we can live-update it as checkpoints arrive
@@ -51,6 +53,12 @@ export default function Shared() {
       if (r && r.siftId === data.id) clearResume();
     }
   }, [data?.id, data?.status]);
+
+  // v3: owner links to /s/:id should continue in chat, not the legacy card page.
+  useEffect(() => {
+    if (!data?.mine || !isRedesignV3Enabled()) return;
+    setLocation(`/s/${id}/chat`);
+  }, [data?.mine, id, setLocation]);
 
   return (
     <AppShell header={<Header />} footer={<Footnote />} contentClassName="pt-8 md:pt-12">

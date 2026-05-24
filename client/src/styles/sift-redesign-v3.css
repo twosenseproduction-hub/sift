@@ -2170,3 +2170,82 @@
   border-color: var(--v3-sage) !important;
 }
 
+/* ── RE-ENTRY HINT (mid-thread prompt on composer) ── */
+.v3-reentry-hint {
+  border: 1px solid var(--v3-border-hover);
+  background: rgba(248, 245, 238, 0.95);
+  border-radius: 3px;
+  padding: 14px 18px;
+  box-shadow: var(--bedroom-paper-shadow);
+}
+
+.v3-reentry-hint-text {
+  font-family: var(--v3-sans);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.6;
+  color: var(--v3-text-primary);
+}
+
+.v3-reentry-hint-actions {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+}
+
+.v3-reentry-hint-link {
+  font-family: var(--v3-sans);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--v3-text-secondary);
+  text-decoration: none;
+  transition: color 0.15s;
+}
+
+.v3-reentry-hint-link:hover {
+  color: var(--v3-text-primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.v3-reentry-hint-link--primary {
+  color: var(--v3-leaf-mid);
+}
+
+.v3-reentry-hint-link--primary:hover {
+  color: var(--v3-leaf-dark);
+}
+
+/* ── THREAD CHAT (Pick it up destination) ── */
+.v3-chat-layout {
+  max-width: 700px;
+  margin: 0 auto;
+  padding: 24px 20px 56px;
+  min-height: calc(100dvh - max(env(safe-area-inset-top), 14px) - 52px);
+  display: flex;
+  flex-direction: column;
+}
+
+@media (min-width: 640px) {
+  .v3-chat-layout {
+    padding: 32px 40px 56px;
+  }
+}
+
+.v3-chat-context {
+  margin: 8px 0 20px;
+  font-family: var(--v3-sans);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--v3-text-secondary);
+}
+
+.v3-chat-thread-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
