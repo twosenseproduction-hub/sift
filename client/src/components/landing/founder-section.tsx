@@ -13,12 +13,12 @@ export function LandingFounderSection() {
             <div className="relative mx-auto w-full max-w-[260px] md:max-w-none">
               <div
                 aria-hidden="true"
-                className="absolute -inset-3 rounded-[1.6rem] bg-primary/8 blur-2xl"
+                className="landing-founder-glow absolute -inset-3"
               />
               <img
                 src="/founder-alejandro.jpg"
                 alt="Alejandro Hernandez, the founder of Sift, smiling outdoors with greenery behind him."
-                className="relative w-full rounded-[1.4rem] border border-border/60 object-cover shadow-[0_24px_60px_-30px_rgba(0,0,0,0.30)]"
+                className="landing-founder-photo relative w-full object-cover"
                 style={{ aspectRatio: "3 / 4" }}
                 data-testid="img-founder"
                 loading="lazy"
@@ -27,16 +27,14 @@ export function LandingFounderSection() {
           </Reveal>
           <Reveal delay={120}>
             <div>
-              <p className="mb-4 text-[12px] font-medium uppercase tracking-[0.26em] text-muted-foreground">
-                The person behind it
-              </p>
-              <h2 className="m-0 mb-4 font-serif text-[clamp(2rem,3.4vw,2.8rem)] leading-[1.05] tracking-[-0.03em]">
+              <p className="landing-eyebrow mb-4">The person behind it</p>
+              <h2 className="landing-headline m-0 mb-4 text-[clamp(2rem,3.4vw,2.8rem)] leading-[1.05]">
                 Alejandro Hernandez
               </h2>
-              <p className="mb-6 text-[14px] uppercase tracking-[0.18em] text-muted-foreground">
+              <p className="landing-eyebrow mb-6 text-[14px] tracking-[0.18em]">
                 Father · Husband · Poet · Multi‑media entrepreneur
               </p>
-              <div className="space-y-4 text-[16px] leading-[1.7] text-foreground/85 md:text-[17px]">
+              <div className="landing-lead space-y-4 text-[16px] md:text-[17px]">
                 <p>
                   I built Sift because my mind doesn’t get quiet on
                   its own. Between the work, the family, and the
@@ -48,14 +46,14 @@ export function LandingFounderSection() {
                   and help me hear myself again — not louder, just
                   clearer. So I made one.
                 </p>
-                <p className="text-muted-foreground">
+                <p>
                   If Sift is useful to you, that’s the whole point.
                   If something is missing, tell me. This is built
                   slowly, by hand, for the kind of mind I have.
                 </p>
               </div>
               <p
-                className="mt-7 font-serif text-[18px] italic tracking-[-0.01em] text-foreground/70"
+                className="landing-headline mt-7 text-[18px] italic tracking-[-0.01em] opacity-80"
                 data-testid="text-founder-signature"
               >
                 — Alejandro

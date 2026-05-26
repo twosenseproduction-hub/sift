@@ -49,7 +49,7 @@ export default function Pricing() {
   }, []);
 
   return (
-    <div className="relative min-h-screen bg-background text-foreground">
+    <div className="sift-redesign-v3-theme relative min-h-screen bg-background text-foreground">
       {/* Faint grain — same texture as the landing page so the two
           surfaces feel like one site. */}
       <div

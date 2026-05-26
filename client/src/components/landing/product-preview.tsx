@@ -24,37 +24,31 @@ export function LandingProductPreviewMock({
 }) {
   return (
     <div
-      className={`overflow-hidden rounded-[28px] border border-border/60 bg-card/70 shadow-[var(--shadow-lg)] backdrop-blur-md ${className}`}
+      className={`landing-panel overflow-hidden ${className}`}
       data-testid="landing-product-preview"
     >
-      <div className="border-b border-border/60 px-5 py-3.5">
-        <div className="mb-2 text-[10px] font-medium uppercase tracking-[0.2em] text-muted-foreground">
-          Composer
-        </div>
-        <div className="rounded-2xl border border-border/60 bg-muted/40 px-4 py-3.5 text-[15px] leading-relaxed text-foreground/85">
+      <div className="border-b border-[var(--v3-border)] px-5 py-3.5">
+        <div className="landing-eyebrow mb-2">Composer</div>
+        <div className="landing-preview-inner px-4 py-3.5 text-[15px] leading-relaxed text-[var(--v3-text-primary)]">
           {PREVIEW.input}
         </div>
       </div>
 
       <div className="space-y-3 p-5">
-        <div className="rounded-2xl border border-l-[3px] border-border/60 border-l-primary/55 bg-muted/40 p-4">
-          <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-            What I&apos;m hearing
-          </div>
-          <p className="m-0 text-[15px] leading-relaxed text-foreground/85">
+        <div className="landing-preview-highlight p-4">
+          <div className="landing-eyebrow mb-2">What I&apos;m hearing</div>
+          <p className="m-0 text-[15px] leading-relaxed text-[var(--v3-text-primary)]">
             {PREVIEW.hearing}
           </p>
         </div>
 
-        <div className="rounded-2xl border border-border/60 bg-muted/40 p-4">
-          <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-            What matters now
-          </div>
-          <ul className="m-0 space-y-2 pl-0 list-none">
+        <div className="landing-preview-inner p-4">
+          <div className="landing-eyebrow mb-2">What matters now</div>
+          <ul className="m-0 list-none space-y-2 pl-0">
             {PREVIEW.matters.map((item) => (
               <li
                 key={item}
-                className="flex gap-2 text-[14px] leading-relaxed text-foreground/85 before:mt-2 before:h-1 before:w-1 before:shrink-0 before:rounded-full before:bg-primary/70 before:content-['']"
+                className="flex gap-2 text-[14px] leading-relaxed text-[var(--v3-text-primary)] before:mt-2 before:h-1 before:w-1 before:shrink-0 before:rounded-full before:bg-[var(--v3-sage)] before:content-['']"
               >
                 <span>{item}</span>
               </li>
@@ -62,15 +56,13 @@ export function LandingProductPreviewMock({
           </ul>
         </div>
 
-        <div className="rounded-2xl border border-border/60 bg-muted/40 p-4">
-          <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-            What may be noise now
-          </div>
-          <ul className="m-0 space-y-2 pl-0 list-none">
+        <div className="landing-preview-inner p-4">
+          <div className="landing-eyebrow mb-2">What may be noise now</div>
+          <ul className="m-0 list-none space-y-2 pl-0">
             {PREVIEW.noise.map((item) => (
               <li
                 key={item}
-                className="flex gap-2 text-[14px] leading-relaxed text-muted-foreground before:mt-2 before:h-1 before:w-1 before:shrink-0 before:rounded-full before:bg-muted-foreground/50 before:content-['']"
+                className="flex gap-2 text-[14px] leading-relaxed text-[var(--v3-text-muted)] before:mt-2 before:h-1 before:w-1 before:shrink-0 before:rounded-full before:bg-[var(--v3-text-muted)] before:opacity-50 before:content-['']"
               >
                 <span>{item}</span>
               </li>
@@ -78,11 +70,11 @@ export function LandingProductPreviewMock({
           </ul>
         </div>
 
-        <div className="rounded-2xl border border-primary/20 bg-primary/[0.06] p-4">
-          <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-primary/80">
+        <div className="landing-preview-step p-4">
+          <div className="landing-eyebrow landing-preview-step-label mb-2">
             One next step
           </div>
-          <p className="m-0 font-medium text-[15px] leading-relaxed text-foreground">
+          <p className="m-0 text-[15px] font-medium leading-relaxed text-[var(--v3-text-primary)]">
             {PREVIEW.nextStep}
           </p>
         </div>
@@ -98,17 +90,15 @@ export function LandingProductPreviewSection() {
         <div className="grid items-center gap-12 lg:grid-cols-[0.95fr_1.05fr] lg:gap-16">
           <div>
             <Reveal>
-              <p className="mb-4 text-[12px] font-medium uppercase tracking-[0.26em] text-muted-foreground">
-                The experience
-              </p>
+              <p className="landing-eyebrow mb-4">The experience</p>
             </Reveal>
             <Reveal delay={80}>
-              <h2 className="m-0 mb-5 font-serif text-[clamp(2.2rem,4.2vw,3.6rem)] leading-[0.95] tracking-[-0.05em]">
+              <h2 className="landing-headline m-0 mb-5 text-[clamp(2.2rem,4.2vw,3.6rem)]">
                 Bring the tangle. Leave with clarity.
               </h2>
             </Reveal>
             <Reveal delay={160}>
-              <p className="max-w-[34rem] text-[clamp(1.05rem,1.8vw,1.35rem)] leading-[1.7] text-muted-foreground">
+              <p className="landing-lead max-w-[34rem] text-[clamp(1.05rem,1.8vw,1.35rem)]">
                 Sift does not ask you to organize your thoughts first. It helps
                 you find what matters inside the mess.
               </p>

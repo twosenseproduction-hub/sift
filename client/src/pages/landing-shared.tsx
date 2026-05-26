@@ -21,7 +21,7 @@ export function getAppHref() {
 
 // Build a hash-route URL pointing at a section on the landing page,
 // from anywhere in the app. Wouter's hash routing means /#/landing is
-// the route; the section anchor is appended after as #what / #faq.
+// the route; the section anchor is appended after as #preview / #how.
 // Same-page anchors are returned bare so the smooth-scroll handler in
 // landing.tsx still picks them up.
 export function landingAnchor(section: string, current: "landing" | "other"): string {
@@ -128,25 +128,10 @@ export function Pill({ children }: { children: React.ReactNode }) {
 // the smooth-scroll handler picks up) or somewhere else (build full
 // hash-route URLs to the landing page sections).
 export function LandingHeader({ current }: { current: "landing" | "other" }) {
-  const [scrolled, setScrolled] = useState(false);
-  useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 10);
-    onScroll();
-    document.addEventListener("scroll", onScroll, { passive: true });
-    return () => document.removeEventListener("scroll", onScroll);
-  }, []);
   const brandHref = current === "landing" ? "#top" : "/#/landing";
   return (
-    <header
-      className={`sticky top-0 z-[100] backdrop-blur-md transition-colors ${
-        scrolled ? "border-b border-border/60" : "border-b border-transparent"
-      }`}
-      style={{
-        background: "color-mix(in srgb, hsl(var(--background)) 76%, transparent)",
-      }}
-      data-testid="landing-header"
-    >
-      <div className="mx-auto flex min-h-[76px] w-[min(1180px,calc(100vw-24px))] items-center justify-between gap-4">
+    <header className="landing-header" data-testid="landing-header">
+      <div className="landing-header__inner">
         <a
           href={brandHref}
           className="inline-flex items-center gap-3"
@@ -155,62 +140,30 @@ export function LandingHeader({ current }: { current: "landing" | "other" }) {
         >
           <Logo size={32} />
         </a>
-        <nav
-          className="hidden gap-5 text-sm text-muted-foreground md:flex"
-          aria-label="Primary navigation"
-        >
-          <a
-            href={landingAnchor("preview", current)}
-            className="transition-colors hover:text-foreground"
-            data-testid="link-nav-preview"
-          >
+        <nav className="landing-header__nav" aria-label="Primary navigation">
+          <a href={landingAnchor("preview", current)} data-testid="link-nav-preview">
             Product
           </a>
-          <a
-            href={landingAnchor("how", current)}
-            className="transition-colors hover:text-foreground"
-            data-testid="link-nav-how"
-          >
+          <a href={landingAnchor("how", current)} data-testid="link-nav-how">
             How it works
           </a>
-          <a
-            href={landingAnchor("outcomes", current)}
-            className="transition-colors hover:text-foreground"
-            data-testid="link-nav-outcomes"
-          >
+          <a href={landingAnchor("outcomes", current)} data-testid="link-nav-outcomes">
             Outcomes
           </a>
-          <a
-            href={landingAnchor("founder", current)}
-            className="transition-colors hover:text-foreground"
-            data-testid="link-nav-founder"
-          >
+          <a href={landingAnchor("founder", current)} data-testid="link-nav-founder">
             About
           </a>
-          <a
-            href="/#/pricing"
-            className="transition-colors hover:text-foreground"
-            data-testid="link-nav-pricing"
-          >
+          <a href="/#/pricing" data-testid="link-nav-pricing">
             Pricing
           </a>
-          <a
-            href={landingAnchor("faq", current)}
-            className="transition-colors hover:text-foreground"
-            data-testid="link-nav-faq"
-          >
-            FAQ
-          </a>
         </nav>
-        <div className="flex items-center gap-2">
-          <a
-            href={getAppHref()}
-            className="hidden h-11 items-center justify-center rounded-full border border-border/60 bg-card/70 px-5 text-sm font-semibold backdrop-blur-md transition-transform hover:-translate-y-px md:inline-flex"
-            data-testid="link-header-cta"
-          >
-            Start with Sift
-          </a>
-        </div>
+        <a
+          href={getAppHref()}
+          className="landing-btn-primary landing-header__cta"
+          data-testid="link-header-cta"
+        >
+          Start with Sift
+        </a>
       </div>
     </header>
   );
@@ -220,54 +173,22 @@ export function LandingHeader({ current }: { current: "landing" | "other" }) {
 // reused on /pricing so the pages feel like one site, not two.
 export function LandingFooter({ current }: { current: "landing" | "other" }) {
   return (
-    <footer
-      className="relative z-[2] border-t border-border/60 py-10"
-      style={{
-        background: "color-mix(in srgb, hsl(var(--background)) 82%, transparent)",
-      }}
-    >
-      <div className="mx-auto flex w-[min(1160px,calc(100vw-32px))] flex-wrap justify-center gap-x-6 gap-y-3 text-sm text-muted-foreground">
-        <a
-          href={landingAnchor("preview", current)}
-          className="transition-colors hover:text-foreground"
-          data-testid="link-footer-preview"
-        >
+    <footer className="landing-footer">
+      <div className="landing-footer__links">
+        <a href={landingAnchor("preview", current)} data-testid="link-footer-preview">
           Product
         </a>
-        <a
-          href={landingAnchor("how", current)}
-          className="transition-colors hover:text-foreground"
-          data-testid="link-footer-how"
-        >
+        <a href={landingAnchor("how", current)} data-testid="link-footer-how">
           How it works
         </a>
-        <a
-          href={landingAnchor("outcomes", current)}
-          className="transition-colors hover:text-foreground"
-          data-testid="link-footer-outcomes"
-        >
+        <a href={landingAnchor("outcomes", current)} data-testid="link-footer-outcomes">
           Outcomes
         </a>
-        <a
-          href={landingAnchor("founder", current)}
-          className="transition-colors hover:text-foreground"
-          data-testid="link-footer-founder"
-        >
+        <a href={landingAnchor("founder", current)} data-testid="link-footer-founder">
           About
         </a>
-        <a
-          href="/#/pricing"
-          className="transition-colors hover:text-foreground"
-          data-testid="link-footer-pricing"
-        >
+        <a href="/#/pricing" data-testid="link-footer-pricing">
           Pricing
-        </a>
-        <a
-          href={landingAnchor("faq", current)}
-          className="transition-colors hover:text-foreground"
-          data-testid="link-footer-faq"
-        >
-          FAQ
         </a>
       </div>
     </footer>

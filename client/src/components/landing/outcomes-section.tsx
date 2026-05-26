@@ -17,44 +17,37 @@ export function LandingOutcomesSection() {
     <Section id="outcomes">
       <Content>
         <Reveal>
-          <p className="mb-4 text-center text-[12px] font-medium uppercase tracking-[0.26em] text-muted-foreground">
-            Over time
-          </p>
+          <p className="landing-eyebrow mb-4 text-center">Over time</p>
         </Reveal>
         <Reveal delay={80}>
-          <h2 className="mx-auto m-0 mb-12 max-w-[16ch] text-center font-serif text-[clamp(2.2rem,4.2vw,3.6rem)] leading-[0.95] tracking-[-0.05em]">
+          <h2 className="landing-headline mx-auto m-0 mb-12 max-w-[16ch] text-center text-[clamp(2.2rem,4.2vw,3.6rem)]">
             Clarity compounds.
           </h2>
         </Reveal>
 
         <div className="grid gap-6 lg:grid-cols-3">
           <Reveal delay={120}>
-            <div className="flex h-full flex-col rounded-3xl border border-border/60 bg-card/70 p-6 shadow-[var(--shadow-md)] backdrop-blur-md">
-              <p className="mb-1 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-                Library
-              </p>
-              <h3 className="m-0 mb-3 font-serif text-2xl tracking-tight">
+            <div className="landing-panel flex h-full flex-col p-6">
+              <p className="landing-eyebrow mb-1">Library</p>
+              <h3 className="landing-headline m-0 mb-3 text-2xl tracking-tight">
                 Saved entries stay findable
               </h3>
-              <p className="mb-5 text-[15px] leading-relaxed text-muted-foreground">
+              <p className="landing-lead mb-5 text-[15px]">
                 Return to what you sorted — titles, next steps, and the thread
                 underneath, without restating the whole story.
               </p>
-              <div className="mt-auto space-y-2 rounded-2xl border border-border/60 bg-muted/30 p-3">
+              <div className="landing-outcomes-mini mt-auto space-y-2 p-3">
                 {LIBRARY_ENTRIES.map((entry) => (
-                  <div
-                    key={entry.title}
-                    className="rounded-xl border border-border/50 bg-background/60 px-3 py-2.5"
-                  >
+                  <div key={entry.title} className="landing-outcomes-row px-3 py-2.5">
                     <div className="flex items-center justify-between gap-2">
-                      <p className="m-0 truncate text-[13px] font-medium text-foreground">
+                      <p className="m-0 truncate text-[13px] font-medium text-[var(--v3-text-primary)]">
                         {entry.title}
                       </p>
-                      <span className="shrink-0 text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+                      <span className="shrink-0 text-[10px] uppercase tracking-[0.12em] text-[var(--v3-text-muted)]">
                         {entry.tag}
                       </span>
                     </div>
-                    <p className="mt-1 truncate text-[11px] text-muted-foreground">
+                    <p className="mt-1 truncate text-[11px] text-[var(--v3-text-muted)]">
                       Next: {entry.next}
                     </p>
                   </div>
@@ -64,14 +57,12 @@ export function LandingOutcomesSection() {
           </Reveal>
 
           <Reveal delay={200}>
-            <div className="flex h-full flex-col rounded-3xl border border-border/60 bg-card/70 p-6 shadow-[var(--shadow-md)] backdrop-blur-md">
-              <p className="mb-1 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-                Patterns
-              </p>
-              <h3 className="m-0 mb-3 font-serif text-2xl tracking-tight">
+            <div className="landing-panel flex h-full flex-col p-6">
+              <p className="landing-eyebrow mb-1">Patterns</p>
+              <h3 className="landing-headline m-0 mb-3 text-2xl tracking-tight">
                 Recurring themes emerge
               </h3>
-              <p className="mb-5 text-[15px] leading-relaxed text-muted-foreground">
+              <p className="landing-lead mb-5 text-[15px]">
                 Sift notices what keeps returning — not as a score, but as a
                 quieter read on what your mind circles.
               </p>
@@ -79,10 +70,10 @@ export function LandingOutcomesSection() {
                 {THEMES.map((theme) => (
                   <div
                     key={theme.name}
-                    className="flex items-center justify-between rounded-xl border border-border/60 bg-muted/30 px-3 py-2.5"
+                    className="landing-outcomes-row flex items-center justify-between px-3 py-2.5"
                   >
-                    <span className="text-[13px] text-foreground/90">{theme.name}</span>
-                    <span className="text-[11px] tabular-nums text-muted-foreground">
+                    <span className="text-[13px] text-[var(--v3-text-primary)]">{theme.name}</span>
+                    <span className="text-[11px] tabular-nums text-[var(--v3-text-muted)]">
                       {theme.count}×
                     </span>
                   </div>
@@ -92,22 +83,20 @@ export function LandingOutcomesSection() {
           </Reveal>
 
           <Reveal delay={280}>
-            <div className="flex h-full flex-col rounded-3xl border border-border/60 bg-card/70 p-6 shadow-[var(--shadow-md)] backdrop-blur-md">
-              <p className="mb-1 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-                Meta-signal
-              </p>
-              <h3 className="m-0 mb-3 font-serif text-2xl tracking-tight">
+            <div className="landing-panel flex h-full flex-col p-6">
+              <p className="landing-eyebrow mb-1">Meta-signal</p>
+              <h3 className="landing-headline m-0 mb-3 text-2xl tracking-tight">
                 Deeper truths show up
               </h3>
-              <p className="mb-5 text-[15px] leading-relaxed text-muted-foreground">
+              <p className="landing-lead mb-5 text-[15px]">
                 Across entries, a distilled line can surface — what Sift sees in
                 you when the same shape keeps appearing.
               </p>
-              <div className="mt-auto rounded-2xl border border-primary/15 bg-primary/[0.05] px-4 py-4">
-                <p className="mb-2 text-[10px] uppercase tracking-[0.2em] text-primary/80">
+              <div className="landing-outcomes-insight mt-auto px-4 py-4">
+                <p className="landing-eyebrow landing-outcomes-insight-label mb-2">
                   What Sift sees in you
                 </p>
-                <p className="m-0 font-serif text-[17px] leading-snug text-foreground/90">
+                <p className="landing-headline m-0 text-[17px] leading-snug">
                   You often treat uncertainty as a character flaw — when it is
                   usually a sequencing problem waiting for one visible start.
                 </p>
