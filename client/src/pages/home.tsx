@@ -13,8 +13,10 @@ import type {
   SupportProfile,
   SupportProfileUpdateRequest,
   ThreadTurn,
+  SiftFlowMode,
+  WritingSiftArtifact,
 } from "@shared/schema";
-import { isCareResponse, isRedundancyGateResult } from "@shared/schema";
+import { isCareResponse, isRedundancyGateResult, isWritingSiftResult } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { AuthDialog } from "@/components/auth-dialog";
@@ -49,11 +51,10 @@ import { ComposerIntro } from "@/components/redesign-v3/composer-intro";
 import { isRedesignV3Enabled, useRedesignV3 } from "@/lib/use-redesign-v3";
 import { ToastAction } from "@/components/ui/toast";
 import { useMe, useUpdateSupportProfile } from "@/lib/auth";
-import {
-  clearHashSearchParam,
-  parseHashSearchParams,
-} from "@/lib/notifications";
 import { useDailyPrompt } from "@/lib/useDailyPrompt";
+import { useDailySiftShare } from "@/hooks/use-daily-sift-share";
+import { SharePromptDialog } from "@/components/share-prompt-dialog";
+import { takeDailySiftPrefill } from "@/lib/daily-sift-prefill";
 import {
   mergeSupportProfiles,
   readLocalSupportProfile,
@@ -62,6 +63,13 @@ import {
 } from "@/lib/sift-experience";
 import { cn } from "@/lib/utils";
 import { useLocation } from "wouter";
+import { detectWritingLikelihood } from "@/lib/writing-sift-detect";
+import { WritingSiftConfirm } from "@/components/redesign-v3/writing-sift-confirm";
+import {
+  WritingSiftResult,
+  writingFollowUpMessage,
+  type WritingFollowUpId,
+} from "@/components/bedroom-session/writing-sift-result";
 
 const REQUEST_FALLBACK_COPY =
   "I missed that for a second. Send it once more, and I'll stay with the thread." as const;
@@ -240,6 +248,7 @@ function activeStepArtifactFor(step: ActiveStepState): NonNullable<ActiveStepSta
 }
 
 function hasMeaningfulSiftResult(result: SiftResult): boolean {
+  if (isWritingSiftResult(result)) return true;
   return Boolean(result.matters?.length || result.nextStep?.trim());
 }
 
@@ -256,6 +265,10 @@ function formatSiftTurnMessage(m: SiftTurnMessage): string {
 }
 
 function siftBubbleFromResult(r: SiftResult): string {
+  if (isWritingSiftResult(r)) {
+    const img = r.writingArtifact.liveImage.trim();
+    return img.length > 1600 ? `${img.slice(0, 1597)}…` : img;
+  }
   const t = r.reflection?.trim();
   if (t) return t.length > 1600 ? `${t.slice(0, 1597)}…` : t;
   return [r.coreIntent, r.nextStep].filter(Boolean).join("\n\n");
@@ -379,6 +392,12 @@ export default function Home() {
   const [sortIntro, setSortIntro] = useState<SortPromptPayload | null>(null);
   const [sortBusy, setSortBusy] = useState(false);
 
+  const [showWritingConfirm, setShowWritingConfirm] = useState(false);
+  const [writingArtifact, setWritingArtifact] = useState<WritingSiftArtifact | null>(
+    null,
+  );
+  const skipWritingDetectOnceRef = useRef(false);
+
   const [careMode, setCareMode] = useState(false);
   const [careRestore, setCareRestore] = useState<string | null>(null);
 
@@ -403,9 +422,10 @@ export default function Home() {
   const [unsavedGuestSiftId, setUnsavedGuestSiftId] = useState<string | null>(null);
   const [guestSavePromptDismissed, setGuestSavePromptDismissed] = useState(false);
   const [supportProfileOpen, setSupportProfileOpen] = useState(false);
-  const dailyPromptDeepLinkHandled = useRef(false);
   const { data: dailyPromptData, isLoading: dailyPromptLoading } =
     useDailyPrompt();
+  const { openShare: openDailySiftShare, shareDialogProps: dailySiftShareDialogProps } =
+    useDailySiftShare();
   const [onboardingStep, setOnboardingStep] = useState<OnboardingStep>("welcome");
   const [onboardingDraft, setOnboardingDraft] = useState<SupportProfileUpdateRequest>(
     () => ({
@@ -443,6 +463,9 @@ export default function Home() {
     setGateBusy(false);
     setSortIntro(null);
     setSortBusy(false);
+    setShowWritingConfirm(false);
+    setWritingArtifact(null);
+    skipWritingDetectOnceRef.current = false;
     setCareMode(false);
     setCareRestore(null);
     setNextStepDone(false);
@@ -699,13 +722,14 @@ export default function Home() {
     latestExchangeComplete;
   const recapVisible = useMemo(
     () =>
+      !writingArtifact &&
       phase === "structured" &&
       latestExchangeComplete &&
       recap &&
       shouldShowRecap(recap)
         ? recap
         : null,
-    [latestExchangeComplete, phase, recap],
+    [latestExchangeComplete, phase, recap, writingArtifact],
   );
 
   const dailyPromptCard = useMemo(() => {
@@ -713,11 +737,21 @@ export default function Home() {
     const text = dailyPromptData.prompt.text.trim();
     if (!text) return null;
     return {
+      promptId: dailyPromptData.prompt.id,
       themeName: dailyPromptData.theme.name,
       promptText: text,
       promptType: dailyPromptData.prompt.type,
     };
   }, [dailyPromptData]);
+
+  const handleDailyPromptShare = useCallback(() => {
+    if (!dailyPromptCard) return;
+    openDailySiftShare({
+      promptId: dailyPromptCard.promptId,
+      themeName: dailyPromptCard.themeName,
+      promptText: dailyPromptCard.promptText,
+    });
+  }, [dailyPromptCard, openDailySiftShare]);
 
   const dailyPromptActive = useMemo(() => {
     if (!dailyPromptCard) return false;
@@ -955,161 +989,206 @@ export default function Home() {
     [me, siftId, toast],
   );
 
-  const submit = useCallback(async () => {
-    const text = composer.trim();
-    if (composerLocked) return;
-    if (!text) return;
-    stopVoiceInput();
-    const intent = bedroomIntentFor(text, phase);
+  const runSubmit = useCallback(
+    async (text: string, flowMode: SiftFlowMode = "standard") => {
+      if (composerLocked || !text.trim()) return;
+      stopVoiceInput();
+      const intent = bedroomIntentFor(text, phase);
 
-    const uid =
-      typeof crypto !== "undefined" && crypto.randomUUID
-        ? crypto.randomUUID()
-        : `u-${Date.now()}`;
-    setBubbles((prev) => [...prev, { id: uid, role: "user", text }]);
-    setComposer("");
-    setThinking(true);
-    setAvatarPresenting(false);
-    setLatestSiftCanSummarize(false);
-    setSummaryExchangeRendered(false);
-    setGate(null);
-    const supportProfile = supportProfileForRequest(effectiveSupportProfile);
+      const uid =
+        typeof crypto !== "undefined" && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `u-${Date.now()}`;
+      setBubbles((prev) => [...prev, { id: uid, role: "user", text }]);
+      setComposer("");
+      setShowWritingConfirm(false);
+      setThinking(true);
+      setAvatarPresenting(false);
+      setLatestSiftCanSummarize(false);
+      setSummaryExchangeRendered(false);
+      setGate(null);
+      const supportProfile = supportProfileForRequest(effectiveSupportProfile);
 
-    try {
-      if (!siftId) {
+      try {
+        if (!siftId) {
+          const res = await apiRequest(
+            "POST",
+            "/api/sift",
+            {
+              input: text,
+              inputMode: "text",
+              phase,
+              intent,
+              supportProfile,
+              ...(flowMode === "writing" ? { flowMode: "writing" as const } : {}),
+            },
+            import.meta.env.DEV ? { auth: false } : undefined,
+          );
+          const data = (await res.json()) as unknown;
+          if (isCareResponse(data)) {
+            setCareMode(true);
+            setCareRestore(text);
+            setThinking(false);
+            return;
+          }
+          if (isRedundancyGateResult(data)) {
+            setGate(data as SiftRedundancyGateResult);
+            setThinking(false);
+            return;
+          }
+          const sift = data as SiftResult;
+          setSiftId(sift.id);
+          if (!me) {
+            setUnsavedGuestSiftId(sift.id);
+            setGuestSavePromptDismissed(false);
+          }
+          if (isWritingSiftResult(sift)) {
+            setWritingArtifact(sift.writingArtifact);
+            setRecap(null);
+          } else {
+            setWritingArtifact(null);
+            setRecap(intent === "greeting-warmup" ? null : recapFromSiftResult(sift));
+          }
+          appendSiftBubble(siftBubbleFromResult(sift));
+          recordMeaningfulExchange(text, hasMeaningfulSiftResult(sift));
+          queryClient.invalidateQueries({ queryKey: ["/api/reentry"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/sifts"] });
+          setThinking(false);
+          return;
+        }
+
         const res = await apiRequest(
           "POST",
-          "/api/sift",
-          {
-            input: text,
-            inputMode: "text",
-            phase,
-            intent,
-            supportProfile,
-          },
+          `/api/sift/${encodeURIComponent(siftId)}/deepen`,
+          { text, phase, intent, supportProfile },
           import.meta.env.DEV ? { auth: false } : undefined,
         );
-        const data = (await res.json()) as unknown;
-        if (isCareResponse(data)) {
+
+        const raw = (await res.json()) as DeepenResponse | unknown;
+
+        if (isCareResponse(raw)) {
           setCareMode(true);
           setCareRestore(text);
           setThinking(false);
           return;
         }
-        if (isRedundancyGateResult(data)) {
-          setGate(data as SiftRedundancyGateResult);
+
+        const d = raw as DeepenResponse;
+        if (d.type !== "turns") {
           setThinking(false);
           return;
         }
-        const sift = data as SiftResult;
-        setSiftId(sift.id);
-        if (!me) {
-          setUnsavedGuestSiftId(sift.id);
-          setGuestSavePromptDismissed(false);
+
+        const turns = d.turns;
+
+        if (d.bookmark) {
+          setRecap(recapFromBookmark(d.bookmark));
         }
-        setRecap(intent === "greeting-warmup" ? null : recapFromSiftResult(sift));
-        appendSiftBubble(siftBubbleFromResult(sift));
-        recordMeaningfulExchange(text, hasMeaningfulSiftResult(sift));
-        queryClient.invalidateQueries({ queryKey: ["/api/reentry"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/sifts"] });
-        setThinking(false);
-        return;
-      }
 
-      const res = await apiRequest(
-        "POST",
-        `/api/sift/${encodeURIComponent(siftId)}/deepen`,
-        { text, phase, intent, supportProfile },
-        import.meta.env.DEV ? { auth: false } : undefined,
-      );
-
-      const raw = (await res.json()) as DeepenResponse | unknown;
-
-      if (isCareResponse(raw)) {
-        setCareMode(true);
-        setCareRestore(text);
-        setThinking(false);
-        return;
-      }
-
-      const d = raw as DeepenResponse;
-      if (d.type !== "turns") {
-        setThinking(false);
-        return;
-      }
-
-      const turns = d.turns;
-
-      if (d.bookmark) {
-        setRecap(recapFromBookmark(d.bookmark));
-      }
-
-      const sm = siftMessageFromTurns(turns);
-      if (sm) {
-        const line = formatSiftTurnMessage(sm).trim();
-        if (line) {
-          if (!d.bookmark) {
-            setRecap((prev) => (prev ? deepenHearingPatch(sm, prev) : prev));
+        const sm = siftMessageFromTurns(turns);
+        if (sm) {
+          const line = formatSiftTurnMessage(sm).trim();
+          if (line) {
+            if (!d.bookmark) {
+              setRecap((prev) => (prev ? deepenHearingPatch(sm, prev) : prev));
+            }
+            appendSiftBubble(line);
+            recordMeaningfulExchange(text, hasMeaningfulTurnMessage(sm));
           }
-          appendSiftBubble(line);
-          recordMeaningfulExchange(text, hasMeaningfulTurnMessage(sm));
         }
-      }
 
-      const last = turns[turns.length - 1];
-      if (
-        last?.role === "sift" &&
-        last.kind === "sort_prompt" &&
-        d.awaitingSort
-      ) {
-        setSortIntro(last.sortPrompt);
-      }
+        const last = turns[turns.length - 1];
+        if (
+          last?.role === "sift" &&
+          last.kind === "sort_prompt" &&
+          d.awaitingSort
+        ) {
+          setSortIntro(last.sortPrompt);
+        }
 
-      queryClient.invalidateQueries({ queryKey: ["/api/sift", siftId] });
-      setThinking(false);
-    } catch (e: unknown) {
-      if (
-        e instanceof Error &&
-        (e.message.startsWith("409:") || /^409 /.test(e.message))
-      ) {
-        toast({
-          title: "Hang on — practice first",
-          description: "Finish or skip the short sort above before sending.",
-        });
+        queryClient.invalidateQueries({ queryKey: ["/api/sift", siftId] });
         setThinking(false);
-        return;
+      } catch (e: unknown) {
+        if (
+          e instanceof Error &&
+          (e.message.startsWith("409:") || /^409 /.test(e.message))
+        ) {
+          toast({
+            title: "Hang on — practice first",
+            description: "Finish or skip the short sort above before sending.",
+          });
+          setThinking(false);
+          return;
+        }
+        const msg =
+          e instanceof Error ? e.message : "Try again in a moment.";
+        if (msg.includes("guest_limit")) {
+          toast({
+            title: "Create your space to keep going",
+            description: "Guest mode gives you a few Sifts first. Saving keeps the thread available.",
+            action: (
+              <ToastAction altText="Save your clarity" onClick={() => openAuth("signup")}>
+                Save your clarity
+              </ToastAction>
+            ),
+          });
+        } else {
+          toast({ title: "Something went wrong", description: msg });
+        }
+        appendSiftBubble(REQUEST_FALLBACK_COPY, { countReply: false });
+        setThinking(false);
       }
-      const msg =
-        e instanceof Error ? e.message : "Try again in a moment.";
-      if (msg.includes("guest_limit")) {
-        toast({
-          title: "Create your space to keep going",
-          description: "Guest mode gives you a few Sifts first. Saving keeps the thread available.",
-          action: (
-            <ToastAction altText="Save your clarity" onClick={() => openAuth("signup")}>
-              Save your clarity
-            </ToastAction>
-          ),
-        });
-      } else {
-        toast({ title: "Something went wrong", description: msg });
-      }
-      appendSiftBubble(REQUEST_FALLBACK_COPY, { countReply: false });
-      setThinking(false);
+    },
+    [
+      appendSiftBubble,
+      composerLocked,
+      deepenHearingPatch,
+      me,
+      effectiveSupportProfile,
+      phase,
+      recordMeaningfulExchange,
+      siftId,
+      stopVoiceInput,
+      toast,
+    ],
+  );
+
+  const submit = useCallback(async () => {
+    const text = composer.trim();
+    if (composerLocked || !text) return;
+
+    if (
+      !siftId &&
+      !skipWritingDetectOnceRef.current &&
+      detectWritingLikelihood(text).shouldConfirm
+    ) {
+      setShowWritingConfirm(true);
+      return;
     }
-  }, [
-    appendSiftBubble,
-    composer,
-    composerLocked,
-    deepenHearingPatch,
-    me,
-    effectiveSupportProfile,
-    phase,
-    recordMeaningfulExchange,
-    siftId,
-    stopVoiceInput,
-    toast,
-  ]);
+    skipWritingDetectOnceRef.current = false;
+    await runSubmit(text, "standard");
+  }, [composer, composerLocked, runSubmit, siftId]);
+
+  const confirmMeetAsWriting = useCallback(() => {
+    const text = composer.trim();
+    if (!text) return;
+    void runSubmit(text, "writing");
+  }, [composer, runSubmit]);
+
+  const confirmNormalSift = useCallback(() => {
+    const text = composer.trim();
+    if (!text) return;
+    skipWritingDetectOnceRef.current = true;
+    void runSubmit(text, "standard");
+  }, [composer, runSubmit]);
+
+  const onWritingFollowUp = useCallback(
+    (id: WritingFollowUpId) => {
+      if (!siftId || thinking) return;
+      void runSubmit(writingFollowUpMessage(id), "standard");
+    },
+    [runSubmit, siftId, thinking],
+  );
 
   const onRequestSummary = useCallback(async () => {
     if (!deeperClarityEligible || !siftId || thinking) return;
@@ -1289,40 +1368,17 @@ export default function Home() {
   }, [location, openChat, setLocation]);
 
   useEffect(() => {
-    if (dailyPromptDeepLinkHandled.current) return;
-    const params = parseHashSearchParams();
-    if (params.get("dailyPrompt") !== "1") return;
-    const promptId = params.get("promptId");
-    if (!promptId) return;
-    dailyPromptDeepLinkHandled.current = true;
-
-    const hour = new Date().getHours();
-    void (async () => {
-      try {
-        const res = await apiRequest(
-          "GET",
-          `/api/daily-prompt?promptId=${encodeURIComponent(promptId)}&hour=${hour}`,
-        );
-        const data = await res.json();
-        if (data?.prompt?.text) {
-          beginLiveSift(false);
-          setComposer(data.prompt.text);
-          window.setTimeout(
-            () =>
-              window.dispatchEvent(
-                new CustomEvent("sift:focus-composer", {
-                  detail: { select: false },
-                }),
-              ),
-            0,
-          );
-        }
-      } catch {
-        // Land quietly on home if the handoff fails.
-      } finally {
-        clearHashSearchParam("dailyPrompt", "promptId");
-      }
-    })();
+    const prefill = takeDailySiftPrefill();
+    if (!prefill) return;
+    beginLiveSift(false);
+    setComposer(prefill);
+    window.setTimeout(
+      () =>
+        window.dispatchEvent(
+          new CustomEvent("sift:focus-composer", { detail: { select: false } }),
+        ),
+      0,
+    );
   }, [beginLiveSift]);
 
   useEffect(() => {
@@ -1484,6 +1540,7 @@ export default function Home() {
                 <RedesignV3EmptyComposer
                   disabled={composerLocked}
                   onStarterSelect={selectStarterPrompt}
+                  onDailyPromptShare={handleDailyPromptShare}
                   dailyPrompt={dailyPromptCard}
                   dailyPromptLoading={dailyPromptLoading}
                   dailyPromptActive={dailyPromptActive}
@@ -1495,16 +1552,35 @@ export default function Home() {
                 </>
               )}
 
+              {showWritingConfirm && !siftId ? (
+                <WritingSiftConfirm
+                  className="mt-4"
+                  disabled={thinking}
+                  onMeetAsWriting={confirmMeetAsWriting}
+                  onNormalSift={confirmNormalSift}
+                />
+              ) : null}
+
               <V3ComposerBox
                 className="mt-2"
                 value={composer}
                 onChange={setComposer}
                 onSubmit={() => void submit()}
-                disabled={composerLocked}
+                disabled={composerLocked || (showWritingConfirm && !siftId)}
                 onVoiceClick={toggleVoiceInput}
                 voiceListening={voiceListening}
                 thinking={thinking}
               />
+
+              {writingArtifact ? (
+                <div className="mt-8 border-t border-[color:var(--v3-border)] pt-8">
+                  <WritingSiftResult
+                    artifact={writingArtifact}
+                    busy={thinking}
+                    onFollowUp={onWritingFollowUp}
+                  />
+                </div>
+              ) : null}
 
               {!me && unsavedGuestSiftId && !guestSavePromptDismissed ? (
                 <GuestSavePrompt
@@ -1608,6 +1684,10 @@ export default function Home() {
           />
         </SiftAppShell>
       )}
+
+      {dailySiftShareDialogProps ? (
+        <SharePromptDialog {...dailySiftShareDialogProps} />
+      ) : null}
     </>
   );
 }

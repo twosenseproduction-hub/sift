@@ -160,11 +160,11 @@ export function LandingHeader({ current }: { current: "landing" | "other" }) {
           aria-label="Primary navigation"
         >
           <a
-            href={landingAnchor("what", current)}
+            href={landingAnchor("preview", current)}
             className="transition-colors hover:text-foreground"
-            data-testid="link-nav-what"
+            data-testid="link-nav-preview"
           >
-            What it is for
+            Product
           </a>
           <a
             href={landingAnchor("how", current)}
@@ -174,11 +174,18 @@ export function LandingHeader({ current }: { current: "landing" | "other" }) {
             How it works
           </a>
           <a
-            href={landingAnchor("clarity", current)}
+            href={landingAnchor("outcomes", current)}
             className="transition-colors hover:text-foreground"
-            data-testid="link-nav-clarity"
+            data-testid="link-nav-outcomes"
           >
-            Clarity
+            Outcomes
+          </a>
+          <a
+            href={landingAnchor("founder", current)}
+            className="transition-colors hover:text-foreground"
+            data-testid="link-nav-founder"
+          >
+            About
           </a>
           <a
             href="/#/pricing"
@@ -221,11 +228,11 @@ export function LandingFooter({ current }: { current: "landing" | "other" }) {
     >
       <div className="mx-auto flex w-[min(1160px,calc(100vw-32px))] flex-wrap justify-center gap-x-6 gap-y-3 text-sm text-muted-foreground">
         <a
-          href={landingAnchor("what", current)}
+          href={landingAnchor("preview", current)}
           className="transition-colors hover:text-foreground"
-          data-testid="link-footer-what"
+          data-testid="link-footer-preview"
         >
-          What it is for
+          Product
         </a>
         <a
           href={landingAnchor("how", current)}
@@ -235,18 +242,18 @@ export function LandingFooter({ current }: { current: "landing" | "other" }) {
           How it works
         </a>
         <a
-          href={landingAnchor("clarity", current)}
+          href={landingAnchor("outcomes", current)}
           className="transition-colors hover:text-foreground"
-          data-testid="link-footer-clarity"
+          data-testid="link-footer-outcomes"
         >
-          Clarity
+          Outcomes
         </a>
         <a
-          href={landingAnchor("use-cases", current)}
+          href={landingAnchor("founder", current)}
           className="transition-colors hover:text-foreground"
-          data-testid="link-footer-cases"
+          data-testid="link-footer-founder"
         >
-          Use cases
+          About
         </a>
         <a
           href="/#/pricing"

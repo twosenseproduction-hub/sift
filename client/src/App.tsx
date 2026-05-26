@@ -21,6 +21,7 @@ import LibraryPage from "@/pages/library";
 import PatternsPage from "@/pages/patterns";
 import RedirectPatterns from "@/pages/redirect-patterns";
 import ClaritySheetPreviewPage from "@/pages/clarity-sheet-preview";
+import DailySiftPage from "@/pages/daily-sift";
 import { ThemeProvider } from "@/lib/theme";
 import { HashQueryRedirect } from "@/components/hash-query-redirect";
 
@@ -45,6 +46,7 @@ function AppRouter() {
       <Route path="/scene/rooftop" component={RedirectHome} />
       <Route path="/s/:id/chat" component={SiftChatPage} />
       <Route path="/s/:id" component={Shared} />
+      <Route path="/daily-sift/:id" component={DailySiftPage} />
       <Route path="/landing" component={Landing} />
       <Route path="/pricing" component={Pricing} />
       <Route path="/privacy" component={PrivacyPage} />

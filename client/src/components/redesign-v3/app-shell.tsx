@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import { Settings } from "lucide-react";
 import { LogoMark } from "@/components/brand";
 import { cn } from "@/lib/utils";
-import { EnergyCanvas, EnergyIndicator } from "./energy-canvas";
+import { EnergyCanvas } from "./energy-canvas";
 import {
   confirmLeavingUnsavedGuestSift,
   requestNewSiftEntry,
@@ -13,13 +13,11 @@ export type SiftAppTab = "composer" | "library" | "patterns";
 
 export function SiftTopNav({
   activeTab,
-  composerText = "",
   onSettingsClick,
   settingsTestId = "button-settings",
   className,
 }: {
   activeTab: SiftAppTab;
-  composerText?: string;
   onSettingsClick?: () => void;
   settingsTestId?: string;
   className?: string;
@@ -101,13 +99,14 @@ export function SiftTopNav({
       </div>
 
       <div className="v3-nav-right">
-        {activeTab === "composer" ? <EnergyIndicator text={composerText} /> : null}
         <button
           type="button"
           className="v3-nav-new-entry"
           onClick={startNewEntry}
+          aria-label="Start new entry"
         >
-          New entry
+          <span className="v3-nav-new-entry-label v3-nav-new-entry-label--short">New</span>
+          <span className="v3-nav-new-entry-label v3-nav-new-entry-label--full">New entry</span>
         </button>
         <button
           type="button"
@@ -143,7 +142,6 @@ export function SiftAppShell({
       <EnergyCanvas text={activeTab === "composer" ? composerText : ""} />
       <SiftTopNav
         activeTab={activeTab}
-        composerText={composerText}
         onSettingsClick={onSettingsClick}
         settingsTestId={settingsTestId}
       />

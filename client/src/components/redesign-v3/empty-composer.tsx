@@ -6,12 +6,14 @@ import { DailyPromptCardV3, DailyPromptCardV3Skeleton } from "./daily-prompt-car
 
 export function RedesignV3EmptyComposer({
   onStarterSelect,
+  onDailyPromptShare,
   disabled,
   dailyPrompt,
   dailyPromptLoading,
   dailyPromptActive,
 }: {
   onStarterSelect: (prompt: string) => void;
+  onDailyPromptShare?: () => void;
   disabled?: boolean;
   dailyPrompt?: DailyPromptCardModel | null;
   dailyPromptLoading?: boolean;
@@ -36,6 +38,7 @@ export function RedesignV3EmptyComposer({
               disabled={disabled}
               active={dailyPromptActive}
               onSelect={onStarterSelect}
+              onShare={onDailyPromptShare}
             />
           ) : null}
           <p className="text-center text-[11px] text-[color:var(--v3-text-muted)]">

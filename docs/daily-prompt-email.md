@@ -62,7 +62,7 @@ Both the web app and the job use the same `DB_PATH` on the mounted volume.
 
 ## Deep links
 
-Email CTA: `{APP_BASE_URL}/#/?dailyPrompt=1&promptId={id}`
+Email CTA: `{APP_BASE_URL}/#/daily-sift/{id}`
 
 Home preloads the prompt into the composer (no auto-submit) and shows a short “Today’s check-in” handoff.
 

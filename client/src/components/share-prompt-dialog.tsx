@@ -7,28 +7,33 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { Share2, Download, Loader2 } from "lucide-react";
-import { SharePromptCard } from "./share-prompt-card";
+import { Share2, Download, Loader2, Link2 } from "lucide-react";
+import {
+  SharePromptCard,
+  SHARE_CARD_EXPORT_BACKGROUND,
+} from "./share-prompt-card";
+import { copyTextToClipboard } from "@/lib/daily-sift-share";
 
-interface SharePromptDialogProps {
+export interface SharePromptDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  title: string;
+  title?: string;
   line: string;
   eyebrow?: string;
+  /** Stable hash URL for “Copy link” (secondary action). */
+  shareUrl?: string;
 }
 
 /**
- * Build a PNG blob from the offscreen export-mode card. The offscreen node is
- * fixed-size (1080x1350) so the resulting image is predictable regardless of
- * viewport. We dynamically import html-to-image so the main bundle stays light.
+ * Build a PNG blob from the offscreen export-mode card. Fixed 1080×1920 so the
+ * resulting image is predictable regardless of viewport.
  */
 async function renderCardToBlob(node: HTMLElement): Promise<Blob> {
   const { toPng } = await import("html-to-image");
   const dataUrl = await toPng(node, {
     pixelRatio: 2,
     cacheBust: true,
-    backgroundColor: "#F7F6F2",
+    backgroundColor: SHARE_CARD_EXPORT_BACKGROUND,
   });
   const res = await fetch(dataUrl);
   return await res.blob();
@@ -40,10 +45,11 @@ export function SharePromptDialog({
   title,
   line,
   eyebrow,
+  shareUrl,
 }: SharePromptDialogProps) {
   const { toast } = useToast();
   const exportRef = useRef<HTMLDivElement | null>(null);
-  const [busy, setBusy] = useState<null | "share" | "download">(null);
+  const [busy, setBusy] = useState<null | "share" | "download" | "copy">(null);
 
   const today = new Date();
 
@@ -52,9 +58,8 @@ export function SharePromptDialog({
     setBusy("share");
     try {
       const blob = await renderCardToBlob(exportRef.current);
-      const file = new File([blob], "sift-today.png", { type: "image/png" });
+      const file = new File([blob], "sift-daily.png", { type: "image/png" });
 
-      // Prefer native share with the image file where supported (iOS/Android).
       const nav = navigator as Navigator & {
         canShare?: (data: { files?: File[] }) => boolean;
       };
@@ -66,26 +71,26 @@ export function SharePromptDialog({
         try {
           await nav.share({
             files: [file],
-            title: "Today from Sift",
-            text: `${title} — ${line}`,
+            title: eyebrow ?? "Today from Sift",
+            text: line,
           });
           return;
-        } catch (err: any) {
-          if (err?.name === "AbortError") return;
-          // fall through to download fallback
+        } catch (err: unknown) {
+          if (err instanceof Error && err.name === "AbortError") return;
         }
       }
 
-      // Fallback: trigger a download so the user can share the image manually.
       triggerDownload(blob);
       toast({
         title: "Image saved",
         description: "Share it from your downloads or photos.",
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : "Try again in a moment.";
       toast({
         title: "Couldn't create image",
-        description: err?.message ?? "Try again in a moment.",
+        description: message,
       });
     } finally {
       setBusy(null);
@@ -98,10 +103,34 @@ export function SharePromptDialog({
     try {
       const blob = await renderCardToBlob(exportRef.current);
       triggerDownload(blob);
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : "Try again in a moment.";
       toast({
         title: "Couldn't download",
-        description: err?.message ?? "Try again in a moment.",
+        description: message,
+      });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleCopyLink = async () => {
+    if (!shareUrl || busy) return;
+    setBusy("copy");
+    try {
+      await copyTextToClipboard(shareUrl);
+      toast({
+        title: "Link copied",
+        description: "Anyone with the link can open this Daily Sift.",
+      });
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : "Try again in a moment.";
+      toast({
+        title: "Couldn't copy link",
+        description: message,
+        variant: "destructive",
       });
     } finally {
       setBusy(null);
@@ -111,103 +140,103 @@ export function SharePromptDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-w-md p-0 overflow-hidden bg-background border border-border"
+        className="max-w-[min(100vw-2rem,22rem)] gap-0 border-0 bg-transparent p-0 shadow-none sm:max-w-sm"
         data-testid="dialog-share-prompt"
       >
-        {/* Visually hidden heading for screen readers; the card itself is
-            already a self-contained titled surface. */}
-        <DialogTitle className="sr-only">Share today’s prompt</DialogTitle>
+        <DialogTitle className="sr-only">Share</DialogTitle>
         <DialogDescription className="sr-only">
-          A standalone card with today’s prompt that you can share or download
-          as an image.
+          Portrait share card you can share, download, or copy a link to.
         </DialogDescription>
 
-        <div className="px-6 pt-6 pb-5 md:px-8 md:pt-8 md:pb-6">
-          <p
-            className="text-[10px] tracking-[0.22em] uppercase text-muted-foreground font-medium mb-4"
-            data-testid="text-share-dialog-eyebrow"
+        <div className="overflow-hidden rounded-2xl shadow-2xl">
+          <SharePromptCard
+            title={title}
+            line={line}
+            eyebrow={eyebrow}
+            date={today}
+          />
+        </div>
+
+        <div
+          aria-hidden
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            zIndex: -1,
+            opacity: 0,
+            pointerEvents: "none",
+            transform: "translate(-200vw, -200vh)",
+          }}
+        >
+          <SharePromptCard
+            ref={exportRef}
+            title={title}
+            line={line}
+            eyebrow={eyebrow}
+            date={today}
+            exportMode
+          />
+        </div>
+
+        <div className="mt-4 flex flex-col gap-2 rounded-2xl border border-border bg-background p-3">
+          <Button
+            type="button"
+            onClick={handleShare}
+            disabled={!!busy}
+            data-testid="button-share-image"
+            className="h-11 w-full justify-start gap-3"
           >
-            Share preview
-          </p>
-
-          {/* On-screen preview — fluid, aspect-locked. */}
-          <div className="mb-6">
-            <SharePromptCard
-              title={title}
-              line={line}
-              eyebrow={eyebrow}
-              date={today}
-            />
-          </div>
-
-          {/* Offscreen, fixed-size export node. Hidden from users and a11y but
-              kept in the DOM so html-to-image can read computed styles and
-              web fonts. Positioned absolutely with opacity 0 + pointer-events
-              none so it never interferes with layout. */}
-          <div
-            aria-hidden
-            style={{
-              position: "fixed",
-              top: 0,
-              left: 0,
-              zIndex: -1,
-              opacity: 0,
-              pointerEvents: "none",
-              transform: "translate(-200vw, -200vh)",
-            }}
+            {busy === "share" ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Share2 className="h-4 w-4" />
+            )}
+            Share
+          </Button>
+          <Button
+            type="button"
+            onClick={handleDownload}
+            disabled={!!busy}
+            variant="outline"
+            data-testid="button-download-image"
+            className="h-11 w-full justify-start gap-3"
           >
-            <SharePromptCard
-              ref={exportRef}
-              title={title}
-              line={line}
-              eyebrow={eyebrow}
-              date={today}
-              exportMode
-            />
-          </div>
-
-          <div className="flex flex-col gap-3">
+            {busy === "download" ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4" />
+            )}
+            Download
+          </Button>
+          {shareUrl ? (
             <Button
               type="button"
-              onClick={handleShare}
+              onClick={handleCopyLink}
               disabled={!!busy}
-              data-testid="button-share-image"
-              className="w-full justify-start gap-3 h-11"
+              variant="ghost"
+              data-testid="button-copy-share-link"
+              className="h-11 w-full justify-start gap-3 text-muted-foreground"
             >
-              {busy === "share" ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
+              {busy === "copy" ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
-                <Share2 className="w-4 h-4" />
+                <Link2 className="h-4 w-4" />
               )}
-              Share
+              Copy link
             </Button>
-            <Button
-              type="button"
-              onClick={handleDownload}
-              disabled={!!busy}
-              variant="outline"
-              data-testid="button-download-image"
-              className="w-full justify-start gap-3 h-11"
-            >
-              {busy === "download" ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Download className="w-4 h-4" />
-              )}
-              Download
-            </Button>
-          </div>
+          ) : null}
+        </div>
 
-          <div className="mt-5 flex justify-center">
-            <button
-              type="button"
-              onClick={() => onOpenChange(false)}
-              data-testid="button-share-close"
-              className="text-sm text-muted-foreground hover:text-foreground underline underline-offset-4 decoration-border hover:decoration-foreground transition-colors"
-            >
-              Close
-            </button>
-          </div>
+        <div className="mt-3 flex justify-center">
+          <button
+            type="button"
+            onClick={() => onOpenChange(false)}
+            data-testid="button-share-close"
+            className="text-sm text-muted-foreground underline underline-offset-4 decoration-border transition-colors hover:text-foreground hover:decoration-foreground"
+          >
+            Close
+          </button>
         </div>
       </DialogContent>
     </Dialog>
@@ -218,10 +247,9 @@ function triggerDownload(blob: Blob) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = "sift-today.png";
+  a.download = "sift-daily.png";
   document.body.appendChild(a);
   a.click();
   a.remove();
-  // Give the browser a tick to start the download before revoking.
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

@@ -4,10 +4,11 @@ export { V3AppSidebar } from "./app-sidebar";
 export type { SidebarRecentItem } from "./app-sidebar";
 export { V3ComposerBox } from "./composer-box";
 export { V3ConversationThread } from "./conversation-thread";
-export { EnergyCanvas, EnergyIndicator, useEnergyState } from "./energy-canvas";
+export { EnergyCanvas, useEnergyState } from "./energy-canvas";
 export { DailyPromptCardV3, DailyPromptCardV3Skeleton } from "./daily-prompt-card";
 export { ComposerIntro } from "./composer-intro";
 export { RedesignV3EmptyComposer } from "./empty-composer";
+export { WritingSiftConfirm } from "./writing-sift-confirm";
 export { RedesignV3Sidebar, RedesignV3Layout } from "./sidebar";
 export {
   NextStepSystem,

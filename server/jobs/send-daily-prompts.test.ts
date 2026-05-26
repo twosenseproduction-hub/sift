@@ -33,7 +33,7 @@ describe("daily prompt email html", () => {
       promptText: "What feels <loud> today?",
       themeName: "Energy",
       promptId: 12,
-      ctaUrl: "https://app.siftnow.io/#/?dailyPrompt=1&promptId=12",
+      ctaUrl: "https://app.siftnow.io/#/daily-sift/12",
     });
     assert.match(html, /What feels &lt;loud&gt; today\?/);
     assert.match(html, /Open in Sift/);

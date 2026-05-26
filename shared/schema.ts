@@ -309,8 +309,23 @@ export const analyzeRequestSchema = z.object({
   metaSift: z.boolean().optional(),
   /** First-run/anonymous onboarding profile. Signed-in server profile still wins. */
   supportProfile: supportProfileUpdateSchema.optional(),
+  /** standard = signal/noise/next-step; writing = meet creative work as a piece */
+  flowMode: z.enum(["standard", "writing"]).optional(),
 });
 export type AnalyzeRequest = z.infer<typeof analyzeRequestSchema>;
+
+/** Client/server flow discriminator — not personal vs operator routing mode. */
+export const siftFlowModeSchema = z.enum(["standard", "writing"]);
+export type SiftFlowMode = z.infer<typeof siftFlowModeSchema>;
+
+export const writingSiftArtifactSchema = z.object({
+  mode: z.literal("writing"),
+  whatThisPieceIsCarrying: z.string().min(1),
+  liveImage: z.string().min(1),
+  whatLingers: z.string().min(1),
+  oneInvitation: z.string().min(1),
+});
+export type WritingSiftArtifact = z.infer<typeof writingSiftArtifactSchema>;
 
 /** POST /api/sift/fragments — extract short phrases for the pre-sort UI */
 export const siftFragmentsRequestSchema = z.object({
@@ -499,6 +514,7 @@ export const operatorArtifactTypeSchema = z.enum([
   "decision_memo",
   "project_brief",
   "stakeholder_brief",
+  "writing_sift",
 ]);
 export type OperatorArtifactType = z.infer<typeof operatorArtifactTypeSchema>;
 
@@ -557,7 +573,23 @@ export type SiftResult = Analysis & {
   artifactType?: OperatorArtifactType | null;
   /** Phase 2 conversation summary, returned on explicit summary requests. */
   summary?: SiftSummary;
+  /** When set, the primary read is a Writing Sift artifact — not signal/noise framing. */
+  flowMode?: SiftFlowMode;
+  writingArtifact?: WritingSiftArtifact;
 };
+
+export function isWritingSiftResult(r: unknown): r is SiftResult & {
+  flowMode: "writing";
+  writingArtifact: WritingSiftArtifact;
+} {
+  return (
+    typeof r === "object" &&
+    r !== null &&
+    (r as { flowMode?: string }).flowMode === "writing" &&
+    writingSiftArtifactSchema.safeParse((r as { writingArtifact?: unknown })
+      .writingArtifact).success
+  );
+}
 
 /** POST /api/sift may return this instead of a full SiftResult when redundancy is high */
 export type SiftRedundancyGateResult = {

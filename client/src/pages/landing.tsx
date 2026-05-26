@@ -1,90 +1,18 @@
-import { useEffect, useRef, useState } from "react";
-import { Logo, LogoMark } from "@/components/brand";
+import { useEffect } from "react";
 import { EngineDemo } from "@/components/engine-demo";
+import { LandingFounderSection } from "@/components/landing/founder-section";
+import { LandingOutcomesSection } from "@/components/landing/outcomes-section";
+import { LandingProductPreviewSection } from "@/components/landing/product-preview";
+import { LandingTestimonialsSection } from "@/components/landing/testimonials-section";
+import {
+  Content,
+  getAppHref,
+  LandingFooter,
+  LandingHeader,
+  Reveal,
+  Section,
+} from "@/pages/landing-shared";
 
-// The landing page is the marketing surface that lives at the apex.
-// It's modeled directly on the Sift deck — same sections, same copy,
-// same visual language — but rebuilt natively in React + Tailwind so
-// it shares the app's design system (Instrument Serif + DM Sans, the
-// Palladian / navy / flame palette).
-//
-// CTA target is host-aware: on the marketing domain (siftnow.io /
-// www.siftnow.io) it cross-links to the app subdomain; on the app
-// host or anywhere else (localhost, *.fly.dev, preview environments)
-// it stays on the current host so previews don't bounce people away.
-function getAppHref() {
-  if (typeof window === "undefined") return "/";
-  const h = window.location.hostname;
-  if (h === "siftnow.io" || h === "www.siftnow.io") {
-    return "https://app.siftnow.io/";
-  }
-  return "/";
-}
-
-// Reveal-on-scroll: a small wrapper that fades + slides in once the
-// element enters the viewport. Once revealed it stays revealed.
-function Reveal({
-  children,
-  className = "",
-  delay = 0,
-}: {
-  children: React.ReactNode;
-  className?: string;
-  delay?: number;
-}) {
-  const ref = useRef<HTMLDivElement | null>(null);
-  const [shown, setShown] = useState(false);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const io = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            setShown(true);
-            io.unobserve(entry.target);
-          }
-        });
-      },
-      { threshold: 0.14 },
-    );
-    io.observe(el);
-    return () => io.disconnect();
-  }, []);
-  return (
-    <div
-      ref={ref}
-      className={`${className} transition-all duration-700 ease-out ${
-        shown ? "opacity-100 translate-y-0" : "opacity-0 translate-y-5"
-      }`}
-      style={{ transitionDelay: `${delay}ms` }}
-    >
-      {children}
-    </div>
-  );
-}
-
-// A floating gradient blob — used inside the per-section gradient mesh.
-// The slow drift is what gives each section its "atmosphere" without
-// any imagery.
-function Blob({
-  className,
-  duration = 14,
-}: {
-  className: string;
-  duration?: number;
-}) {
-  return (
-    <div
-      className={`${className} absolute rounded-full blur-[70px]`}
-      style={{
-        animation: `float ${duration}s ease-in-out infinite`,
-      }}
-    />
-  );
-}
-
-// ONE continuous aurora background — covers full scroll height behind all sections.
 function NoiseBlob({
   top,
   right,
@@ -105,10 +33,7 @@ function NoiseBlob({
   opacity?: number;
 }) {
   return (
-    <div
-      aria-hidden="true"
-      className="pointer-events-none absolute inset-0"
-    >
+    <div aria-hidden="true" className="pointer-events-none absolute inset-0">
       <div
         className="absolute rounded-full blur-[70px]"
         style={{
@@ -130,9 +55,9 @@ function NoiseBlob({
 function AuroraBackground() {
   return (
     <>
-      <NoiseBlob top="-120px" right="-80px" color="hsl(var(--primary) / 0.14)" size={420} duration={14} opacity={0.14} />
+      <NoiseBlob top="-120px" right="-80px" color="hsl(var(--primary) / 0.14)" size={420} duration={14} />
       <NoiseBlob bottom="-80px" left="-60px" color="hsl(36 35% 70% / 0.32)" size={320} duration={18} opacity={0.32} />
-      <NoiseBlob top="30%" left="12%" color="hsl(180 18% 50% / 0.14)" size={240} duration={22} opacity={0.14} />
+      <NoiseBlob top="30%" left="12%" color="hsl(180 18% 50% / 0.14)" size={240} duration={22} />
       <NoiseBlob top="15%" left="55%" color="hsl(36 35% 70% / 0.18)" size={180} duration={20} opacity={0.18} />
       <NoiseBlob top="60%" right="8%" color="hsl(var(--primary) / 0.12)" size={260} duration={17} opacity={0.12} />
       <NoiseBlob bottom="20%" left="40%" color="hsl(180 18% 50% / 0.10)" size={200} duration={24} opacity={0.10} />
@@ -142,398 +67,25 @@ function AuroraBackground() {
   );
 }
 
-// Section wrapper: full-height, vignette overlay, content centered. The
-// vignette is what makes the page feel composed of distinct rooms
-// rather than one continuous scroll.
-function Section({
-  id,
-  children,
-  className = "",
-}: {
-  id?: string;
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <section
-      id={id}
-      className={`relative flex min-h-[100svh] items-center justify-center overflow-clip py-[clamp(88px,10vw,124px)] ${className}`}
-    >
-      {children}
-    </section>
-  );
-}
-
-// Container for section content — sits above the vignette and gradient
-// mesh, capped to a comfortable reading width.
-function Content({
-  children,
-  className = "",
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <div
-      className={`relative z-[2] w-[min(1160px,calc(100vw-32px))] p-[clamp(1.5rem,4vw,4rem)] ${className}`}
-    >
-      {children}
-    </div>
-  );
-}
-
-// HeroDemo / Pill / ComposerMock previously lived here as inline mocks
-// for the marketing hero and the "actual experience" section. The
-// landing page now uses the shared EngineDemo component for its hero
-// demo (so marketing and the in-app demo cannot drift), and the
-// "experience" section was removed as part of the section
-// consolidation (L2). They were deleted to keep the file honest about
-// what is rendered.
-
-// FaqItem — single accordion row. Native <details> so it works without
-// JS state, keyboard, or screen‑reader gymnastics. The chevron rotates
-// via [open] attribute selector.
-function FaqItem({
-  q,
-  children,
-}: {
-  q: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <details
-      className="group border-b border-border/60 py-5"
-      data-testid={`faq-item-${q.slice(0, 24).toLowerCase().replace(/\s+/g, "-")}`}
-    >
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-6 text-left">
-        <span className="font-serif text-[clamp(1.15rem,1.6vw,1.4rem)] leading-snug text-foreground">
-          {q}
-        </span>
-        <span
-          aria-hidden="true"
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-border/60 text-muted-foreground transition-transform group-open:rotate-45"
-        >
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-            <path
-              d="M6 1.5v9M1.5 6h9"
-              stroke="currentColor"
-              strokeWidth="1.6"
-              strokeLinecap="round"
-            />
-          </svg>
-        </span>
-      </summary>
-      <div className="mt-3 max-w-[60ch] text-[15px] leading-[1.7] text-muted-foreground">
-        {children}
-      </div>
-    </details>
-  );
-}
-
-// Sticky glass header — adds a faint border once the user scrolls past
-// the top. CTA on the right.
-function LandingHeader() {
-  const [scrolled, setScrolled] = useState(false);
-  useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 10);
-    onScroll();
-    document.addEventListener("scroll", onScroll, { passive: true });
-    return () => document.removeEventListener("scroll", onScroll);
-  }, []);
-  return (
-    <header
-      className={`sticky top-0 z-[100] backdrop-blur-md transition-colors ${
-        scrolled ? "border-b border-border/60" : "border-b border-transparent"
-      }`}
-      style={{
-        background: "color-mix(in srgb, hsl(var(--background)) 76%, transparent)",
-      }}
-      data-testid="landing-header"
-    >
-      <div className="mx-auto flex min-h-[76px] w-[min(1180px,calc(100vw-24px))] items-center justify-between gap-4">
-        <a
-          href="#top"
-          className="inline-flex items-center gap-3"
-          aria-label="Sift home"
-          data-testid="link-landing-brand"
-        >
-          <Logo size={32} />
-        </a>
-        <nav
-          className="hidden gap-5 text-sm text-muted-foreground md:flex"
-          aria-label="Primary navigation"
-        >
-          <a
-            href="#what"
-            className="transition-colors hover:text-foreground"
-            data-testid="link-nav-what"
-          >
-            What it is for
-          </a>
-          <a
-            href="#how"
-            className="transition-colors hover:text-foreground"
-            data-testid="link-nav-how"
-          >
-            How it works
-          </a>
-          <a
-            href="#clarity"
-            className="transition-colors hover:text-foreground"
-            data-testid="link-nav-clarity"
-          >
-            Examples
-          </a>
-          <a
-            href="/#/pricing"
-            className="transition-colors hover:text-foreground"
-            data-testid="link-nav-pricing"
-          >
-            Pricing
-          </a>
-          <a
-            href="#faq"
-            className="transition-colors hover:text-foreground"
-            data-testid="link-nav-faq"
-          >
-            FAQ
-          </a>
-        </nav>
-        <div className="flex items-center gap-2">
-          <a
-            href={getAppHref()}
-            className="hidden h-11 items-center justify-center rounded-full border border-border/60 bg-card/70 px-5 text-sm font-semibold backdrop-blur-md transition-transform hover:-translate-y-px md:inline-flex"
-            data-testid="link-header-cta"
-          >
-            Start with Sift
-          </a>
-        </div>
-      </div>
-    </header>
-  );
-}
-
-// The rotating example in the "Clarity" section. Cycles through four
-// real-world scenarios — each from a different domain (emotional,
-// project work, relational, decision pressure) — to show the breadth
-// of what Sift handles. The rotation is now visible: a pill row at
-// the top shows all tags with the current one highlighted, and the
-// content crossfades between scenarios with a brief typing reveal
-// on the input field so the change reads as deliberate, not a glitch.
-const EXAMPLES = [
+const HOW_STEPS = [
   {
-    tag: "Emotional clarity",
-    input:
-      "I cannot tell whether I am sad about what happened, or just attached to replaying it.",
-    signal:
-      "The real pain is not the conversation itself. It is what it touched underneath.",
-    noise:
-      "The compulsion to replay every detail until it finally feels solved.",
-    step: "Name what hurts more honestly than the story you have been repeating.",
+    label: "Step one",
+    title: "Capture the tangle",
+    body: "Type or speak what’s occupying your mind — unfinished, emotional, unclear, real.",
   },
   {
-    tag: "Project pressure",
-    input:
-      "I have to start a project soon and the deadline is overwhelming, so I keep avoiding it and pretending I need a better plan first.",
-    signal:
-      "The main problem is not lack of ability. It is that the size of the whole project is collapsing onto the first move.",
-    noise:
-      "Treating the opening step like it has to solve the entire project at once.",
-    step: "Write the smallest visible starting brief: objective, audience, and the first task you can finish in 25 minutes.",
+    label: "Step two",
+    title: "Receive the signal",
+    body: "Sift identifies what actually matters beneath the spiral, the comparison, and the overthinking.",
   },
   {
-    tag: "Hard conversation",
-    input:
-      "I owe someone an honest conversation and I keep rehearsing it instead of having it.",
-    signal:
-      "The rehearsal is not preparation. It is a way of staying in control of an outcome you cannot control.",
-    noise:
-      "Trying to script a version of the talk where no one feels anything difficult.",
-    step: "Send a short message that names the topic and proposes a time — nothing about the content yet.",
+    label: "Step three",
+    title: "One next step",
+    body: "Leave with one precise step forward, not a list that creates more pressure.",
   },
-  {
-    tag: "Decision overload",
-    input:
-      "I have too many good options and I keep researching instead of choosing one path for this month.",
-    signal:
-      "You do not need the perfect option yet. You need a temporary constraint that lets momentum return.",
-    noise:
-      "Assuming one choice has to answer the whole future before you can begin.",
-    step: "Pick one option to test for the next two weeks and decide what result would make it worth continuing.",
-  },
-];
-
-function ExampleRotator() {
-  const [idx, setIdx] = useState(0);
-  // Track whether we are mid-transition so we can fade out, swap, fade in.
-  const [phase, setPhase] = useState<"in" | "out">("in");
-  // Type the input field on each switch so the change is legible.
-  const [typed, setTyped] = useState(EXAMPLES[0].input);
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const [active, setActive] = useState(false);
-
-  // Only run the rotation while the section is on screen — avoids
-  // burning CPU when the visitor has scrolled away.
-  useEffect(() => {
-    const node = containerRef.current;
-    if (!node) return;
-    const obs = new IntersectionObserver(
-      (entries) => {
-        for (const e of entries) setActive(e.isIntersecting);
-      },
-      { threshold: 0.25 }
-    );
-    obs.observe(node);
-    return () => obs.disconnect();
-  }, []);
-
-  // Drive the rotation. Each cycle: hold (~7s) → fade out (450ms) →
-  // advance index. Typing for the new input lives in its own effect
-  // below — that way advancing the index cleans up only the rotation
-  // timer, never the in-flight typing for the new scenario.
-  useEffect(() => {
-    if (!active) return;
-    let cancelled = false;
-    const timers: number[] = [];
-    const t = (ms: number, fn: () => void) => {
-      const id = window.setTimeout(() => !cancelled && fn(), ms);
-      timers.push(id);
-    };
-    t(7000, () => {
-      setPhase("out");
-      t(450, () => {
-        setIdx((prev) => (prev + 1) % EXAMPLES.length);
-        setPhase("in");
-      });
-    });
-    return () => {
-      cancelled = true;
-      timers.forEach((id) => window.clearTimeout(id));
-    };
-  }, [idx, active]);
-
-  // Type the input field whenever the active scenario changes. Owned
-  // by its own effect so a rotation tick advancing `idx` does not
-  // cancel the typing chain mid-character.
-  useEffect(() => {
-    const fullInput = EXAMPLES[idx].input;
-    // First scenario shows fully typed on mount; subsequent ones
-    // animate. Detect by whether `typed` already matches.
-    if (typed === fullInput) return;
-    let cancelled = false;
-    const timers: number[] = [];
-    setTyped("");
-    let i = 0;
-    const tick = () => {
-      if (cancelled) return;
-      i += 1;
-      setTyped(fullInput.slice(0, i));
-      if (i < fullInput.length) {
-        const id = window.setTimeout(tick, 22);
-        timers.push(id);
-      }
-    };
-    const startId = window.setTimeout(tick, 120);
-    timers.push(startId);
-    return () => {
-      cancelled = true;
-      timers.forEach((id) => window.clearTimeout(id));
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idx]);
-
-  const ex = EXAMPLES[idx];
-  const fadeClass =
-    phase === "in"
-      ? "opacity-100 translate-y-0"
-      : "opacity-0 -translate-y-1";
-
-  return (
-    <div
-      ref={containerRef}
-      className="overflow-hidden rounded-[28px] border border-border/60 bg-card/70 shadow-[var(--shadow-lg)]"
-      data-testid="mock-example"
-    >
-      <div className="flex items-center justify-between border-b border-border/60 px-5 py-4 text-[12px] uppercase tracking-[0.18em] text-muted-foreground/80">
-        <div className="flex gap-2" aria-hidden="true">
-          <span className="h-2.5 w-2.5 rounded-full bg-foreground/15" />
-          <span className="h-2.5 w-2.5 rounded-full bg-foreground/15" />
-          <span className="h-2.5 w-2.5 rounded-full bg-foreground/15" />
-        </div>
-        <span>Sift examples</span>
-      </div>
-      {/* Tag rail — every scenario is visible at once so the rotation
-          is legible. The active one fills with primary; the others sit
-          quiet. Tapping is intentionally not wired — keeps the demo
-          honest as a demo, not a half-built control. */}
-      <div
-        role="tablist"
-        aria-label="Example scenarios"
-        className="flex flex-wrap gap-2 border-b border-border/60 px-5 py-4"
-      >
-        {EXAMPLES.map((e, i) => {
-          const isActive = i === idx;
-          return (
-            <span
-              key={e.tag}
-              role="tab"
-              aria-selected={isActive}
-              data-testid={`example-tag-${i}`}
-              className={`inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-medium uppercase tracking-[0.14em] transition-colors duration-500 ${
-                isActive
-                  ? "border-primary/40 bg-primary/10 text-primary"
-                  : "border-border/60 bg-transparent text-muted-foreground/70"
-              }`}
-            >
-              {e.tag}
-            </span>
-          );
-        })}
-      </div>
-      <div
-        className={`grid gap-3.5 p-5 transition-all duration-500 ease-out ${fadeClass}`}
-      >
-        <div className="rounded-2xl border border-border/60 bg-muted/40 p-4">
-          <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-            Input
-          </div>
-          <div className="min-h-[3.5rem] leading-7 text-foreground/80">
-            {typed}
-            {phase === "in" && typed.length < ex.input.length && (
-              <span
-                className="ml-[2px] inline-block h-[1.05em] w-[2px] -translate-y-[2px] bg-foreground/55 align-middle"
-                style={{ animation: "blink 1s step-end infinite" }}
-              />
-            )}
-          </div>
-        </div>
-        <div className="rounded-2xl border border-l-[3px] border-border/60 border-l-primary/55 bg-muted/40 p-4">
-          <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-            Signal
-          </div>
-          <div className="leading-7 text-foreground/80">{ex.signal}</div>
-        </div>
-        <div className="rounded-2xl border border-l-[3px] border-border/60 border-l-muted-foreground/30 bg-muted/40 p-4">
-          <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-            Noise
-          </div>
-          <div className="leading-7 text-foreground/80">{ex.noise}</div>
-        </div>
-        <div className="rounded-2xl border border-border/60 bg-muted/40 p-4">
-          <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-            Next step
-          </div>
-          <div className="leading-7 text-foreground/80">{ex.step}</div>
-        </div>
-      </div>
-    </div>
-  );
-}
+] as const;
 
 export default function Landing() {
-  // Smooth-scroll for in-page anchor links. Wouter's hash routing
-  // intercepts hash navigation, so we manually handle anchors that
-  // start with "#" and target a section on this page.
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
@@ -551,22 +103,18 @@ export default function Landing() {
     return () => document.removeEventListener("click", handler);
   }, []);
 
+  const appHref = getAppHref();
+
   return (
     <div className="relative min-h-screen bg-background text-foreground">
-      {/* Float keyframes + subtle grain — scoped to this page. */}
       <style>{`
         @keyframes float {
           0%, 100% { transform: translate(0, 0) scale(1); }
           33% { transform: translate(40px, -35px) scale(1.08); }
           66% { transform: translate(-35px, 30px) scale(0.94); }
         }
-        @keyframes blink {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0; }
-        }
       `}</style>
-      {/* Faint grain overlay across the whole page — adds tactile
-          warmth without competing with content. */}
+
       <div
         aria-hidden="true"
         className="pointer-events-none fixed inset-0 z-0 opacity-[0.18] mix-blend-multiply dark:opacity-[0.10] dark:mix-blend-screen"
@@ -578,77 +126,60 @@ export default function Landing() {
       />
 
       <AuroraBackground />
-      <LandingHeader />
+      <LandingHeader current="landing" />
 
       <main className="relative z-[1]">
-        {/* Hero */}
-        <Section id="top">
+        {/* 1. Hero */}
+        <Section id="top" className="min-h-[92svh]">
           <div aria-hidden="true" className="absolute inset-0 z-0 overflow-hidden">
-            <Blob
-              className="bg-primary/[0.14]"
-              duration={14}
-            />
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-0"
-            >
-              <div
-                className="absolute h-[380px] w-[380px] rounded-full blur-[70px]"
-                style={{
-                  top: -80,
-                  right: -70,
-                  background: "hsl(var(--primary) / 0.14)",
-                  animation: "float 14s ease-in-out infinite",
-                }}
-              />
-              <div
-                className="absolute h-[280px] w-[280px] rounded-full blur-[70px]"
-                style={{
-                  bottom: -60,
-                  left: -40,
-                  background: "hsl(36 35% 70% / 0.32)",
-                  animation: "float 18s ease-in-out infinite",
-                }}
-              />
-              <div
-                className="absolute h-[200px] w-[200px] rounded-full blur-[70px]"
-                style={{
-                  top: "38%",
-                  left: "18%",
-                  background: "hsl(180 18% 50% / 0.14)",
-                  animation: "float 22s ease-in-out infinite",
-                }}
-              />
-            </div>
+            <NoiseBlob top="-80px" right="-70px" color="hsl(var(--primary) / 0.14)" size={380} duration={14} />
+            <NoiseBlob bottom="-60px" left="-40px" color="hsl(36 35% 70% / 0.28)" size={280} duration={18} opacity={0.28} />
           </div>
           <Content>
-            <div className="grid items-center gap-12 md:grid-cols-[1fr_1.15fr]">
-              <Reveal>
-                {/* One sentence + one button (L4). The logo above acts as
-                    the brand anchor; the live demo on the right carries
-                    the rest of the explanation. No supporting paragraph,
-                    no eyebrow tagline — the hero models the product. */}
-                <div className="mb-7">
-                  <Logo size={72} />
-                </div>
-                <h1 className="m-0 mb-8 font-serif text-[clamp(2.6rem,5vw,4.6rem)] leading-[0.95] tracking-[-0.045em]">
-                  Tell what matters from what is only loud.
-                </h1>
-                <div>
-                  <a
-                    href={getAppHref()}
-                    className="inline-flex h-12 items-center justify-center rounded-full bg-primary px-7 text-sm font-semibold text-primary-foreground shadow-md transition-transform hover:-translate-y-px"
-                    data-testid="link-hero-cta"
+            <div className="grid items-center gap-12 lg:grid-cols-[1fr_1.1fr] lg:gap-14">
+              <div className="text-left">
+                <Reveal>
+                  <p
+                    className="mb-5 text-[12px] font-medium uppercase tracking-[0.26em] text-muted-foreground"
+                    data-testid="text-hero-eyebrow"
                   >
-                    Start with Sift
-                  </a>
-                </div>
-              </Reveal>
-              <Reveal delay={120}>
-                {/* The live engine demo sits in the hero so the visitor
-                    sees what Sift does in the first 15 seconds. Three
-                    starter pills above let them pick which flavor of
-                    input to watch. */}
+                    A quiet tool for a noisy mind
+                  </p>
+                </Reveal>
+                <Reveal delay={60}>
+                  <h1
+                    className="m-0 mb-6 font-serif text-[clamp(2.4rem,5.2vw,4.4rem)] leading-[0.95] tracking-[-0.045em]"
+                    data-testid="text-hero-headline"
+                  >
+                    Noise in. Signal out. One next step.
+                  </h1>
+                </Reveal>
+                <Reveal delay={120}>
+                  <p className="mb-8 max-w-[34rem] text-[clamp(1.05rem,1.8vw,1.35rem)] leading-[1.7] text-muted-foreground">
+                    Speak or type the tangle. Sift separates what matters from
+                    what doesn&apos;t, and gives you one clear next move.
+                  </p>
+                </Reveal>
+                <Reveal delay={180}>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <a
+                      href={appHref}
+                      className="inline-flex h-12 items-center justify-center rounded-full bg-primary px-7 text-sm font-semibold text-primary-foreground shadow-md transition-transform hover:-translate-y-px"
+                      data-testid="link-hero-cta"
+                    >
+                      Begin sifting
+                    </a>
+                    <a
+                      href="#how"
+                      className="inline-flex h-12 items-center justify-center rounded-full border border-border/60 bg-card/50 px-7 text-sm font-semibold text-foreground backdrop-blur-md transition-colors hover:bg-card/80"
+                      data-testid="link-hero-secondary"
+                    >
+                      See how it works
+                    </a>
+                  </div>
+                </Reveal>
+              </div>
+              <Reveal delay={140}>
                 <div data-testid="hero-engine-demo">
                   <EngineDemo compact showSelector />
                 </div>
@@ -657,116 +188,11 @@ export default function Landing() {
           </Content>
         </Section>
 
-        {/* What Sift is for */}
-        <Section id="what">
-          <div aria-hidden="true" className="absolute inset-0 z-0 overflow-hidden">
-            <div
-              className="absolute h-[320px] w-[320px] rounded-full blur-[70px]"
-              style={{
-                top: -70,
-                right: -50,
-                background: "hsl(var(--primary) / 0.08)",
-                animation: "float 18s ease-in-out infinite",
-              }}
-            />
-            <div
-              className="absolute h-[260px] w-[260px] rounded-full blur-[70px]"
-              style={{
-                bottom: -60,
-                left: 0,
-                background: "hsl(36 35% 70% / 0.26)",
-                animation: "float 14s ease-in-out infinite",
-              }}
-            />
-          </div>
-          <Content>
-            <div className="grid gap-14 md:grid-cols-2">
-              <div>
-                <Reveal>
-                  <p className="mb-4 text-[12px] font-medium uppercase tracking-[0.26em] text-muted-foreground">
-                    What Sift is for
-                  </p>
-                </Reveal>
-                <Reveal delay={80}>
-                  <h2 className="m-0 mb-5 font-serif text-[clamp(2.2rem,4.2vw,4rem)] leading-[0.95] tracking-[-0.05em]">
-                    Not every hard moment needs more content.
-                  </h2>
-                </Reveal>
-                <Reveal delay={160}>
-                  <p className="text-[clamp(1.05rem,1.8vw,1.5rem)] leading-[1.7] text-muted-foreground">
-                    Sometimes you do not need a journal prompt, a productivity
-                    system, or ten options. You need someone or something to
-                    help you see the real knot, reduce the noise, and move one
-                    inch forward.
-                  </p>
-                </Reveal>
-              </div>
-              <Reveal delay={120}>
-                <div className="rounded-3xl border border-border/60 bg-card/70 p-8 shadow-[var(--shadow-md)] backdrop-blur-md">
-                  <div className="grid gap-5">
-                    <div className="rounded-2xl border border-border/60 bg-muted/40 p-5">
-                      <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-                        When life feels like
-                      </div>
-                      <div className="leading-7 text-muted-foreground">
-                        Too many open loops, too much pressure, too many
-                        thoughts competing at once.
-                      </div>
-                    </div>
-                    <div className="rounded-2xl border border-l-[3px] border-border/60 border-l-primary/55 bg-muted/40 p-5">
-                      <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-                        Sift gives you
-                      </div>
-                      <div className="leading-7 text-muted-foreground">
-                        A calmer read on what is central, what is distortion,
-                        and what to do next.
-                      </div>
-                    </div>
-                    <div className="rounded-2xl border border-border/60 bg-muted/40 p-5">
-                      <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-                        The feeling after
-                      </div>
-                      <div className="leading-7 text-muted-foreground">
-                        I understand what this actually is now.
-                      </div>
-                    </div>
-                    <div className="rounded-2xl border border-border/60 bg-muted/40 p-5">
-                      <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-                        What Sift is not
-                      </div>
-                      <div className="leading-7 text-foreground/70">
-                        Sift is not a cure for noise. It&rsquo;s practice in hearing what&rsquo;s actually there.
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </Reveal>
-            </div>
-          </Content>
-        </Section>
+        {/* 2. Product preview */}
+        <LandingProductPreviewSection />
 
-        {/* How it works */}
+        {/* 3. How it works */}
         <Section id="how">
-          <div aria-hidden="true" className="absolute inset-0 z-0 overflow-hidden">
-            <div
-              className="absolute h-[320px] w-[320px] rounded-full blur-[70px]"
-              style={{
-                top: -60,
-                left: "10%",
-                background: "hsl(180 18% 50% / 0.12)",
-                animation: "float 16s ease-in-out infinite",
-              }}
-            />
-            <div
-              className="absolute h-[260px] w-[260px] rounded-full blur-[70px]"
-              style={{
-                bottom: -40,
-                right: "8%",
-                background: "hsl(36 35% 70% / 0.24)",
-                animation: "float 20s ease-in-out infinite",
-              }}
-            />
-          </div>
           <Content className="text-center">
             <Reveal>
               <p className="mb-4 text-[12px] font-medium uppercase tracking-[0.26em] text-muted-foreground">
@@ -774,360 +200,64 @@ export default function Landing() {
               </p>
             </Reveal>
             <Reveal delay={80}>
-              <h2 className="mx-auto m-0 mb-12 max-w-[22ch] font-serif text-[clamp(2.2rem,4.2vw,4rem)] leading-[0.95] tracking-[-0.05em]">
+              <h2 className="mx-auto m-0 mb-12 max-w-[20ch] font-serif text-[clamp(2.2rem,4.2vw,3.6rem)] leading-[0.95] tracking-[-0.05em]">
                 Three quiet steps, end to end.
               </h2>
             </Reveal>
             <div className="mx-auto grid max-w-[1080px] gap-5 md:grid-cols-3">
-              <Reveal delay={120}>
-                <div className="h-full rounded-3xl border border-border/60 bg-card/70 p-7 text-left shadow-[var(--shadow-md)] backdrop-blur-md">
-                  <div className="mb-4 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-                    Step one
+              {HOW_STEPS.map((step, i) => (
+                <Reveal key={step.title} delay={120 + i * 80}>
+                  <div className="h-full rounded-3xl border border-border/60 bg-card/70 p-7 text-left shadow-[var(--shadow-md)] backdrop-blur-md">
+                    <div className="mb-4 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+                      {step.label}
+                    </div>
+                    <h3 className="m-0 mb-3 font-serif text-2xl tracking-tight">
+                      {step.title}
+                    </h3>
+                    <p className="m-0 leading-7 text-muted-foreground">{step.body}</p>
                   </div>
-                  <h3 className="m-0 mb-3 font-serif text-2xl tracking-tight">
-                    Bring what you are holding.
-                  </h3>
-                  <p className="m-0 leading-7 text-muted-foreground">
-                    Speak it or type it. Messy is fine. You can paste something
-                    old too — a journal page, a draft, a thought you wrote
-                    before.
-                  </p>
-                </div>
-              </Reveal>
-              <Reveal delay={200}>
-                <div className="h-full rounded-3xl border border-border/60 bg-card/70 p-7 text-left shadow-[var(--shadow-md)] backdrop-blur-md">
-                  <div className="mb-4 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-                    Step two
-                  </div>
-                  <h3 className="m-0 mb-3 font-serif text-2xl tracking-tight">
-                    Sift returns the shape.
-                  </h3>
-                  <p className="m-0 leading-7 text-muted-foreground">
-                    What seems to matter most, what may only be loud, why this
-                    could be the signal, and one next step you can take.
-                    Structured enough to move, restrained enough to feel human.
-                  </p>
-                </div>
-              </Reveal>
-              <Reveal delay={280}>
-                <div className="h-full rounded-3xl border border-border/60 bg-card/70 p-7 text-left shadow-[var(--shadow-md)] backdrop-blur-md">
-                  <div className="mb-4 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-                    Step three
-                  </div>
-                  <h3 className="m-0 mb-3 font-serif text-2xl tracking-tight">
-                    Stay with it, or close the loop.
-                  </h3>
-                  <p className="m-0 leading-7 text-muted-foreground">
-                    Deepen the thread until the pattern is clear, or close it
-                    when the shape lands. Sift remembers the throughline, not
-                    the noise.
-                  </p>
-                </div>
-              </Reveal>
+                </Reveal>
+              ))}
             </div>
           </Content>
         </Section>
 
-        {/* Clarity */}
-        <Section id="clarity">
-          <div aria-hidden="true" className="absolute inset-0 z-0 overflow-hidden">
-            <div
-              className="absolute h-[360px] w-[360px] rounded-full blur-[70px]"
-              style={{
-                top: -90,
-                right: -70,
-                background: "hsl(var(--primary) / 0.12)",
-                animation: "float 18s ease-in-out infinite",
-              }}
-            />
-            <div
-              className="absolute h-[240px] w-[240px] rounded-full blur-[70px]"
-              style={{
-                bottom: -30,
-                left: -20,
-                background: "hsl(36 35% 70% / 0.28)",
-                animation: "float 14s ease-in-out infinite",
-              }}
-            />
-          </div>
-          <Content>
-            <div className="grid gap-14 md:grid-cols-2">
-              <Reveal>
-                <ExampleRotator />
-              </Reveal>
-              <div>
-                <Reveal>
-                  <p className="mb-4 text-[12px] font-medium uppercase tracking-[0.26em] text-muted-foreground">
-                    What the app returns
-                  </p>
-                </Reveal>
-                <Reveal delay={80}>
-                  <h2 className="m-0 mb-5 font-serif text-[clamp(2.2rem,4.2vw,4rem)] leading-[0.95] tracking-[-0.05em]">
-                    Clarity without performance.
-                  </h2>
-                </Reveal>
-                <Reveal delay={160}>
-                  <p className="mb-4 text-[clamp(1.05rem,1.8vw,1.5rem)] leading-[1.7] text-muted-foreground">
-                    The point is not to sound insightful. The point is to feel
-                    the situation get cleaner. Sift can help with emotional
-                    knots, practical pressure, creative stalls, and messy
-                    decisions that need a clearer read.
-                  </p>
-                </Reveal>
-                <Reveal delay={220}>
-                  <p className="max-w-[38rem] text-base leading-7 text-muted-foreground">
-                    That is why the interface stays visually light, why the
-                    answer narrows instead of expanding, and why the example
-                    over there rotates through different kinds of real-world
-                    questions.
-                  </p>
-                </Reveal>
-              </div>
-            </div>
-          </Content>
-        </Section>
+        {/* 4. Outcomes */}
+        <LandingOutcomesSection />
 
-        {/* Founder — a single human voice on the page. Sift is calm,
-            but it is also made by someone, and saying so quietly here
-            is part of the trust the rest of the page asks for. */}
-        <Section id="founder">
-          <Content>
-            <div className="mx-auto grid max-w-[960px] items-center gap-10 md:grid-cols-[260px_1fr] md:gap-14">
-              <Reveal>
-                {/* Portrait. Soft warm frame, rounded but not a circle
-                    so the photograph reads as a photograph and not a
-                    profile chip. */}
-                <div className="relative mx-auto w-full max-w-[260px] md:max-w-none">
-                  <div
-                    aria-hidden="true"
-                    className="absolute -inset-3 rounded-[1.6rem] bg-primary/8 blur-2xl"
-                  />
-                  <img
-                    src="/founder-alejandro.jpg"
-                    alt="Alejandro Hernandez, the founder of Sift, smiling outdoors with greenery behind him."
-                    className="relative w-full rounded-[1.4rem] border border-border/60 object-cover shadow-[0_24px_60px_-30px_rgba(0,0,0,0.30)]"
-                    style={{ aspectRatio: "3 / 4" }}
-                    data-testid="img-founder"
-                    loading="lazy"
-                  />
-                </div>
-              </Reveal>
-              <Reveal delay={120}>
-                <div>
-                  <p className="mb-4 text-[12px] font-medium uppercase tracking-[0.26em] text-muted-foreground">
-                    The person behind it
-                  </p>
-                  <h2 className="m-0 mb-4 font-serif text-[clamp(2rem,3.4vw,2.8rem)] leading-[1.05] tracking-[-0.03em]">
-                    Alejandro Hernandez
-                  </h2>
-                  <p className="mb-6 text-[14px] uppercase tracking-[0.18em] text-muted-foreground">
-                    Father · Husband · Poet · Multi‑media entrepreneur
-                  </p>
-                  <div className="space-y-4 text-[16px] leading-[1.7] text-foreground/85 md:text-[17px]">
-                    <p>
-                      I built Sift because my mind doesn’t get quiet on
-                      its own. Between the work, the family, and the
-                      next thing, I write to find what I actually feel
-                      underneath all of it.
-                    </p>
-                    <p>
-                      I needed a tool that would meet me in the mess
-                      and help me hear myself again — not louder, just
-                      clearer. So I made one.
-                    </p>
-                    <p className="text-muted-foreground">
-                      If Sift is useful to you, that’s the whole point.
-                      If something is missing, tell me. This is built
-                      slowly, by hand, for the kind of mind I have.
-                    </p>
-                  </div>
-                  <p
-                    className="mt-7 font-serif text-[18px] italic tracking-[-0.01em] text-foreground/70"
-                    data-testid="text-founder-signature"
-                  >
-                    — Alejandro
-                  </p>
-                </div>
-              </Reveal>
-            </div>
-          </Content>
-        </Section>
+        {/* 5. Social proof */}
+        <LandingTestimonialsSection />
 
-        {/* FAQ */}
-        <Section id="faq">
-          <div aria-hidden="true" className="absolute inset-0 z-0 overflow-hidden">
-            <div
-              className="absolute h-[300px] w-[300px] rounded-full blur-[70px]"
-              style={{
-                top: -60,
-                right: "6%",
-                background: "hsl(36 35% 70% / 0.22)",
-                animation: "float 18s ease-in-out infinite",
-              }}
-            />
-          </div>
-          <Content>
-            <div className="grid gap-12 md:grid-cols-[0.85fr_1.15fr]">
-              <div>
-                <Reveal>
-                  <p className="mb-4 text-[12px] font-medium uppercase tracking-[0.26em] text-muted-foreground">
-                    Questions
-                  </p>
-                </Reveal>
-                <Reveal delay={80}>
-                  <h2 className="m-0 mb-5 max-w-[14ch] font-serif text-[clamp(2.2rem,4vw,3.4rem)] leading-[1.02] tracking-[-0.04em]">
-                    What people want to know before they start.
-                  </h2>
-                </Reveal>
-                <Reveal delay={140}>
-                  <p className="max-w-[28rem] text-[15px] leading-[1.7] text-muted-foreground">
-                    Honest answers, not marketing. If something is missing, we
-                    will say so.
-                  </p>
-                </Reveal>
-              </div>
-              <Reveal delay={120}>
-                <div className="rounded-3xl border border-border/60 bg-card/70 px-6 py-1 shadow-[var(--shadow-md)] backdrop-blur-md">
-                  <FaqItem q="Is what I write private?">
-                    Yes. Your entries are stored against your account and are
-                    not shared, sold, or used to train models. We are a small
-                    team and we read aggregate signals to improve Sift, never
-                    individual entries unless you explicitly send us one.
-                  </FaqItem>
-                  <FaqItem q="Does Sift use AI? Which model?">
-                    Yes. Sift uses large language models from a major provider
-                    to do the actual sifting — separating what matters from
-                    noise, naming the deeper pattern. The prompt and the
-                    structure around it are ours; the reasoning engine is not.
-                  </FaqItem>
-                  <FaqItem q="What does Sift do with sad or dark thoughts?">
-                    Sift is not a crisis tool. If what you write suggests harm
-                    to yourself or someone else, Sift stops the normal flow
-                    and surfaces real resources — a hotline, a text line, a
-                    plain note that talking to a person is the right next
-                    step. It will not try to be your therapist.
-                  </FaqItem>
-                  <FaqItem q="Can I delete what I have written?">
-                    Yes. Any entry can be deleted from your history, and
-                    deleting your account removes your data from our systems.
-                    There is no public profile, no shared feed, no archive
-                    you cannot reach.
-                  </FaqItem>
-                  <FaqItem q="Does Sift store everything I write?">
-                    Sift stores your entries so you can return to them and so
-                    the next conversation can build on the last one. Storage
-                    is encrypted at rest. You can delete entries one by one
-                    or wipe the account.
-                  </FaqItem>
-                  <FaqItem q="What is Sift not?">
-                    Sift is not a journal, not a chatbot, not therapy, not a
-                    productivity app. It does not give advice, it does not
-                    keep score, and it will not try to keep you on the page.
-                    The goal is to send you back to your life with one
-                    clearer thought.
-                  </FaqItem>
-                  <FaqItem q="Is it free?">
-                    There is a free tier forever — three sifts a month,
-                    full history, every feature. Plus is six dollars a
-                    month or forty‑eight a year for unlimited sifts. If
-                    you are using Sift before Plus launches, you get six
-                    months of Plus free as a thank you. Pricing details
-                    on the <a href="/#/pricing" className="underline decoration-primary/40 underline-offset-4 transition-colors hover:text-foreground">pricing page</a>.
-                  </FaqItem>
-                  <FaqItem q={`What happens when I hit the three\u2011sift limit?`}>
-                    Nothing breaks. Your history stays visible, the
-                    composer tells you when your next sift unlocks, and
-                    there is a quiet upgrade option if you want more
-                    now. The limit is a pace, not a paywall around what
-                    you have already written.
-                  </FaqItem>
-                  <FaqItem q="Who is this for?">
-                    People whose minds don’t get quiet on their own.
-                    Parents holding too many roles in a day. Builders
-                    and creatives stuck between the work that pays
-                    and the work that’s theirs. Anyone who writes
-                    or talks to themselves to figure out what they
-                    actually feel — and wants a calmer place to
-                    do it than a notes app or a feed. If that’s
-                    you, Sift was built for you.
-                  </FaqItem>
-                </div>
-              </Reveal>
-            </div>
+        {/* 6. About the developer — preserved */}
+        <LandingFounderSection />
 
-            {/* Closing CTA — folded into the FAQ section so the page ends
-                on one quiet invitation instead of a separate panel. */}
-            <Reveal delay={200}>
-              <div
-                className="mt-16 md:mt-20 text-center"
-                data-testid="faq-cta"
+        {/* 7. Final CTA */}
+        <Section id="cta" className="min-h-[70svh]">
+          <Content className="text-center">
+            <Reveal>
+              <h2 className="mx-auto m-0 mb-5 max-w-[14ch] font-serif text-[clamp(2.2rem,4vw,3.4rem)] leading-[1.02] tracking-[-0.04em]">
+                Find what matters.
+              </h2>
+            </Reveal>
+            <Reveal delay={80}>
+              <p className="mx-auto mb-8 max-w-[32rem] text-[clamp(1.05rem,1.8vw,1.3rem)] leading-[1.7] text-muted-foreground">
+                Bring the noise. Sift will help you hear the signal.
+              </p>
+            </Reveal>
+            <Reveal delay={140}>
+              <a
+                href={appHref}
+                className="inline-flex h-12 min-w-[200px] items-center justify-center rounded-full bg-primary px-8 text-sm font-semibold text-primary-foreground shadow-md transition-transform hover:-translate-y-px"
+                data-testid="link-cta-final"
               >
-                <p className="mb-3 text-[12px] font-medium uppercase tracking-[0.26em] text-muted-foreground">
-                  Clarity over comfort
-                </p>
-                <h3 className="mx-auto m-0 mb-4 max-w-[22ch] font-serif text-[clamp(2rem,3.4vw,2.8rem)] leading-[1.05] tracking-[-0.03em]">
-                  When you are ready to hear what is really going on, Sift is
-                  ready to listen.
-                </h3>
-                <div className="mt-6 flex flex-wrap justify-center gap-4">
-                  <a
-                    href={getAppHref()}
-                    className="inline-flex h-12 min-w-[180px] items-center justify-center rounded-full bg-primary px-7 text-sm font-semibold text-primary-foreground shadow-md transition-transform hover:-translate-y-px"
-                    data-testid="link-cta-primary"
-                  >
-                    Try Sift now
-                  </a>
-                </div>
-              </div>
+                Begin your first sift
+              </a>
             </Reveal>
           </Content>
         </Section>
       </main>
 
-      <footer
-        className="relative z-[2] border-t border-border/60 py-10"
-        style={{
-          background: "color-mix(in srgb, hsl(var(--background)) 82%, transparent)",
-        }}
-      >
-        <div className="mx-auto flex w-[min(1160px,calc(100vw-32px))] flex-wrap justify-center gap-x-6 gap-y-3 text-sm text-muted-foreground">
-          <a
-            href="#what"
-            className="transition-colors hover:text-foreground"
-            data-testid="link-footer-what"
-          >
-            What it is for
-          </a>
-          <a
-            href="#how"
-            className="transition-colors hover:text-foreground"
-            data-testid="link-footer-how"
-          >
-            How it works
-          </a>
-          <a
-            href="#clarity"
-            className="transition-colors hover:text-foreground"
-            data-testid="link-footer-clarity"
-          >
-            Examples
-          </a>
-          <a
-            href="/#/pricing"
-            className="transition-colors hover:text-foreground"
-            data-testid="link-footer-pricing"
-          >
-            Pricing
-          </a>
-          <a
-            href="#faq"
-            className="transition-colors hover:text-foreground"
-            data-testid="link-footer-faq"
-          >
-            FAQ
-          </a>
-        </div>
-      </footer>
+      <LandingFooter current="landing" />
     </div>
   );
 }

@@ -2384,6 +2384,8 @@ function artifactTypeLabel(t: NonNullable<SiftResult["artifactType"]>): string {
       return "Project brief";
     case "stakeholder_brief":
       return "Stakeholder read";
+    case "writing_sift":
+      return "Writing Sift";
     case "operator_card":
     default:
       return "Operator card";

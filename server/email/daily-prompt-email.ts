@@ -35,7 +35,7 @@ export function dailyPromptCtaBaseUrl(): string {
 
 export function buildDailyPromptCtaUrl(promptId: number): string {
   const base = dailyPromptCtaBaseUrl();
-  return `${base}/#/sift?dailyPrompt=1&promptId=${promptId}`;
+  return `${base}/#/daily-sift/${promptId}`;
 }
 
 function pickSubject(promptId: number): string {

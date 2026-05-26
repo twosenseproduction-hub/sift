@@ -1,6 +1,7 @@
 import { cn } from "@/lib/utils";
 
 export type DailyPromptCardModel = {
+  promptId: number;
   themeName: string;
   promptText: string;
   promptType?: string;

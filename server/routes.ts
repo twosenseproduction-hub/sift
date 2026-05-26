@@ -61,7 +61,9 @@ import {
   updateThreadSchema,
   siftSummarySchema,
   updateSessionMemorySchema,
+  writingSiftArtifactSchema,
   type Analysis,
+  type WritingSiftArtifact,
   type OperatorArtifact,
   type CheckinAnalysis,
   type CheckinModelOutput,
@@ -712,6 +714,31 @@ Bedroom warmup phase:
 - Do not list "what matters", "noise", or "next step" inside the reflection.
 - Still return every required JSON field. Keep matters/noise/nextStep internally useful, but the user will only see the reflection during warmup.`;
 
+const WRITING_SIFT_SYSTEM_PROMPT = `You are Sift meeting a piece of creative writing — a poem, draft, lyric, essay fragment, or other crafted expression.
+
+The user is NOT asking you to solve a life problem. Do not sort their text into "signal" and "noise." Do not assign homework disguised as insight. Do not sound like an English teacher, workshop critic, or cheerleader.
+
+${SAFETY_CLAUSE}
+
+Meet the work on its own terms. Name what the piece is carrying, one image that feels alive in it, what lingers after reading, and one gentle invitation — not a fix, not a rewrite unless they explicitly asked for one.
+
+Return STRICT JSON only:
+{
+  "mode": "writing",
+  "whatThisPieceIsCarrying": string,
+  "liveImage": string,
+  "whatLingers": string,
+  "oneInvitation": string
+}
+
+Rules:
+- whatThisPieceIsCarrying: 1–2 sentences. Emotional or thematic weight — not plot summary.
+- liveImage: 1 sentence naming a concrete image, rhythm, or moment that feels most alive. Specific, not generic.
+- whatLingers: 1 sentence on the aftertaste — what stays in the body or attention.
+- oneInvitation: 1 sentence. An open door (write toward X, sit with Y, read aloud) — not "you should" or grading language.
+- No generic praise ("beautiful", "powerful", "lovely"). No line edits unless asked.
+- Output JSON only. No prose before or after.`;
+
 function greetingWarmupAnalysis(input: string): Analysis {
   return {
     themes: [
@@ -1111,6 +1138,86 @@ async function runAnalysis(
     console.warn("[sift] falling back to graceful structure", err);
     return gracefulStructureFallback(input);
   }
+}
+
+function gracefulWritingFallback(input: string): WritingSiftArtifact {
+  const snippet = input.replace(/\s+/g, " ").trim().slice(0, 120);
+  return {
+    mode: "writing",
+    whatThisPieceIsCarrying:
+      "Something is being held here that wants to be met before it is fixed.",
+    liveImage: snippet
+      ? `A line that still has charge: "${snippet}${input.length > 120 ? "…" : ""}"`
+      : "A line or image that still has charge in the middle of the piece.",
+    whatLingers: "The piece leaves a specific weight — worth staying with before moving on.",
+    oneInvitation:
+      "Read it aloud once, slowly, and notice which line your breath wants to return to.",
+  };
+}
+
+async function runWritingAnalysis(
+  input: string,
+  opts?: { authMode?: SiftClientAuthMode },
+): Promise<WritingSiftArtifact> {
+  const msg = await getSiftClient(opts?.authMode).messages.create({
+    model: MODEL,
+    max_tokens: 1024,
+    system: WRITING_SIFT_SYSTEM_PROMPT,
+    messages: [
+      {
+        role: "user",
+        content: `Here is a piece of writing:\n\n${input}\n\nMeet it as writing. Return JSON only.`,
+      },
+    ],
+  });
+
+  const textBlock = msg.content.find((b: { type?: string }) => b.type === "text") as
+    | { text?: string }
+    | undefined;
+  const raw = (textBlock?.text ?? "").trim();
+  const cleaned = raw
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```\s*$/i, "")
+    .trim();
+
+  try {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(cleaned);
+    } catch {
+      const match = cleaned.match(/\{[\s\S]*\}/);
+      if (!match) throw new Error("Model did not return JSON");
+      parsed = JSON.parse(match[0]);
+    }
+    return writingSiftArtifactSchema.parse(parsed);
+  } catch (err) {
+    console.warn("[writing-sift] falling back to graceful writing structure", err);
+    return gracefulWritingFallback(input);
+  }
+}
+
+/** Map a Writing Sift artifact into legacy DB columns for storage compatibility. */
+function writingArtifactToAnalysisFields(artifact: WritingSiftArtifact): Analysis {
+  const title =
+    artifact.whatThisPieceIsCarrying.slice(0, 40).trim() || "Writing";
+  return {
+    themes: [
+      {
+        title: "Writing Sift",
+        summary: artifact.whatThisPieceIsCarrying,
+      },
+    ],
+    coreIntent: artifact.whatThisPieceIsCarrying,
+    reflection: artifact.liveImage,
+    nextStep: artifact.oneInvitation,
+    matters: [artifact.whatThisPieceIsCarrying.slice(0, 80)],
+    noise: [artifact.whatLingers.slice(0, 80)],
+    signalReason: artifact.whatLingers,
+    stepScope: {
+      durationEstimate: "~15 min",
+      stoppingCondition: "when the invitation has been tried or sat with",
+    },
+  };
 }
 
 // runOperatorAnalysis — Phase 3 helper. Mirrors runAnalysis but uses the
@@ -3909,6 +4016,7 @@ export async function registerRoutes(
           appliedFilters: ["promptIdOverride"],
         });
       }
+      return res.status(404).json({ error: "Prompt not found" });
     }
 
     const result = selectDailyPrompt({
@@ -4022,8 +4130,17 @@ async function persistOperatorArtifactForSift(
     if (!parsed.success) {
       return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
     }
-    const { input, inputMode, phase, intent, fragmentSort, skippedFragmentSort, forceAnalysis, metaSift } =
-      parsed.data;
+    const {
+      input,
+      inputMode,
+      phase,
+      intent,
+      fragmentSort,
+      skippedFragmentSort,
+      forceAnalysis,
+      metaSift,
+      flowMode,
+    } = parsed.data;
 
     // Crisis safeguard — before persistence, before LLM. If the input describes
     // suicide, self-harm, or intent to harm others, return a care response and
@@ -4086,18 +4203,28 @@ async function persistOperatorArtifactForSift(
         }
       }
 
+      const isWritingFlow = flowMode === "writing";
       const preSortContext = buildPreSortContext(
         fragmentSort,
         skippedFragmentSort,
       );
-      const analysis = await runAnalysis(input, {
-        preSortContext: preSortContext || undefined,
-        metaSift: metaSift === true,
-        authMode: siftAuthMode,
-        phase,
-        intent,
-        supportProfile,
-      });
+      let analysis: Analysis;
+      let writingArtifact: WritingSiftArtifact | undefined;
+      if (isWritingFlow) {
+        writingArtifact = await runWritingAnalysis(input, {
+          authMode: siftAuthMode,
+        });
+        analysis = writingArtifactToAnalysisFields(writingArtifact);
+      } else {
+        analysis = await runAnalysis(input, {
+          preSortContext: preSortContext || undefined,
+          metaSift: metaSift === true,
+          authMode: siftAuthMode,
+          phase,
+          intent,
+          supportProfile,
+        });
+      }
 
       // Output safeguard — scan every string in the model's response. If it
       // contains crisis-adjacent language (shouldn't, given the system prompt,
@@ -4107,10 +4234,16 @@ async function persistOperatorArtifactForSift(
         console.warn("[crisis-screen] output tripped on /api/sift — discarding");
         return res.json({ type: "care" });
       }
+      if (writingArtifact && screenOutputForCrisis(writingArtifact)) {
+        console.warn("[crisis-screen] output tripped on writing sift — discarding");
+        return res.json({ type: "care" });
+      }
 
       const id = newId();
 
-      const { mode, entrySignal } = routeThread(input);
+      const { mode, entrySignal } = isWritingFlow
+        ? { mode: "personal" as const, entrySignal: "none" as const }
+        : routeThread(input);
       // Operator artifact generation is additive. Keep it off the first-response
       // path so the user receives the primary Sift as soon as it is ready.
       const shouldPersistOperatorArtifact = mode === "operator";
@@ -4157,8 +4290,10 @@ async function persistOperatorArtifactForSift(
         frontBurnerRank: null,
         currentMove: null,
         closureCondition: null,
-        artifactType: null,
-        operatorArtifact: null,
+        artifactType: isWritingFlow ? "writing_sift" : null,
+        operatorArtifact: isWritingFlow
+          ? JSON.stringify(writingArtifact)
+          : null,
         recurringSignal: recurring.detected ? 1 : 0,
         recurringTheme: recurring.theme,
         redundancyHintLevel:
@@ -4212,7 +4347,10 @@ async function persistOperatorArtifactForSift(
         recurringSignal: recurring.detected,
         mode,
         frontBurnerRank: null,
-        artifactType: null,
+        artifactType: isWritingFlow ? "writing_sift" : null,
+        ...(isWritingFlow && writingArtifact
+          ? { flowMode: "writing" as const, writingArtifact }
+          : {}),
         ...(redundancyCheck.level === "low"
           ? {
               redundancyHint: {
@@ -4643,6 +4781,21 @@ async function persistOperatorArtifactForSift(
       frontBurnerRank: row.frontBurnerRank ?? null,
       artifactType:
         (row.artifactType as SiftResult["artifactType"]) ?? null,
+      ...(row.artifactType === "writing_sift" && row.operatorArtifact
+        ? (() => {
+            try {
+              const wa = writingSiftArtifactSchema.parse(
+                JSON.parse(row.operatorArtifact),
+              );
+              return {
+                flowMode: "writing" as const,
+                writingArtifact: wa,
+              };
+            } catch {
+              return {};
+            }
+          })()
+        : {}),
       ...(revisionWire?.length ? { revisionHistory: revisionWire } : {}),
       ...(recurringSignalWire ? { recurringSignal: true } : {}),
       ...(redundancyHintWire ? { redundancyHint: redundancyHintWire } : {}),
