@@ -151,6 +151,10 @@ export const stepScopeSchema = z.object({
 });
 export type StepScope = z.infer<typeof stepScopeSchema>;
 
+/** Interpretation mode for a sift — personal clarity, operator pressure, or creative writing. */
+export const siftLensSchema = z.enum(["personal", "operator", "writer"]);
+export type SiftLens = z.infer<typeof siftLensSchema>;
+
 export const siftOnboardingProfileSchema = z.object({
   mode: z.enum(["base", "companion"]).optional(),
   startingSpace: z.enum(["bedroom", "desk", "rooftop", "library"]).optional(),
@@ -161,6 +165,8 @@ export const siftOnboardingProfileSchema = z.object({
   supportStyle: z
     .enum(["gentle", "clear", "direct", "step_by_step"])
     .optional(),
+  /** Default lens chosen during onboarding; overridable per sift in the composer. */
+  defaultLens: siftLensSchema.optional(),
   completedAt: z.string().optional(),
   /** Legacy rows from the first preference pass. */
   capturedAt: z.string().optional(),
@@ -175,6 +181,7 @@ export const supportProfileUpdateSchema = z.object({
   theme: supportProfileSchema.shape.theme.nullable().optional(),
   primaryIntent: supportProfileSchema.shape.primaryIntent.nullable().optional(),
   supportStyle: supportProfileSchema.shape.supportStyle.nullable().optional(),
+  defaultLens: supportProfileSchema.shape.defaultLens.nullable().optional(),
   completedAt: z.string().nullable().optional(),
 });
 export type SupportProfileUpdateRequest = z.infer<typeof supportProfileUpdateSchema>;
@@ -309,7 +316,9 @@ export const analyzeRequestSchema = z.object({
   metaSift: z.boolean().optional(),
   /** First-run/anonymous onboarding profile. Signed-in server profile still wins. */
   supportProfile: supportProfileUpdateSchema.optional(),
-  /** standard = signal/noise/next-step; writing = meet creative work as a piece */
+  /** Active interpretation lens for this sift. */
+  lens: siftLensSchema.optional(),
+  /** @deprecated Prefer `lens: "writer"`. Kept for older clients. */
   flowMode: z.enum(["standard", "writing"]).optional(),
 });
 export type AnalyzeRequest = z.infer<typeof analyzeRequestSchema>;
@@ -318,14 +327,43 @@ export type AnalyzeRequest = z.infer<typeof analyzeRequestSchema>;
 export const siftFlowModeSchema = z.enum(["standard", "writing"]);
 export type SiftFlowMode = z.infer<typeof siftFlowModeSchema>;
 
-export const writingSiftArtifactSchema = z.object({
-  mode: z.literal("writing"),
+const writerLensFields = {
   whatThisPieceIsCarrying: z.string().min(1),
   liveImage: z.string().min(1),
   whatLingers: z.string().min(1),
   oneInvitation: z.string().min(1),
+} as const;
+
+export const writerLensArtifactSchema = z.object({
+  lens: z.literal("writer"),
+  ...writerLensFields,
 });
-export type WritingSiftArtifact = z.infer<typeof writingSiftArtifactSchema>;
+export type WriterLensArtifact = z.infer<typeof writerLensArtifactSchema>;
+
+/** Accepts legacy `mode: "writing"` rows and normalizes to writer lens. */
+export const writingSiftArtifactSchema = z
+  .object({
+    lens: z.literal("writer").optional(),
+    mode: z.literal("writing").optional(),
+    ...writerLensFields,
+  })
+  .transform((v) => ({
+    lens: "writer" as const,
+    whatThisPieceIsCarrying: v.whatThisPieceIsCarrying,
+    liveImage: v.liveImage,
+    whatLingers: v.whatLingers,
+    oneInvitation: v.oneInvitation,
+  }));
+export type WritingSiftArtifact = WriterLensArtifact;
+
+export const operatorLensArtifactSchema = z.object({
+  lens: z.literal("operator"),
+  coreIssue: z.string().min(1),
+  drag: z.string().min(1),
+  bottleneck: z.string().min(1),
+  nextDecisiveMove: z.string().min(1),
+});
+export type OperatorLensArtifact = z.infer<typeof operatorLensArtifactSchema>;
 
 /** POST /api/sift/fragments — extract short phrases for the pre-sort UI */
 export const siftFragmentsRequestSchema = z.object({
@@ -511,6 +549,7 @@ export type OperatorArtifact = z.infer<typeof operatorArtifactSchema>;
 // sifts.artifact_type column and any narrowing on the client.
 export const operatorArtifactTypeSchema = z.enum([
   "operator_card",
+  "operator_lens",
   "decision_memo",
   "project_brief",
   "stakeholder_brief",
@@ -573,21 +612,43 @@ export type SiftResult = Analysis & {
   artifactType?: OperatorArtifactType | null;
   /** Phase 2 conversation summary, returned on explicit summary requests. */
   summary?: SiftSummary;
+  /** Active lens for this sift response. */
+  lens?: SiftLens;
   /** When set, the primary read is a Writing Sift artifact — not signal/noise framing. */
   flowMode?: SiftFlowMode;
   writingArtifact?: WritingSiftArtifact;
+  operatorLensArtifact?: OperatorLensArtifact;
 };
 
-export function isWritingSiftResult(r: unknown): r is SiftResult & {
-  flowMode: "writing";
-  writingArtifact: WritingSiftArtifact;
+export function isWriterLensResult(r: unknown): r is SiftResult & {
+  lens: "writer";
+  writingArtifact: WriterLensArtifact;
+} {
+  if (typeof r !== "object" || r === null) return false;
+  const rec = r as {
+    lens?: string;
+    flowMode?: string;
+    writingArtifact?: unknown;
+  };
+  const artifact = rec.writingArtifact;
+  if (!writerLensArtifactSchema.safeParse(artifact).success) return false;
+  return rec.lens === "writer" || rec.flowMode === "writing";
+}
+
+/** @deprecated Use isWriterLensResult */
+export const isWritingSiftResult = isWriterLensResult;
+
+export function isOperatorLensResult(r: unknown): r is SiftResult & {
+  lens: "operator";
+  operatorLensArtifact: OperatorLensArtifact;
 } {
   return (
     typeof r === "object" &&
     r !== null &&
-    (r as { flowMode?: string }).flowMode === "writing" &&
-    writingSiftArtifactSchema.safeParse((r as { writingArtifact?: unknown })
-      .writingArtifact).success
+    (r as { lens?: string }).lens === "operator" &&
+    operatorLensArtifactSchema.safeParse(
+      (r as { operatorLensArtifact?: unknown }).operatorLensArtifact,
+    ).success
   );
 }
 

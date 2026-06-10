@@ -1,5 +1,9 @@
 import { useState } from "react";
-import type { SupportProfile, SupportProfileUpdateRequest } from "@shared/schema";
+import type {
+  SiftLens,
+  SupportProfile,
+  SupportProfileUpdateRequest,
+} from "@shared/schema";
 import { useMe } from "@/lib/auth";
 
 export type SiftExperienceMode = "base";
@@ -38,6 +42,7 @@ export function completeOnboardingProfile(
     theme: input.theme ?? undefined,
     primaryIntent: input.primaryIntent ?? undefined,
     supportStyle: input.supportStyle ?? undefined,
+    defaultLens: (input.defaultLens ?? "personal") as SiftLens,
     completedAt: new Date().toISOString(),
   };
 }

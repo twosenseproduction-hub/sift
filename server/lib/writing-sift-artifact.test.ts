@@ -11,7 +11,7 @@ describe("writingSiftArtifactSchema", () => {
       whatLingers: "A thin quiet after the last line.",
       oneInvitation: "Read it aloud once and notice where your breath catches.",
     });
-    assert.equal(parsed.mode, "writing");
+    assert.equal(parsed.lens, "writer");
     assert.match(parsed.oneInvitation, /Read it aloud/);
   });
 

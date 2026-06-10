@@ -2,7 +2,7 @@ import type { WritingSiftArtifact } from "@shared/schema";
 import { cn } from "@/lib/utils";
 
 const SECTIONS: {
-  key: keyof Omit<WritingSiftArtifact, "mode">;
+  key: keyof Omit<WritingSiftArtifact, "lens">;
   label: string;
 }[] = [
   { key: "whatThisPieceIsCarrying", label: "What this piece is carrying" },
@@ -52,7 +52,7 @@ export function WritingSiftResult({
       aria-label="Writing Sift result"
     >
       <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-[color:var(--v3-text-muted)]">
-        Writing Sift
+        Writer
       </p>
       <p className="mt-1 text-[12px] font-light text-[color:var(--v3-text-secondary)]">
         Met as a piece, not a problem.

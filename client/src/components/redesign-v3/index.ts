@@ -9,6 +9,8 @@ export { DailyPromptCardV3, DailyPromptCardV3Skeleton } from "./daily-prompt-car
 export { ComposerIntro } from "./composer-intro";
 export { RedesignV3EmptyComposer } from "./empty-composer";
 export { WritingSiftConfirm } from "./writing-sift-confirm";
+export { LensSwitcher } from "./lens-switcher";
+export { LensSuggestConfirm } from "./lens-suggest-confirm";
 export { RedesignV3Sidebar, RedesignV3Layout } from "./sidebar";
 export {
   NextStepSystem,

@@ -62,8 +62,12 @@ import {
   siftSummarySchema,
   updateSessionMemorySchema,
   writingSiftArtifactSchema,
+  operatorLensArtifactSchema,
+  siftLensSchema,
   type Analysis,
   type WritingSiftArtifact,
+  type OperatorLensArtifact,
+  type SiftLens,
   type OperatorArtifact,
   type CheckinAnalysis,
   type CheckinModelOutput,
@@ -724,7 +728,7 @@ Meet the work on its own terms. Name what the piece is carrying, one image that 
 
 Return STRICT JSON only:
 {
-  "mode": "writing",
+  "lens": "writer",
   "whatThisPieceIsCarrying": string,
   "liveImage": string,
   "whatLingers": string,
@@ -1143,7 +1147,7 @@ async function runAnalysis(
 function gracefulWritingFallback(input: string): WritingSiftArtifact {
   const snippet = input.replace(/\s+/g, " ").trim().slice(0, 120);
   return {
-    mode: "writing",
+    lens: "writer",
     whatThisPieceIsCarrying:
       "Something is being held here that wants to be met before it is fixed.",
     liveImage: snippet
@@ -1218,6 +1222,120 @@ function writingArtifactToAnalysisFields(artifact: WritingSiftArtifact): Analysi
       stoppingCondition: "when the invitation has been tried or sat with",
     },
   };
+}
+
+const OPERATOR_LENS_SYSTEM_PROMPT = `You are Sift in Operator lens — meeting work pressure, execution friction, and decision load.
+
+The user is NOT asking for therapy, pep talks, or generic productivity advice. Convert pressure into decision clarity and one leveraged move.
+
+${SAFETY_CLAUSE}
+
+Tone: clear, decisive, calm. Not bro-y, not harsh, not therapeutic. Name what is actually happening beneath the chaos.
+
+Return STRICT JSON only:
+{
+  "lens": "operator",
+  "coreIssue": string,
+  "drag": string,
+  "bottleneck": string,
+  "nextDecisiveMove": string
+}
+
+Rules:
+- coreIssue: 1–2 sentences — what is actually happening beneath the scattered pressure.
+- drag: 1–2 sentences — false urgency, distraction, scattered attention, or misallocated pressure (not a list of fifteen items).
+- bottleneck: 1 sentence — the true constraint slowing movement right now.
+- nextDecisiveMove: 1 sentence — one concrete leveraged move (5–30 minutes if possible).
+- No "you should hustle" energy. No consultant decks. Output JSON only.`;
+
+function gracefulOperatorLensFallback(input: string): OperatorLensArtifact {
+  const snippet = input.replace(/\s+/g, " ").trim().slice(0, 100);
+  return {
+    lens: "operator",
+    coreIssue: snippet
+      ? `The pressure is coming from too many live threads at once — "${snippet}${input.length > 100 ? "…" : ""}"`
+      : "The pressure is coming from too many live threads competing for the same attention.",
+    drag: "False urgency and context-switching are eating the capacity to finish one real thing.",
+    bottleneck: "No governing constraint has been chosen — everything feels equally loud.",
+    nextDecisiveMove:
+      "Name the one thread that unlocks the others if moved this week, and write it in one sentence.",
+  };
+}
+
+async function runOperatorLensAnalysis(
+  input: string,
+  opts?: { authMode?: SiftClientAuthMode },
+): Promise<OperatorLensArtifact> {
+  const msg = await getSiftClient(opts?.authMode).messages.create({
+    model: MODEL,
+    max_tokens: 1024,
+    system: OPERATOR_LENS_SYSTEM_PROMPT,
+    messages: [
+      {
+        role: "user",
+        content: `Here is what I'm holding right now:\n\n${input}\n\nMeet it as Operator. Return JSON only.`,
+      },
+    ],
+  });
+
+  const textBlock = msg.content.find((b: { type?: string }) => b.type === "text") as
+    | { text?: string }
+    | undefined;
+  const raw = (textBlock?.text ?? "").trim();
+  const cleaned = raw
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```\s*$/i, "")
+    .trim();
+
+  try {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(cleaned);
+    } catch {
+      const match = cleaned.match(/\{[\s\S]*\}/);
+      if (!match) throw new Error("Model did not return JSON");
+      parsed = JSON.parse(match[0]);
+    }
+    return operatorLensArtifactSchema.parse(parsed);
+  } catch (err) {
+    console.warn("[operator-lens] falling back to graceful operator structure", err);
+    return gracefulOperatorLensFallback(input);
+  }
+}
+
+function operatorLensToAnalysisFields(artifact: OperatorLensArtifact): Analysis {
+  return {
+    themes: [
+      {
+        title: "Operator",
+        summary: artifact.coreIssue,
+      },
+    ],
+    coreIntent: artifact.coreIssue,
+    reflection: artifact.bottleneck,
+    nextStep: artifact.nextDecisiveMove,
+    matters: [artifact.coreIssue.slice(0, 80), artifact.bottleneck.slice(0, 80)].filter(
+      Boolean,
+    ),
+    noise: [artifact.drag.slice(0, 120)],
+    signalReason: artifact.bottleneck,
+    stepScope: {
+      durationEstimate: "~20 min",
+      stoppingCondition: "when the decisive move has been taken or clearly named",
+    },
+  };
+}
+
+function resolveActiveLens(
+  body: { lens?: SiftLens; flowMode?: string },
+  supportProfile: SupportProfile | null,
+): SiftLens {
+  if (body.lens && siftLensSchema.safeParse(body.lens).success) {
+    return body.lens;
+  }
+  if (body.flowMode === "writing") return "writer";
+  if (supportProfile?.defaultLens) return supportProfile.defaultLens;
+  return "personal";
 }
 
 // runOperatorAnalysis — Phase 3 helper. Mirrors runAnalysis but uses the
@@ -3280,15 +3398,26 @@ export async function registerRoutes(
     theme?: SupportProfile["theme"] | null;
     primaryIntent?: SupportProfile["primaryIntent"] | null;
     supportStyle?: SupportProfile["supportStyle"] | null;
+    defaultLens?: SupportProfile["defaultLens"] | null;
     completedAt?: string | null;
   } | null): SupportProfile | null {
-    if (!input?.mode && !input?.startingSpace && !input?.theme && !input?.primaryIntent && !input?.supportStyle) return null;
+    if (
+      !input?.mode &&
+      !input?.startingSpace &&
+      !input?.theme &&
+      !input?.primaryIntent &&
+      !input?.supportStyle &&
+      !input?.defaultLens
+    ) {
+      return null;
+    }
     return supportProfileSchema.parse({
       mode: input.mode ?? undefined,
       startingSpace: input.startingSpace ?? undefined,
       theme: input.theme ?? undefined,
       primaryIntent: input.primaryIntent ?? undefined,
       supportStyle: input.supportStyle ?? undefined,
+      defaultLens: input.defaultLens ?? undefined,
       completedAt: input.completedAt ?? new Date().toISOString(),
     });
   }
@@ -4140,6 +4269,7 @@ async function persistOperatorArtifactForSift(
       forceAnalysis,
       metaSift,
       flowMode,
+      lens: lensBody,
     } = parsed.data;
 
     // Crisis safeguard — before persistence, before LLM. If the input describes
@@ -4180,6 +4310,10 @@ async function persistOperatorArtifactForSift(
         : null;
     const supportProfile =
       storedSupportProfile ?? normalizeSupportProfile(parsed.data.supportProfile);
+    const activeLens = resolveActiveLens(
+      { lens: lensBody, flowMode },
+      supportProfile,
+    );
 
     try {
       let redundancyCheck: RedundancyLevel = { level: "none" };
@@ -4203,18 +4337,25 @@ async function persistOperatorArtifactForSift(
         }
       }
 
-      const isWritingFlow = flowMode === "writing";
+      const isWriterLens = activeLens === "writer";
+      const isOperatorLens = activeLens === "operator";
       const preSortContext = buildPreSortContext(
         fragmentSort,
         skippedFragmentSort,
       );
       let analysis: Analysis;
       let writingArtifact: WritingSiftArtifact | undefined;
-      if (isWritingFlow) {
+      let operatorLensArtifact: OperatorLensArtifact | undefined;
+      if (isWriterLens) {
         writingArtifact = await runWritingAnalysis(input, {
           authMode: siftAuthMode,
         });
         analysis = writingArtifactToAnalysisFields(writingArtifact);
+      } else if (isOperatorLens) {
+        operatorLensArtifact = await runOperatorLensAnalysis(input, {
+          authMode: siftAuthMode,
+        });
+        analysis = operatorLensToAnalysisFields(operatorLensArtifact);
       } else {
         analysis = await runAnalysis(input, {
           preSortContext: preSortContext || undefined,
@@ -4238,15 +4379,22 @@ async function persistOperatorArtifactForSift(
         console.warn("[crisis-screen] output tripped on writing sift — discarding");
         return res.json({ type: "care" });
       }
+      if (operatorLensArtifact && screenOutputForCrisis(operatorLensArtifact)) {
+        console.warn("[crisis-screen] output tripped on operator lens — discarding");
+        return res.json({ type: "care" });
+      }
 
       const id = newId();
 
-      const { mode, entrySignal } = isWritingFlow
-        ? { mode: "personal" as const, entrySignal: "none" as const }
-        : routeThread(input);
-      // Operator artifact generation is additive. Keep it off the first-response
-      // path so the user receives the primary Sift as soon as it is ready.
-      const shouldPersistOperatorArtifact = mode === "operator";
+      const { mode, entrySignal } =
+        isWriterLens
+          ? { mode: "personal" as const, entrySignal: "none" as const }
+          : isOperatorLens
+            ? { mode: "operator" as const, entrySignal: "none" as const }
+            : routeThread(input);
+      // Legacy background operator artifacts only when auto-routed, not explicit lens.
+      const shouldPersistOperatorArtifact =
+        !isOperatorLens && !isWriterLens && mode === "operator";
 
       let sortScore: number | null = null;
       if (
@@ -4290,10 +4438,17 @@ async function persistOperatorArtifactForSift(
         frontBurnerRank: null,
         currentMove: null,
         closureCondition: null,
-        artifactType: isWritingFlow ? "writing_sift" : null,
-        operatorArtifact: isWritingFlow
-          ? JSON.stringify(writingArtifact)
-          : null,
+        artifactType: isWriterLens
+          ? "writing_sift"
+          : isOperatorLens
+            ? "operator_lens"
+            : null,
+        operatorArtifact:
+          isWriterLens && writingArtifact
+            ? JSON.stringify(writingArtifact)
+            : isOperatorLens && operatorLensArtifact
+              ? JSON.stringify(operatorLensArtifact)
+              : null,
         recurringSignal: recurring.detected ? 1 : 0,
         recurringTheme: recurring.theme,
         redundancyHintLevel:
@@ -4347,10 +4502,16 @@ async function persistOperatorArtifactForSift(
         recurringSignal: recurring.detected,
         mode,
         frontBurnerRank: null,
-        artifactType: isWritingFlow ? "writing_sift" : null,
-        ...(isWritingFlow && writingArtifact
+        lens: activeLens,
+        artifactType: isWriterLens
+          ? "writing_sift"
+          : isOperatorLens
+            ? "operator_lens"
+            : null,
+        ...(isWriterLens && writingArtifact
           ? { flowMode: "writing" as const, writingArtifact }
           : {}),
+        ...(isOperatorLens && operatorLensArtifact ? { operatorLensArtifact } : {}),
         ...(redundancyCheck.level === "low"
           ? {
               redundancyHint: {
@@ -4788,8 +4949,24 @@ async function persistOperatorArtifactForSift(
                 JSON.parse(row.operatorArtifact),
               );
               return {
+                lens: "writer" as const,
                 flowMode: "writing" as const,
                 writingArtifact: wa,
+              };
+            } catch {
+              return {};
+            }
+          })()
+        : {}),
+      ...(row.artifactType === "operator_lens" && row.operatorArtifact
+        ? (() => {
+            try {
+              const oa = operatorLensArtifactSchema.parse(
+                JSON.parse(row.operatorArtifact),
+              );
+              return {
+                lens: "operator" as const,
+                operatorLensArtifact: oa,
               };
             } catch {
               return {};

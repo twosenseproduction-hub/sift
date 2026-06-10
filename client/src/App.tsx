@@ -47,6 +47,7 @@ function AppRouter() {
       <Route path="/s/:id/chat" component={SiftChatPage} />
       <Route path="/s/:id" component={Shared} />
       <Route path="/daily-sift/:id" component={DailySiftPage} />
+      <Route path="/landing/:section" component={Landing} />
       <Route path="/landing" component={Landing} />
       <Route path="/pricing" component={Pricing} />
       <Route path="/privacy" component={PrivacyPage} />

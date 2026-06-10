@@ -87,27 +87,25 @@ export function LandingProductPreviewSection() {
   return (
     <Section id="preview">
       <Content>
-        <div className="grid items-center gap-12 lg:grid-cols-[0.95fr_1.05fr] lg:gap-16">
-          <div>
-            <Reveal>
-              <p className="landing-eyebrow mb-4">The experience</p>
-            </Reveal>
-            <Reveal delay={80}>
-              <h2 className="landing-headline m-0 mb-5 text-[clamp(2.2rem,4.2vw,3.6rem)]">
-                Bring the tangle. Leave with clarity.
-              </h2>
-            </Reveal>
-            <Reveal delay={160}>
-              <p className="landing-lead max-w-[34rem] text-[clamp(1.05rem,1.8vw,1.35rem)]">
-                Sift does not ask you to organize your thoughts first. It helps
-                you find what matters inside the mess.
-              </p>
-            </Reveal>
-          </div>
-          <Reveal delay={120}>
+        <Reveal>
+          <p className="landing-eyebrow mb-4 text-center">The experience</p>
+        </Reveal>
+        <Reveal delay={80}>
+          <h2 className="landing-headline mx-auto m-0 mb-5 max-w-[18ch] text-center text-[clamp(2.2rem,4.2vw,3.6rem)]">
+            Bring the tangle. Leave with clarity.
+          </h2>
+        </Reveal>
+        <Reveal delay={160}>
+          <p className="landing-lead mx-auto mb-12 max-w-[34rem] text-center text-[clamp(1.05rem,1.8vw,1.35rem)]">
+            Sift does not ask you to organize your thoughts first. It helps
+            you find what matters inside the mess.
+          </p>
+        </Reveal>
+        <Reveal delay={120}>
+          <div className="mx-auto max-w-[520px]">
             <LandingProductPreviewMock />
-          </Reveal>
-        </div>
+          </div>
+        </Reveal>
       </Content>
     </Section>
   );

@@ -1,8 +1,13 @@
-import type { SupportProfileUpdateRequest } from "@shared/schema";
+import type { SiftLens, SupportProfileUpdateRequest } from "@shared/schema";
+import {
+  LENS_DESCRIPTIONS,
+  LENS_LABELS,
+  SIFT_LENSES,
+} from "@/lib/sift-lens";
 import { cn } from "@/lib/utils";
 import { isRedesignV3Enabled } from "@/lib/use-redesign-v3";
 
-export type OnboardingStep = "welcome" | "choice" | "personalize";
+export type OnboardingStep = "welcome" | "choice" | "lens" | "personalize";
 export type SiftBaseVisualMode = "dark" | "light";
 export type OnboardingVariant = "bedroom" | "v3";
 
@@ -150,13 +155,16 @@ export function SiftOnboardingFlow({
               <OnboardingChoiceCard
                 title="Try free sifts"
                 description="Start a sift right away. No account needed."
-                onClick={onTryFree}
+                onClick={() => onStepChange("lens")}
                 theme={t}
               />
               <OnboardingChoiceCard
                 title="Create an account"
                 description="Save your sifts and return to past clarity."
-                onClick={onCreateAccount}
+                onClick={() => {
+                  onCreateAccount();
+                  onStepChange("lens");
+                }}
                 theme={t}
               />
             </div>
@@ -172,6 +180,70 @@ export function SiftOnboardingFlow({
                 Tune support first
               </button>
             </div>
+          </div>
+        ) : null}
+
+        {step === "lens" ? (
+          <div className="w-full text-left">
+            <p className={cn("text-center", t.kicker)}>Lens</p>
+            <div className={cn("mx-auto mt-4", t.rule)} aria-hidden />
+            <h2
+              className={cn(
+                "mt-6 text-center text-[32px] leading-[1.12] tracking-[-0.035em] sm:text-[38px]",
+                t.headline,
+              )}
+            >
+              Choose your Sift lens
+            </h2>
+            <p className={cn("mt-4 text-center text-[16px] leading-[1.5]", t.sub)}>
+              Sift can meet you in different ways depending on what you&apos;re bringing.
+              Pick the lens that fits you best most often. You can always change it later.
+            </p>
+
+            <div className="mt-7 space-y-3">
+              {SIFT_LENSES.map((lens) => {
+                const selected = draft.defaultLens === lens;
+                return (
+                  <button
+                    key={lens}
+                    type="button"
+                    onClick={() => setDraft({ defaultLens: lens })}
+                    className={cn(
+                      "w-full p-4 text-left transition",
+                      !t.v3 && "rounded-xl border",
+                      selected ? t.chipSelected : t.card,
+                    )}
+                    aria-pressed={selected}
+                    data-testid={`onboarding-lens-${lens}`}
+                  >
+                    <span className="block font-serif text-[19px] leading-tight tracking-[-0.03em]">
+                      {LENS_LABELS[lens]}
+                    </span>
+                    <span className={cn("mt-2 block text-[14px] leading-[1.45]", t.cardDesc)}>
+                      {LENS_DESCRIPTIONS[lens]}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <p className={cn("mt-5 text-center text-[13px] leading-[1.45]", t.sub)}>
+              You can switch lenses anytime before a sift.
+            </p>
+
+            <OnboardingFooter
+              backLabel="Back"
+              nextLabel="Set my default lens"
+              onBack={() => onStepChange("choice")}
+              onNext={() => {
+                const lens = (draft.defaultLens ?? "personal") as SiftLens;
+                setDraft({ defaultLens: lens });
+                onTryFree();
+              }}
+              secondaryLabel="Tune support first"
+              onSecondary={() => onStepChange("personalize")}
+              theme={t}
+            />
           </div>
         ) : null}
 
@@ -221,7 +293,7 @@ export function SiftOnboardingFlow({
             <OnboardingFooter
               backLabel="Back"
               nextLabel="Start first sift"
-              onBack={() => onStepChange("choice")}
+              onBack={() => onStepChange("lens")}
               onNext={onFinish}
               secondaryLabel="Skip"
               onSecondary={onFinish}

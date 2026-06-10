@@ -8,8 +8,21 @@ export function LandingFounderSection() {
   return (
     <Section id="founder">
       <Content>
+        <Reveal>
+          <p className="landing-eyebrow mb-4 text-center">The person behind it</p>
+        </Reveal>
+        <Reveal delay={80}>
+          <h2 className="landing-headline mx-auto m-0 mb-4 max-w-[20ch] text-center text-[clamp(2rem,3.4vw,2.8rem)] leading-[1.05]">
+            Alejandro Hernandez
+          </h2>
+        </Reveal>
+        <Reveal delay={120}>
+          <p className="landing-eyebrow mb-12 text-center text-[14px] tracking-[0.18em]">
+            Father · Husband · Poet · Multi‑media entrepreneur
+          </p>
+        </Reveal>
         <div className="mx-auto grid max-w-[960px] items-center gap-10 md:grid-cols-[260px_1fr] md:gap-14">
-          <Reveal>
+          <Reveal delay={160}>
             <div className="relative mx-auto w-full max-w-[260px] md:max-w-none">
               <div
                 aria-hidden="true"
@@ -25,15 +38,8 @@ export function LandingFounderSection() {
               />
             </div>
           </Reveal>
-          <Reveal delay={120}>
+          <Reveal delay={200}>
             <div>
-              <p className="landing-eyebrow mb-4">The person behind it</p>
-              <h2 className="landing-headline m-0 mb-4 text-[clamp(2rem,3.4vw,2.8rem)] leading-[1.05]">
-                Alejandro Hernandez
-              </h2>
-              <p className="landing-eyebrow mb-6 text-[14px] tracking-[0.18em]">
-                Father · Husband · Poet · Multi‑media entrepreneur
-              </p>
               <div className="landing-lead space-y-4 text-[16px] md:text-[17px]">
                 <p>
                   I built Sift because my mind doesn’t get quiet on

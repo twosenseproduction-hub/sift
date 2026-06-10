@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { useLocation } from "wouter";
 import { EngineDemo } from "@/components/engine-demo";
 import { LandingFounderSection } from "@/components/landing/founder-section";
 import { LandingOutcomesSection } from "@/components/landing/outcomes-section";
@@ -8,6 +9,8 @@ import { EnergyCanvas } from "@/components/redesign-v3/energy-canvas";
 import {
   Content,
   getAppHref,
+  landingAnchor,
+  landingSectionFromPath,
   LandingFooter,
   LandingHeader,
   Reveal,
@@ -33,22 +36,18 @@ const HOW_STEPS = [
 ] as const;
 
 export default function Landing() {
+  const [location] = useLocation();
+  const section = landingSectionFromPath(location);
+
   useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      const anchor = target.closest('a[href^="#"]') as HTMLAnchorElement | null;
-      if (!anchor) return;
-      const href = anchor.getAttribute("href") || "";
-      if (href.length < 2) return;
-      const id = href.slice(1);
-      const el = document.getElementById(id);
-      if (!el) return;
-      e.preventDefault();
+    if (!section) return;
+    const el = document.getElementById(section);
+    if (!el) return;
+    const frame = requestAnimationFrame(() => {
       el.scrollIntoView({ behavior: "smooth", block: "start" });
-    };
-    document.addEventListener("click", handler);
-    return () => document.removeEventListener("click", handler);
-  }, []);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [section]);
 
   const appHref = getAppHref();
 
@@ -92,7 +91,7 @@ export default function Landing() {
                       Begin sifting
                     </a>
                     <a
-                      href="#how"
+                      href={landingAnchor("how", "landing")}
                       className="landing-btn-secondary"
                       data-testid="link-hero-secondary"
                     >

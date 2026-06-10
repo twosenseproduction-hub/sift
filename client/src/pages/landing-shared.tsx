@@ -19,14 +19,19 @@ export function getAppHref() {
   return "/";
 }
 
-// Build a hash-route URL pointing at a section on the landing page,
-// from anywhere in the app. Wouter's hash routing means /#/landing is
-// the route; the section anchor is appended after as #preview / #how.
-// Same-page anchors are returned bare so the smooth-scroll handler in
-// landing.tsx still picks them up.
-export function landingAnchor(section: string, current: "landing" | "other"): string {
-  if (current === "landing") return `#${section}`;
-  return `/#/landing#${section}`;
+// Hash-route URL for a landing section. Wouter owns the hash, so bare
+// anchors like #preview replace #/landing and 404; double hashes like
+// /#/landing#preview parse as /landing#preview and also 404. Use a
+// nested route segment instead: /#/landing/preview → /landing/preview.
+export function landingAnchor(section: string, _current: "landing" | "other"): string {
+  return `/#/landing/${section}`;
+}
+
+/** Section id from wouter location (`/landing/preview` → `preview`). */
+export function landingSectionFromPath(location: string): string | null {
+  if (!location.startsWith("/landing/")) return null;
+  const segment = location.slice("/landing/".length).split("?")[0];
+  return segment || null;
 }
 
 // Reveal-on-scroll: a small wrapper that fades + slides in once the
@@ -123,12 +128,10 @@ export function Pill({ children }: { children: React.ReactNode }) {
 }
 
 // Sticky glass header — adds a faint border once the user scrolls past
-// the top. CTA on the right. The `current` prop tells
-// it whether we are already on the landing page (use bare anchors that
-// the smooth-scroll handler picks up) or somewhere else (build full
-// hash-route URLs to the landing page sections).
+// the top. CTA on the right. The `current` prop is kept for call-site
+// clarity; section links always use /#/landing/:section routes.
 export function LandingHeader({ current }: { current: "landing" | "other" }) {
-  const brandHref = current === "landing" ? "#top" : "/#/landing";
+  const brandHref = "/#/landing";
   return (
     <header className="landing-header" data-testid="landing-header">
       <div className="landing-header__inner">

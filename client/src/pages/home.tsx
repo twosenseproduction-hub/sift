@@ -13,10 +13,16 @@ import type {
   SupportProfile,
   SupportProfileUpdateRequest,
   ThreadTurn,
-  SiftFlowMode,
+  OperatorLensArtifact,
+  SiftLens,
   WritingSiftArtifact,
 } from "@shared/schema";
-import { isCareResponse, isRedundancyGateResult, isWritingSiftResult } from "@shared/schema";
+import {
+  isCareResponse,
+  isOperatorLensResult,
+  isRedundancyGateResult,
+  isWriterLensResult,
+} from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { AuthDialog } from "@/components/auth-dialog";
@@ -45,6 +51,8 @@ import {
   V3AppSidebar,
   V3ComposerBox,
   V3ConversationThread,
+  LensSwitcher,
+  LensSuggestConfirm,
 } from "@/components/redesign-v3";
 import { RedesignV3EmptyComposer } from "@/components/redesign-v3/empty-composer";
 import { ComposerIntro } from "@/components/redesign-v3/composer-intro";
@@ -63,8 +71,14 @@ import {
 } from "@/lib/sift-experience";
 import { cn } from "@/lib/utils";
 import { useLocation } from "wouter";
+import { defaultLensFromProfile } from "@/lib/sift-lens";
+import { detectOperatorLikelihood } from "@/lib/operator-lens-detect";
 import { detectWritingLikelihood } from "@/lib/writing-sift-detect";
-import { WritingSiftConfirm } from "@/components/redesign-v3/writing-sift-confirm";
+import {
+  OperatorLensResult,
+  operatorFollowUpMessage,
+  type OperatorFollowUpId,
+} from "@/components/bedroom-session/operator-lens-result";
 import {
   WritingSiftResult,
   writingFollowUpMessage,
@@ -248,7 +262,8 @@ function activeStepArtifactFor(step: ActiveStepState): NonNullable<ActiveStepSta
 }
 
 function hasMeaningfulSiftResult(result: SiftResult): boolean {
-  if (isWritingSiftResult(result)) return true;
+  if (isWriterLensResult(result)) return true;
+  if (isOperatorLensResult(result)) return true;
   return Boolean(result.matters?.length || result.nextStep?.trim());
 }
 
@@ -265,9 +280,13 @@ function formatSiftTurnMessage(m: SiftTurnMessage): string {
 }
 
 function siftBubbleFromResult(r: SiftResult): string {
-  if (isWritingSiftResult(r)) {
+  if (isWriterLensResult(r)) {
     const img = r.writingArtifact.liveImage.trim();
     return img.length > 1600 ? `${img.slice(0, 1597)}…` : img;
+  }
+  if (isOperatorLensResult(r)) {
+    const line = r.operatorLensArtifact.coreIssue.trim();
+    return line.length > 1600 ? `${line.slice(0, 1597)}…` : line;
   }
   const t = r.reflection?.trim();
   if (t) return t.length > 1600 ? `${t.slice(0, 1597)}…` : t;
@@ -392,11 +411,15 @@ export default function Home() {
   const [sortIntro, setSortIntro] = useState<SortPromptPayload | null>(null);
   const [sortBusy, setSortBusy] = useState(false);
 
-  const [showWritingConfirm, setShowWritingConfirm] = useState(false);
+  const profileDefaultLens = defaultLensFromProfile(effectiveSupportProfile);
+  const [activeLens, setActiveLens] = useState<SiftLens>(profileDefaultLens);
+  const [lensSuggest, setLensSuggest] = useState<null | "writer" | "operator">(null);
   const [writingArtifact, setWritingArtifact] = useState<WritingSiftArtifact | null>(
     null,
   );
-  const skipWritingDetectOnceRef = useRef(false);
+  const [operatorLensArtifact, setOperatorLensArtifact] =
+    useState<OperatorLensArtifact | null>(null);
+  const skipLensDetectOnceRef = useRef(false);
 
   const [careMode, setCareMode] = useState(false);
   const [careRestore, setCareRestore] = useState<string | null>(null);
@@ -433,8 +456,13 @@ export default function Home() {
       theme: effectiveSupportProfile?.theme ?? "system",
       primaryIntent: effectiveSupportProfile?.primaryIntent,
       supportStyle: effectiveSupportProfile?.supportStyle,
+      defaultLens: effectiveSupportProfile?.defaultLens ?? "personal",
     }),
   );
+
+  useEffect(() => {
+    setActiveLens(defaultLensFromProfile(effectiveSupportProfile));
+  }, [effectiveSupportProfile?.defaultLens]);
   const liveSessionRestoredRef = useRef(false);
 
   const resetSession = useCallback(() => {
@@ -463,9 +491,10 @@ export default function Home() {
     setGateBusy(false);
     setSortIntro(null);
     setSortBusy(false);
-    setShowWritingConfirm(false);
+    setLensSuggest(null);
     setWritingArtifact(null);
-    skipWritingDetectOnceRef.current = false;
+    setOperatorLensArtifact(null);
+    skipLensDetectOnceRef.current = false;
     setCareMode(false);
     setCareRestore(null);
     setNextStepDone(false);
@@ -723,13 +752,14 @@ export default function Home() {
   const recapVisible = useMemo(
     () =>
       !writingArtifact &&
+      !operatorLensArtifact &&
       phase === "structured" &&
       latestExchangeComplete &&
       recap &&
       shouldShowRecap(recap)
         ? recap
         : null,
-    [latestExchangeComplete, phase, recap, writingArtifact],
+    [latestExchangeComplete, operatorLensArtifact, phase, recap, writingArtifact],
   );
 
   const dailyPromptCard = useMemo(() => {
@@ -990,8 +1020,9 @@ export default function Home() {
   );
 
   const runSubmit = useCallback(
-    async (text: string, flowMode: SiftFlowMode = "standard") => {
+    async (text: string, lensOverride?: SiftLens) => {
       if (composerLocked || !text.trim()) return;
+      const lens = lensOverride ?? activeLens;
       stopVoiceInput();
       const intent = bedroomIntentFor(text, phase);
 
@@ -1001,7 +1032,7 @@ export default function Home() {
           : `u-${Date.now()}`;
       setBubbles((prev) => [...prev, { id: uid, role: "user", text }]);
       setComposer("");
-      setShowWritingConfirm(false);
+      setLensSuggest(null);
       setThinking(true);
       setAvatarPresenting(false);
       setLatestSiftCanSummarize(false);
@@ -1020,7 +1051,8 @@ export default function Home() {
               phase,
               intent,
               supportProfile,
-              ...(flowMode === "writing" ? { flowMode: "writing" as const } : {}),
+              lens,
+              ...(lens === "writer" ? { flowMode: "writing" as const } : {}),
             },
             import.meta.env.DEV ? { auth: false } : undefined,
           );
@@ -1042,11 +1074,17 @@ export default function Home() {
             setUnsavedGuestSiftId(sift.id);
             setGuestSavePromptDismissed(false);
           }
-          if (isWritingSiftResult(sift)) {
+          if (isWriterLensResult(sift)) {
             setWritingArtifact(sift.writingArtifact);
+            setOperatorLensArtifact(null);
+            setRecap(null);
+          } else if (isOperatorLensResult(sift)) {
+            setOperatorLensArtifact(sift.operatorLensArtifact);
+            setWritingArtifact(null);
             setRecap(null);
           } else {
             setWritingArtifact(null);
+            setOperatorLensArtifact(null);
             setRecap(intent === "greeting-warmup" ? null : recapFromSiftResult(sift));
           }
           appendSiftBubble(siftBubbleFromResult(sift));
@@ -1147,6 +1185,7 @@ export default function Home() {
       effectiveSupportProfile,
       phase,
       recordMeaningfulExchange,
+      activeLens,
       siftId,
       stopVoiceInput,
       toast,
@@ -1157,35 +1196,58 @@ export default function Home() {
     const text = composer.trim();
     if (composerLocked || !text) return;
 
-    if (
-      !siftId &&
-      !skipWritingDetectOnceRef.current &&
-      detectWritingLikelihood(text).shouldConfirm
-    ) {
-      setShowWritingConfirm(true);
-      return;
+    if (!siftId && !skipLensDetectOnceRef.current) {
+      if (
+        activeLens !== "writer" &&
+        detectWritingLikelihood(text).shouldConfirm
+      ) {
+        setLensSuggest("writer");
+        return;
+      }
+      if (
+        activeLens === "personal" &&
+        detectOperatorLikelihood(text).shouldConfirm
+      ) {
+        setLensSuggest("operator");
+        return;
+      }
     }
-    skipWritingDetectOnceRef.current = false;
-    await runSubmit(text, "standard");
-  }, [composer, composerLocked, runSubmit, siftId]);
+    skipLensDetectOnceRef.current = false;
+    await runSubmit(text);
+  }, [activeLens, composer, composerLocked, runSubmit, siftId]);
 
-  const confirmMeetAsWriting = useCallback(() => {
+  const confirmSuggestedLens = useCallback(
+    (lens: SiftLens) => {
+      const text = composer.trim();
+      if (!text) return;
+      setActiveLens(lens);
+      setLensSuggest(null);
+      skipLensDetectOnceRef.current = true;
+      void runSubmit(text, lens);
+    },
+    [composer, runSubmit],
+  );
+
+  const dismissLensSuggest = useCallback(() => {
     const text = composer.trim();
     if (!text) return;
-    void runSubmit(text, "writing");
-  }, [composer, runSubmit]);
-
-  const confirmNormalSift = useCallback(() => {
-    const text = composer.trim();
-    if (!text) return;
-    skipWritingDetectOnceRef.current = true;
-    void runSubmit(text, "standard");
+    setLensSuggest(null);
+    skipLensDetectOnceRef.current = true;
+    void runSubmit(text);
   }, [composer, runSubmit]);
 
   const onWritingFollowUp = useCallback(
     (id: WritingFollowUpId) => {
       if (!siftId || thinking) return;
-      void runSubmit(writingFollowUpMessage(id), "standard");
+      void runSubmit(writingFollowUpMessage(id), "writer");
+    },
+    [runSubmit, siftId, thinking],
+  );
+
+  const onOperatorFollowUp = useCallback(
+    (id: OperatorFollowUpId) => {
+      if (!siftId || thinking) return;
+      void runSubmit(operatorFollowUpMessage(id), "operator");
     },
     [runSubmit, siftId, thinking],
   );
@@ -1297,6 +1359,8 @@ export default function Home() {
           phase,
           intent: bedroomIntentFor(gate.input, phase),
           supportProfile: supportProfileForRequest(effectiveSupportProfile),
+          lens: activeLens,
+          ...(activeLens === "writer" ? { flowMode: "writing" as const } : {}),
         },
         import.meta.env.DEV ? { auth: false } : undefined,
       );
@@ -1318,7 +1382,19 @@ export default function Home() {
         setUnsavedGuestSiftId(sift.id);
         setGuestSavePromptDismissed(false);
       }
-      setRecap(recapFromSiftResult(sift));
+      if (isWriterLensResult(sift)) {
+        setWritingArtifact(sift.writingArtifact);
+        setOperatorLensArtifact(null);
+        setRecap(null);
+      } else if (isOperatorLensResult(sift)) {
+        setOperatorLensArtifact(sift.operatorLensArtifact);
+        setWritingArtifact(null);
+        setRecap(null);
+      } else {
+        setWritingArtifact(null);
+        setOperatorLensArtifact(null);
+        setRecap(recapFromSiftResult(sift));
+      }
       appendSiftBubble(siftBubbleFromResult(sift));
       recordMeaningfulExchange(gate.input, hasMeaningfulSiftResult(sift));
       queryClient.invalidateQueries({ queryKey: ["/api/reentry"] });
@@ -1332,7 +1408,16 @@ export default function Home() {
     } finally {
       setGateBusy(false);
     }
-  }, [appendSiftBubble, effectiveSupportProfile, gate, me, phase, recordMeaningfulExchange, toast]);
+  }, [
+    activeLens,
+    appendSiftBubble,
+    effectiveSupportProfile,
+    gate,
+    me,
+    phase,
+    recordMeaningfulExchange,
+    toast,
+  ]);
 
   const onGateKnowThis = useCallback(async () => {
     if (!gate) return;
@@ -1484,6 +1569,7 @@ export default function Home() {
             });
             setLocalOnboardingProfile(profile);
             writeLocalSupportProfile(profile);
+            setActiveLens(defaultLensFromProfile(profile));
             setOnboardingStep("welcome");
             beginLiveSift(true);
           }}
@@ -1552,25 +1638,39 @@ export default function Home() {
                 </>
               )}
 
-              {showWritingConfirm && !siftId ? (
-                <WritingSiftConfirm
-                  className="mt-4"
-                  disabled={thinking}
-                  onMeetAsWriting={confirmMeetAsWriting}
-                  onNormalSift={confirmNormalSift}
-                />
-              ) : null}
+              <div className="v3-composer-stack">
+                {lensSuggest && !siftId ? (
+                  <LensSuggestConfirm
+                    className="mt-4"
+                    suggestLens={lensSuggest}
+                    disabled={thinking}
+                    onUseSuggested={() =>
+                      confirmSuggestedLens(
+                        lensSuggest === "writer" ? "writer" : "operator",
+                      )
+                    }
+                    onKeepCurrent={dismissLensSuggest}
+                  />
+                ) : null}
 
-              <V3ComposerBox
-                className="mt-2"
-                value={composer}
-                onChange={setComposer}
-                onSubmit={() => void submit()}
-                disabled={composerLocked || (showWritingConfirm && !siftId)}
-                onVoiceClick={toggleVoiceInput}
-                voiceListening={voiceListening}
-                thinking={thinking}
-              />
+                <LensSwitcher
+                  className="mt-2"
+                  value={activeLens}
+                  onChange={setActiveLens}
+                  disabled={composerLocked || !!siftId}
+                />
+
+                <V3ComposerBox
+                  className="mt-2"
+                  value={composer}
+                  onChange={setComposer}
+                  onSubmit={() => void submit()}
+                  disabled={composerLocked || (!!lensSuggest && !siftId)}
+                  onVoiceClick={toggleVoiceInput}
+                  voiceListening={voiceListening}
+                  thinking={thinking}
+                />
+              </div>
 
               {writingArtifact ? (
                 <div className="mt-8 border-t border-[color:var(--v3-border)] pt-8">
@@ -1578,6 +1678,16 @@ export default function Home() {
                     artifact={writingArtifact}
                     busy={thinking}
                     onFollowUp={onWritingFollowUp}
+                  />
+                </div>
+              ) : null}
+
+              {operatorLensArtifact ? (
+                <div className="mt-8 border-t border-[color:var(--v3-border)] pt-8">
+                  <OperatorLensResult
+                    artifact={operatorLensArtifact}
+                    busy={thinking}
+                    onFollowUp={onOperatorFollowUp}
                   />
                 </div>
               ) : null}
