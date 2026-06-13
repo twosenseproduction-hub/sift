@@ -1,30 +1,55 @@
 {
   "style": "tiny-swords",
-  "concept": "Pawn with bomb sack on back, Pirate Fish bomb, pickaxe throw swipe",
+  "concept": "Custom siege bomber \u2014 grey helm, faction plume/tunic/sack",
   "source": {
-    "body": "Blue Units/Pawn",
-    "idle": "Pawn_Idle.png",
-    "walk": "Pawn_Run.png",
-    "attack": "Pawn_Interact Pickaxe.png (tool stripped, swipe kept)",
-    "bomb": "Enemies/Pirate Fish/Bomb/Bomb_Idle.png"
+    "attack": "Siege_Attack_source.png (author)",
+    "idle": "derived from attack recovery frame",
+    "walk": "recovery frame + faction Warrior_Run motion"
   },
   "frameW": 192,
   "frameH": 192,
-  "clips": {
-    "idle": {
-      "file": "Siege_Idle.png",
-      "count": 6,
-      "speed": 1.8
+  "srcFrameW": 128,
+  "srcFrameH": 128,
+  "factions": {
+    "blue": {
+      "dir": "blue",
+      "clips": {
+        "idle": {
+          "file": "blue/Siege_Idle.png",
+          "count": 6,
+          "speed": 1.8
+        },
+        "walk": {
+          "file": "blue/Siege_Walk.png",
+          "count": 6,
+          "speed": 7
+        },
+        "attack": {
+          "file": "blue/Siege_Attack.png",
+          "count": 8,
+          "speed": 8
+        }
+      }
     },
-    "walk": {
-      "file": "Siege_Walk.png",
-      "count": 6,
-      "speed": 7
-    },
-    "attack": {
-      "file": "Siege_Attack.png",
-      "count": 8,
-      "speed": 8
+    "red": {
+      "dir": "red",
+      "clips": {
+        "idle": {
+          "file": "red/Siege_Idle.png",
+          "count": 6,
+          "speed": 1.8
+        },
+        "walk": {
+          "file": "red/Siege_Walk.png",
+          "count": 6,
+          "speed": 7
+        },
+        "attack": {
+          "file": "red/Siege_Attack.png",
+          "count": 8,
+          "speed": 8
+        }
+      }
     }
   }
 }
