@@ -184,7 +184,7 @@
     if (pick === 0 || pick === 3) { role = 'light'; bldg = foundry; }
     else if (pick === 1) { role = 'scout'; bldg = foundry; }
     else if (pick === 4) { role = 'support'; bldg = foundry; }
-    else if (pick === 2) { role = 'heavy'; bldg = foundry; }
+    else if (pick === 2) { role = 'heavy'; bldg = forge; }
     else { role = 'siege'; bldg = forge; }
 
     if (!bldg) return;

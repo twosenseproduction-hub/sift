@@ -136,14 +136,14 @@
     foundry: {
       type: 'foundry', label: 'Barracks', w: 78, h: 70,
       hp: 760, cost: 150, build: 18,
-      trains: ['light', 'scout', 'support', 'heavy'],
-      desc: 'Produces Archers, Lancers, Monks, and Warriors.',
+      trains: ['light', 'scout', 'support'],
+      desc: 'Produces Archers, Lancers, and Monks.',
     },
     forge: {
-      type: 'forge', label: 'Archery', w: 86, h: 78,
+      type: 'forge', label: 'War Forge', w: 86, h: 78,
       hp: 980, cost: 220, build: 26,
-      trains: ['siege'],
-      desc: 'Produces Siege bombers.',
+      trains: ['heavy', 'siege'],
+      desc: 'Produces Warriors and Siege bombers.',
     },
     turret: {
       type: 'turret', label: 'Tower', w: 54, h: 54,
@@ -171,7 +171,7 @@
       shapeStyle: 'angular',
       names: {
         core: 'Castle', conduit: 'House', foundry: 'Barracks',
-        forge: 'Archery', turret: 'Tower', outpost: 'Outpost',
+        forge: 'War Forge', turret: 'Tower', outpost: 'Outpost',
         worker: 'Pawn', light: 'Archer', scout: 'Lancer',
         heavy: 'Warrior', siege: 'Siege', support: 'Monk',
       },
@@ -189,7 +189,7 @@
       shapeStyle: 'angular',
       names: {
         core: 'Castle', conduit: 'House', foundry: 'Barracks',
-        forge: 'Archery', turret: 'Tower', outpost: 'Outpost',
+        forge: 'Slag Forge', turret: 'Tower', outpost: 'Outpost',
         worker: 'Pawn', light: 'Archer', scout: 'Lancer',
         heavy: 'Warrior', siege: 'Siege', support: 'Monk',
       },
