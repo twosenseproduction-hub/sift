@@ -17,6 +17,24 @@ Sift is a web app (app.siftnow.io) + marketing site (siftnow.io, deployed on Fly
 - Database: SQLite on Fly persistent volume
 - Auth: handle + passphrase (no OAuth)
 
+## Warcrest RTS (separate product — do not confuse with Sift)
+
+The browser RTS at **exofront.siftnow.io** is **not** built or deployed from this repo's `client/`/`server/`.
+
+| | Sift app | Warcrest game |
+|---|----------|---------------|
+| Repo | `twosenseproduction-hub/sift` | `twosenseproduction-hub/warcrest` |
+| Fly app | `sift-twosense` | `exofront-game` |
+| Deploy | `fly deploy` from sift repo root | `./scripts/deploy.sh` from **warcrest** repo only |
+
+**Hard rules for agents:**
+- Never run `fly deploy` from `rts-game/` — it is a stale fork (Aurex/Crimson), not production.
+- Never deploy the game from the sift repo root (that deploys Sift, not the game).
+- Canonical game path: `warcrest/` with `.warcrest-root` marker and **Iron Crown** in `src/config.js`.
+- Use `./scripts/deploy-warcrest.sh` from sift root, or `warcrest/scripts/deploy.sh` — both run pre-flight checks.
+
+See [`docs/WARCREST-DEPLOY.md`](docs/WARCREST-DEPLOY.md).
+
 ## Voice & Language Spec (critical)
 
 ### Pronoun hierarchy

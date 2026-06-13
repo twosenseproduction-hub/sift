@@ -5,6 +5,9 @@ node_modules/
 dist/
 .vite/
 
+# Stale RTS fork — canonical game is github.com/twosenseproduction-hub/warcrest
+rts-game/
+
 # SQLite database files — never commit; exposes demo data at rest
 data.db
 data.db-shm
